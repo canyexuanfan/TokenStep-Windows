@@ -1,106 +1,123 @@
 # TokenStep
 
-TokenStep turns AI token usage into a daily step ring for macOS.
+把 AI token 用量变成「每日 AI 步数」的 macOS 菜单栏 App。
 
-It is a native menu bar app that tracks local usage from supported AI coding agents, shows today's progress toward a token goal, and keeps history like an activity dashboard.
+## 立即下载
 
-## Current Support
+下载最新版 DMG，打开后把 `TokenStep.app` 拖进「应用程序」即可使用：
 
-- Codex: reads local token metadata from Codex SQLite state, with JSONL fallback.
-- Claude Code: reads usage metadata from `~/.claude/projects/**/*.jsonl`.
+[下载 TokenStep 最新版](https://github.com/Backtthefuture/TokenStep/releases/latest/download/TokenStep-0.1.2.dmg)
 
-TokenStep only reads usage metadata such as date, model, client name, and token counts. It does not upload code, prompts, or conversation content.
+也可以从 Release 页面查看所有版本：
 
-## Install
+[GitHub Releases](https://github.com/Backtthefuture/TokenStep/releases/latest)
 
-Download the latest `TokenStep.dmg` from GitHub Releases, open it, and drag `TokenStep.app` into Applications.
+TokenStep 已使用 Developer ID 签名并通过 Apple 公证。首次打开时，macOS 可能会出现标准确认弹窗，这是正常现象。
 
-On first launch, TokenStep starts from the macOS menu bar. It defaults to:
+## 它是做什么的？
 
-- daily goal: 100 million tokens
-- refresh interval: 1 minute
-- local-only stats
-- login item enabled, configurable in Settings
+TokenStep 会在本机统计 Codex / Claude Code 的 token 使用量，并像运动圆环一样显示今天的 AI 使用进度。
 
-For more detail, see [docs/INSTALL.md](docs/INSTALL.md).
+你可以把它理解成：
 
-## Features
+> 给 AI Agent 时代准备的「步数 App」。
 
-- Menu bar progress ring and today's token count.
-- Popover with today's AI steps, goal progress, spend estimate, and recent activity.
-- Native dashboard for Today, History, Stats, and Privacy.
-- Settings for daily goal, refresh interval, login launch, and privacy status.
-- Automatic update checks for signed GitHub Release downloads.
-- Local data storage under `~/Library/Application Support/TokenStep`.
+默认每日目标是 `1 亿 token`。它会显示今天用了多少、完成了多少、最近 30 天趋势、历史记录、按客户端和模型的统计，以及一个粗略的「消耗金额」估算。
 
-## Privacy
+## 当前支持
 
-TokenStep is local-first.
+- Codex：优先读取 Codex 本地 SQLite token 汇总，必要时回退 JSONL。
+- Claude Code：读取 `~/.claude/projects/**/*.jsonl` 里的 usage 元数据。
 
-- It reads token usage metadata from supported local agent logs.
-- It stores generated summaries on your Mac.
-- It does not upload data by default.
-- Estimated spend is approximate and not a bill.
+TokenStep 只读取 token 用量元数据，例如日期、模型、客户端名称和 token 数量。
 
-See [docs/PRIVACY.md](docs/PRIVACY.md).
+它不会上传你的代码、prompt 或对话正文。
 
-## Build Locally
+## 功能
 
-Requirements:
+- 菜单栏显示今日 token 数和进度圆环。
+- 点击菜单栏可打开轻量弹层。
+- 原生 macOS 仪表盘：今日、历史、统计、隐私。
+- 每日目标可设置，默认每天一个亿。
+- 自动刷新，默认 1 分钟。
+- 开机启动，可在设置里关闭。
+- 自动检查更新，发现新版后可下载已签名公证的 DMG。
+- 本地数据存放在 `~/Library/Application Support/TokenStep`。
+
+## 安装方式
+
+1. 下载 [TokenStep 最新版 DMG](https://github.com/Backtthefuture/TokenStep/releases/latest/download/TokenStep-0.1.2.dmg)。
+2. 打开 DMG。
+3. 把 `TokenStep.app` 拖到「应用程序」。
+4. 启动 TokenStep。
+5. 在 macOS 右上角菜单栏点击 TokenStep 图标。
+
+更详细的安装说明见 [docs/INSTALL.md](docs/INSTALL.md)。
+
+## 隐私说明
+
+TokenStep 是 local-first 的本地工具。
+
+- 只读取本机 usage 元数据。
+- 默认不上传任何数据。
+- 不读取和上传代码、prompt、对话正文。
+- 「消耗金额」只是本地粗略估算，不等于真实账单。
+
+完整说明见 [docs/PRIVACY.md](docs/PRIVACY.md)。
+
+## 本地构建
+
+要求：
 
 - macOS 14+
 - Xcode Command Line Tools
 
-Build and run:
+构建并运行：
 
 ```bash
 ./script/build_and_run.sh --verify
 ```
 
-Build without launching:
+只构建不启动：
 
 ```bash
 ./script/build_swiftui_and_run.sh --no-launch
 ```
 
-The app bundle is created at:
+生成的 App 位于：
 
 ```text
 TokenStepSwift/dist/TokenStep.app
 ```
 
-## Package a Release
+## 发布打包
 
-Developer ID signing:
+Developer ID 签名：
 
 ```bash
-TOKENSTEP_VERSION=0.1.0 \
+TOKENSTEP_VERSION=0.1.2 \
 CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 ./script/package_release.sh
 ```
 
-Signing plus notarization:
+签名 + Apple 公证：
 
 ```bash
-TOKENSTEP_VERSION=0.1.0 \
+TOKENSTEP_VERSION=0.1.2 \
 CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 TOKENSTEP_NOTARY_PROFILE="tokenstep-notary" \
 ./script/package_release.sh --notarize
 ```
 
-Release outputs are written to:
+产物会生成到：
 
 ```text
 release/TokenStep-<version>.zip
 release/TokenStep-<version>.dmg
 ```
 
-See [docs/RELEASE.md](docs/RELEASE.md).
+维护者说明见 [docs/RELEASE.md](docs/RELEASE.md)。
 
-## Legacy Developer Tools
+## 开源协议
 
-The Python collector and old PyObjC prototype are kept for development and historical comparison. The native SwiftUI app no longer depends on Python for normal installed use.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+MIT。见 [LICENSE](LICENSE)。
