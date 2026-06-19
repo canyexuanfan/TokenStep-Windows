@@ -23,6 +23,7 @@ struct PopoverPanelView: View {
         .padding(20)
         .frame(width: 412)
         .background(TokenStepBackdrop())
+        .id(appState.settings.theme.id)
     }
 
     private var header: some View {

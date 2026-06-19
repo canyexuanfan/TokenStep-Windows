@@ -18,6 +18,7 @@ struct UpdateWindowView: View {
             .padding(28)
         }
         .frame(width: 560, height: 500)
+        .id(appState.settings.theme.id)
     }
 
     private var header: some View {

@@ -68,12 +68,14 @@ struct MainWindowView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebar
+                .id(appState.settings.theme.id)
             Rectangle()
                 .fill(Color.black.opacity(0.06))
                 .frame(width: 1)
             content
+                .id(appState.settings.theme.id)
         }
-        .background(TokenStepBackdrop())
+        .background(TokenStepBackdrop().id(appState.settings.theme.id))
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {

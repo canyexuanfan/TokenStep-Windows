@@ -61,8 +61,9 @@ final class AppState: ObservableObject {
     }
 
     func load() {
-        settings = DataService.loadSettings()
-        TokenStepThemeRuntime.apply(settings.theme)
+        let loadedSettings = DataService.loadSettings()
+        TokenStepThemeRuntime.apply(loadedSettings.theme)
+        settings = loadedSettings
         snapshot = (try? DataService.loadSnapshot()) ?? .empty
         autostartEnabled = AutostartService.isEnabled
     }
@@ -100,8 +101,8 @@ final class AppState: ObservableObject {
     }
 
     func setTheme(_ theme: TokenStepTheme) {
-        settings.theme = theme
         TokenStepThemeRuntime.apply(theme)
+        settings.theme = theme
         saveSettingsAndReload()
     }
 
@@ -208,8 +209,9 @@ final class AppState: ObservableObject {
     private func saveSettingsAndReload() {
         do {
             try DataService.saveSettings(settings)
-            settings = DataService.loadSettings()
-            TokenStepThemeRuntime.apply(settings.theme)
+            let loadedSettings = DataService.loadSettings()
+            TokenStepThemeRuntime.apply(loadedSettings.theme)
+            settings = loadedSettings
         } catch {
             lastError = error.localizedDescription
         }

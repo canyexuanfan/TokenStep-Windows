@@ -34,6 +34,7 @@ struct SettingsView: View {
             }
         }
         .frame(width: 920, height: 760)
+        .id(appState.settings.theme.id)
     }
 
     private var header: some View {

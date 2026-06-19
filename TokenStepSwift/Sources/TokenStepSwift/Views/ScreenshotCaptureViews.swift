@@ -17,6 +17,7 @@ struct DashboardScreenshotView: View {
         }
         .frame(width: 1120)
         .fixedSize(horizontal: false, vertical: true)
+        .id(appState.settings.theme.id)
     }
 
     private var captureHeader: some View {
