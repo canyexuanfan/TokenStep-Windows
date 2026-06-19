@@ -1,0 +1,37 @@
+[package]
+name = "tokenstep"
+version = "0.1.0"
+description = "Turn AI token usage into a daily step ring — Windows edition"
+authors = ["TokenStep"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "tokenstep_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+glob = "0.3"
+dirs = "5"
+parking_lot = "0.12"
+png = "0.17"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

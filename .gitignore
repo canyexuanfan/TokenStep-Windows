@@ -12,3 +12,19 @@ TokenStepSwift/.build/
 TokenStepSwift/dist/
 TokenUsageMenuApp/dist/
 release/
+
+# Windows build artifacts
+windows/src-tauri/target/
+windows/src-tauri/gen/schemas/
+# Stray device-name file accidentally created by Windows shell redirects
+nul
+# Built release artifacts — distribute via GitHub Releases, not in the repo
+/TokenStep_*.exe
+/TokenStep*.dmg
+/TokenStep*.zip
+
+# Code signing secrets (self-signed cert + private key) — NEVER commit
+_secrets/
+*.pfx
+*.p12
+TokenStep-codesign.cer

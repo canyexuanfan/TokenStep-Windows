@@ -1,0 +1,78 @@
+name: CI (Windows)
+
+# 构建验证 CI（A 方案）：每次 push / PR 在 Windows runner 上编译一遍，
+# 确认 Windows 移植版能正常构建。不签名、不产出下载用 exe、不需要任何 Secret。
+# 代码签名与自动 Release 留待后续方案。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "windows/**"
+      - ".github/workflows/ci-windows.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - ".github/workflows/ci-windows.yml"
+  workflow_dispatch: # 也允许手动触发
+
+concurrency:
+  group: ci-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (windows-latest, release)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry & git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('windows/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache build target
+        uses: actions/cache@v4
+        with:
+          path: windows/src-tauri/target
+          key: ${{ runner.os }}-cargo-target-${{ hashFiles('windows/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-
+
+      - name: Install Tauri CLI
+        working-directory: windows/src-tauri
+        run: cargo install tauri-cli --version "^2.0" --locked
+
+      # 核心目标：确认 Windows 移植版能编译通过。这一步是阻塞性的（决定绿勾/红叉）。
+      - name: Build (release)
+        working-directory: windows/src-tauri
+        run: cargo build --release --all-targets
+
+      # 风格检查（非阻塞）：提示但不让 CI 失败，避免首次接入就被红叉卡住。
+      # 等代码风格稳定后可去掉 continue-on-error 改为强制。
+      - name: cargo fmt --check (advisory)
+        working-directory: windows/src-tauri
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy (advisory)
+        working-directory: windows/src-tauri
+        continue-on-error: true
+        run: cargo clippy --all-targets --all-features

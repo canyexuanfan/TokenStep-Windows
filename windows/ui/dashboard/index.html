@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TokenStep</title>
+  <link rel="icon" type="image/png" href="../shared/logo.png" />
+  <link rel="stylesheet" href="../shared/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    // Console error capture (hidden, for debugging via F12 devtools only).
+    window.onerror = function (msg, src, line, col, err) {
+      console.error('TokenStep:', msg, '@', line + ':' + col, err || '');
+      return false;
+    };
+  </script>
+  <script src="../shared/app.js"></script>
+  <script>
+    // Startup: fetch data, then render. Any error is caught + logged.
+    (async function () {
+      try {
+        var set = await window.TS.invoke('get_settings');
+        var snap = await window.TS.invoke('get_snapshot');
+        _startReal(set, snap);
+      } catch (e) {
+        console.error('TokenStep init failed:', e);
+        document.getElementById('app').innerHTML =
+          '<div style="padding:60px;text-align:center;color:var(--muted)">' +
+          '<h2 style="color:var(--ink)">启动失败</h2>' +
+          '<p>' + (e && e.message ? e.message : String(e)) + '</p>' +
+          '<p style="margin-top:16px">请按 F12 打开开发者工具查看详情，或重新启动。</p></div>';
+      }
+    })();
+
+    function _startReal(initialSettings, initialSnapshot) {
+      // Apply saved color theme immediately (port of macOS Theme.swift).
+      window.TS.applyTheme((initialSettings && initialSettings.theme) || 'green');
+      // Restore the full dashboard logic here, using verified data.
+      var invoke = window.TS.invoke;
+      var formatTokens = window.TS.formatTokens;
+      var formatMoney = window.TS.formatMoney;
+      var formatPercent = window.TS.formatPercent;
+      var formatInterval = window.TS.formatInterval;
+      var contributionColor = window.TS.contributionColor;
+      var todayKey = window.TS.todayKey;
+      var ringSvg = window.TS.ringSvg;
+      var ICONS = window.TS.ICONS;
+      var listen = window.TS.listen;
+
+      var settings = initialSettings || { daily_goal_tokens: 100000000, refresh_interval_seconds: 60, history_days: 180 };
+      var snapshot = initialSnapshot || { totals:{tokens:0,cost:0,active_days:0}, daily:[], tools:[], models:[], sources:{} };
+      var current = 'today';
+
+      var SECTIONS = [
+        { id:'today', title:'今日', sidebar:'今日步数', sub:'今天和 AI 一起走了多远', icon: ICONS.walk },
+        { id:'history', title:'历史', sidebar:'历史活动', sub:'长期节奏和所有历史记录', icon: ICONS.grid },
+        { id:'stats', title:'统计', sidebar:'用量统计', sub:'按客户端和模型拆开看', icon: ICONS.chart },
+        { id:'privacy', title:'隐私', sidebar:'隐私', sub:'只统计数量，不读取内容', icon: ICONS.shield },
+        { id:'settings', title:'设置', sidebar:'设置', sub:'目标、刷新间隔', icon: ICONS.gear }
+      ];
+
+      // Build the full app shell (same as before but proven-safe).
+      document.getElementById('app').innerHTML =
+        '<aside class="sidebar"><div class="brand"><div class="brand-mark"><img src="../shared/logo.png" alt="TokenStep" style="width:36px;height:36px"/></div><div class="brand-text"><h1>TokenStep</h1><p>每天一个亿</p></div></div><nav class="nav" id="nav"></nav><div class="sidebar-spacer"></div><div class="privacy-badge"><span>' + ICONS.shield + '</span><div><div class="pb-title">本地统计</div><div class="pb-sub">不上传代码或对话</div></div></div></aside>' +
+        '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn" style="padding:6px 12px;margin-left:6px" id="shotBtn" title="截图">📷</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
+
+      // Nav
+      document.getElementById('nav').innerHTML = SECTIONS.map(function (s) {
+        return '<div class="nav-item ' + (s.id === current ? 'active' : '') + '" data-id="' + s.id + '"><div class="nav-icon">' + s.icon + '</div><div><div class="nav-title">' + s.sidebar + '</div><div class="nav-sub">' + s.sub + '</div></div></div>';
+      }).join('');
+      document.querySelectorAll('.nav-item').forEach(function (el) {
+        el.addEventListener('click', function () { current = el.dataset.id; render(); });
+      });
+      document.getElementById('refreshBtn').addEventListener('click', function () { invoke('refresh'); });
+      document.getElementById('shotBtn').addEventListener('click', function () {
+        // Render a data card to an offscreen canvas, then download as PNG.
+        var c = document.createElement('canvas');
+        c.width = 720; c.height = 420;
+        var t = todayDaily();
+        window.TS.renderDataCard(c, {
+          today: t,
+          settings: settings,
+          active_days: snapshot.totals.active_days,
+          total_tokens: snapshot.totals.tokens,
+        });
+        c.toBlob(function (blob) {
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement('a');
+          a.href = url;
+          var d = new Date().toISOString().slice(0, 10);
+          a.download = 'TokenStep-today-' + d + '.png';
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        }, 'image/png');
+      });
+
+      function todayDaily() {
+        var key = todayKey();
+        var found = null;
+        for (var i = snapshot.daily.length - 1; i >= 0; i--) { if (snapshot.daily[i].date === key) { found = snapshot.daily[i]; break; } }
+        return found || snapshot.daily[snapshot.daily.length - 1] || { date: key, tools: {}, total_tokens: 0, cost: 0 };
+      }
+      function todayProgress() {
+        var goal = Math.max(1, settings.daily_goal_tokens);
+        return todayDaily().total_tokens / goal;
+      }
+
+      function activityBars(rows, goal) {
+        if (!rows.length) return '<div class="empty">暂无活动数据</div>';
+        var maxTokens = Math.max.apply(null, [goal].concat(rows.map(function (d) { return d.total_tokens; })).concat([1]));
+        return '<div class="activity" style="margin-top:14px">' + rows.map(function (d) {
+          var h = Math.max(4, (d.total_tokens / maxTokens) * 100);
+          return '<div class="bar" style="height:' + h + '%;background:' + contributionColor(d.total_tokens, goal) + '" title="' + d.date + ' ' + formatTokens(d.total_tokens) + '"></div>';
+        }).join('') + '</div>';
+      }
+      function usageRows(rows, nameFn) {
+        if (!rows.length) return '<div class="empty">暂无数据</div>';
+        var max = Math.max.apply(null, [1].concat(rows.map(function (r) { return r.tokens; })));
+        return rows.map(function (r) {
+          var width = Math.max(1, (r.tokens / max) * 100);
+          var color = r.tool === 'Claude Code' ? 'var(--green-dark)' : 'var(--green)';
+          return '<div class="usage-row"><div class="usage-name">' + nameFn(r) + '</div><div class="usage-track"><div class="usage-fill" style="width:' + width + '%;background:' + color + '"></div></div><div class="usage-amount">' + formatTokens(r.tokens) + ' · ' + ((r.percent || 0)).toFixed(1) + '%</div></div>';
+        }).join('');
+      }
+
+      function viewToday() {
+        var t = todayDaily(), progress = todayProgress();
+        var monthRows = snapshot.daily.slice(-30);
+        var monthAvg = monthRows.length ? Math.round(monthRows.reduce(function (a, d) { return a + d.total_tokens; }, 0) / monthRows.length) : 0;
+        var goalDays = snapshot.daily.filter(function (d) { return d.total_tokens >= settings.daily_goal_tokens; }).length;
+        var lap = window.TS.lapProgress(t.total_tokens, settings.daily_goal_tokens);
+
+        // ---- Hero card: progress ring + lap info + chips + pills ----
+        // (mirrors macOS TodayView.hero: HStack spacing 34, ring 204x204)
+        var lapChips = '';
+        var visible = [];
+        if (lap.completedLaps > 0) {
+          if (lap.completedLaps <= 2) visible = [];
+          else visible = [lap.completedLaps - 1];
+          for (var i = 0; i < visible.length; i++) {
+            var n = visible[i];
+            lapChips += '<div class="lap-chip"><div class="lc-title">✓ ' + n + '圈完成</div><div class="lc-detail">' + formatTokens(n * settings.daily_goal_tokens, true) + '</div></div>';
+          }
+          lapChips += '<div class="lap-chip active" style="color:' + lap.color + '"><div class="lc-title">↻ ' + lap.lapTitle + '进行中</div><div class="lc-detail">' + formatPercent(lap.currentLapPercent) + '</div></div>';
+        }
+        var hero = '<div class="card"><div style="display:flex;align-items:center;gap:34px;flex-wrap:wrap">' +
+          '<div class="ring-wrap" style="width:204px;height:204px;flex-shrink:0">' + ringSvg(lap.currentLapProgress, 204, 20) +
+            '<div class="ring-center" style="width:160px"><div class="ring-value" style="font-size:42px">' + formatTokens(t.total_tokens) + '</div><div class="ring-goal">/ ' + formatTokens(settings.daily_goal_tokens, true) + ' 每圈</div></div>' +
+          '</div>' +
+          '<div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:18px">' +
+            '<div style="display:flex;flex-direction:column;gap:8px">' +
+              '<div style="font-size:35px;font-weight:800;color:' + lap.color + '">' + lap.lapTitle + ' · ' + formatPercent(lap.currentLapPercent) + '</div>' +
+              '<div style="font-size:20px;font-weight:700;color:var(--muted)">已完成 ' + formatTokens(lap.completedLaps * settings.daily_goal_tokens, true) + '</div>' +
+              '<div style="font-size:20px;font-weight:700;color:var(--muted)">每圈目标 ' + formatTokens(settings.daily_goal_tokens, true) + '</div>' +
+            '</div>' +
+            (lapChips ? '<div><div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:10px">圈数进度</div><div class="lap-chips">' + lapChips + '</div></div>' : '') +
+            '<div style="display:flex;gap:10px;flex-wrap:wrap"><span class="pill"><span class="pill-label">消耗金额</span><span class="pill-value">' + formatMoney(t.cost) + '</span></span><span class="pill"><span class="pill-label">本月均值</span><span class="pill-value">' + formatTokens(monthAvg, true) + '</span></span></div>' +
+          '</div>' +
+        '</div></div>';
+
+        // ---- Metric strip: 3 compact cards (累计/活跃/达标) ----
+        var metricStrip = '<div class="metric-strip">' +
+          '<div class="metric-mini"><div class="mm-label">累计 Token 消耗</div><div class="mm-value">' + formatTokens(snapshot.totals.tokens, true) + '</div><div class="mm-detail">所有本机记录</div></div>' +
+          '<div class="metric-mini"><div class="mm-label">活跃天数</div><div class="mm-value">' + snapshot.totals.active_days + ' 天</div><div class="mm-detail">有 AI 使用的日期</div></div>' +
+          '<div class="metric-mini"><div class="mm-label">达标天数</div><div class="mm-value">' + goalDays + ' 天</div><div class="mm-detail">达到每日目标</div></div>' +
+        '</div>';
+
+        // ---- 30-day activity bars card ----
+        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">最近 30 天</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">颜色越深，圈数越高</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">今天 ' + formatTokens(t.total_tokens, true) + '</span></div>' + activityBars(snapshot.daily.slice(-30), settings.daily_goal_tokens) + '</div>';
+
+        // ---- Distribution cards: 按客户端 + 主力模型 (2-up) ----
+        var distCards = '<div class="dist-grid">' +
+          '<div class="card">' + distributionInner('按客户端', snapshot.tools.slice(0, 5)) + '</div>' +
+          '<div class="card">' + distributionInner('主力模型', snapshot.models.slice(0, 5)) + '</div>' +
+        '</div>';
+
+        return hero + metricStrip + activityCard + distCards;
+      }
+      function distributionInner(title, rows) {
+        var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">等待下一次同步</div>';
+        return '<div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:17px">' + title + '</div>' + body;
+      }
+      function viewStats() {
+        return '<div class="dist-grid">' +
+          '<div class="card">' + distributionInner('按工具', snapshot.tools) + '</div>' +
+          '<div class="card">' + distributionInner('按模型', snapshot.models.slice(0, 12)) + '</div>' +
+        '</div>';
+      }
+      function viewHistory() {
+        var rows = snapshot.daily.slice().reverse().slice(0, 180);
+        var wallHTML = window.TS.contributionWallHTML(snapshot.daily, settings.daily_goal_tokens);
+        return '<div class="card"><div class="card-title">活动墙</div>' + wallHTML + '</div><div class="card"><div class="card-row" style="justify-content:space-between"><div class="card-title" style="margin:0">按天明细</div><button class="btn" id="exportCsvBtn">导出 CSV</button></div><div class="table-wrap"><table><thead><tr><th>日期</th><th>Codex</th><th>Claude Code</th><th>合计</th><th>成本</th></tr></thead><tbody>' + rows.map(function (d) { return '<tr><td>' + d.date + '</td><td>' + (d.tools['Codex'] ? formatTokens(d.tools['Codex']) : '—') + '</td><td>' + (d.tools['Claude Code'] ? formatTokens(d.tools['Claude Code']) : '—') + '</td><td class="total">' + formatTokens(d.total_tokens) + '</td><td>' + formatMoney(d.cost) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+      }
+      function viewPrivacy() {
+        var srcs = Object.keys(snapshot.sources || {});
+        return '<div class="card"><div class="card-title">隐私说明</div><p style="font-size:16px;line-height:1.7;color:var(--muted-strong)">TokenStep 是本地优先的工具，只读取用量元数据，不上传内容。</p></div><div class="card"><div class="card-title">数据源</div>' + (srcs.length ? srcs.map(function (n) { var m = snapshot.sources[n]; return '<div class="card-row" style="justify-content:space-between"><div><b>' + n + '</b></div><div style="color:var(--muted)">' + (m.status || '?') + ' · ' + (m.records || 0) + ' 条</div></div>'; }).join('') : '暂无') + '</div>';
+      }
+      function viewSettings() {
+        var gm = Math.round(settings.daily_goal_tokens / 1000000);
+        var ctt = settings.close_to_tray !== false; // default true
+        var html = '<div class="card"><div class="card-title">基本设置</div><div class="setting-row"><div><div class="setting-label">每日目标</div><div class="setting-hint">当前 ' + formatTokens(settings.daily_goal_tokens) + '</div></div><div><input type="number" id="goalInput" value="' + gm + '" min="1" style="width:120px"/><span style="font-weight:700;color:var(--muted);margin-left:8px">百万</span></div></div><div class="setting-row"><div><div class="setting-label">刷新间隔</div><div class="setting-hint">当前 ' + formatInterval(settings.refresh_interval_seconds) + '</div></div><select id="intervalSelect"><option value="60">1 分钟</option><option value="300">5 分钟</option><option value="900">15 分钟</option><option value="0">手动</option></select></div></div>';
+        html += '<div class="card"><div class="card-title">窗口行为</div><div class="setting-row"><div><div class="setting-label">关闭按钮行为</div><div class="setting-hint">点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序</div></div><select id="closeBehaviorSelect"><option value="tray">最小化到托盘</option><option value="quit">直接退出</option></select></div></div>';
+        // Theme picker: list all 5 themes with their titles.
+        var themes = window.TS.THEMES;
+        var currentTheme = settings.theme || 'green';
+        var themeOpts = Object.keys(themes).map(function (k) {
+          return '<option value="' + k + '"' + (k === currentTheme ? ' selected' : '') + '>' + themes[k].title + '（' + themes[k].sub + '）</option>';
+        }).join('');
+        html += '<div class="card"><div class="card-title">主题配色</div><div class="setting-row"><div><div class="setting-label">界面主题</div><div class="setting-hint">切换整体配色方案，立即生效</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
+        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">0.1.0</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
+        return html;
+      }
+
+      function render() {
+        document.querySelectorAll('.nav-item').forEach(function (el) { el.classList.toggle('active', el.dataset.id === current); });
+        var section = SECTIONS.filter(function (s) { return s.id === current; })[0];
+        document.getElementById('pageTitle').textContent = section.title;
+        document.getElementById('pageSubtitle').textContent = section.sub;
+        var view = document.getElementById('view');
+        if (current === 'today') view.innerHTML = viewToday();
+        else if (current === 'history') view.innerHTML = viewHistory();
+        else if (current === 'stats') view.innerHTML = viewStats();
+        else if (current === 'privacy') view.innerHTML = viewPrivacy();
+        else if (current === 'settings') {
+          view.innerHTML = viewSettings();
+          var sel = document.getElementById('intervalSelect');
+          if (sel) sel.value = String(settings.refresh_interval_seconds);
+          var gi = document.getElementById('goalInput');
+          if (gi) gi.addEventListener('change', function () { invoke('set_daily_goal', { tokens: Math.max(1, parseInt(gi.value, 10) || 1) * 1000000 }).then(function (s) { settings = s; render(); }); });
+          if (sel) sel.addEventListener('change', function () { invoke('set_refresh_interval', { seconds: parseInt(sel.value, 10) }).then(function (s) { settings = s; }); });
+          var cb = document.getElementById('closeBehaviorSelect');
+          if (cb) {
+            cb.value = (settings.close_to_tray !== false) ? 'tray' : 'quit';
+            cb.addEventListener('change', function () { invoke('set_close_to_tray', { enabled: cb.value === 'tray' }).then(function (s) { settings = s; }); });
+          }
+          var ts = document.getElementById('themeSelect');
+          if (ts) ts.addEventListener('change', function () {
+            window.TS.applyTheme(ts.value);
+            invoke('set_theme', { theme: ts.value }).then(function (s) { settings = s; render(); });
+          });
+        }
+        // Bind the CSV export button on the history view.
+        var exportBtn = document.getElementById('exportCsvBtn');
+        if (exportBtn) exportBtn.addEventListener('click', function () {
+          var ts = new Date().toISOString().slice(0, 10);
+          window.TS.downloadFile('tokenstep-' + ts + '.csv', window.TS.snapshotToCSV(snapshot), 'text/csv;charset=utf-8');
+        });
+      }
+
+      function updateHeader() {
+        document.getElementById('updated').textContent = '更新 ' + (snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : '等待同步');
+      }
+
+      // events
+      listen('refresh-finished', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
+      listen('snapshot-updated', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
+
+      render();
+      updateHeader();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# 默认：让 Git 自动检测文本文件并按仓库原样存储，checkout 时按系统换行符
+* text=auto
+
+# Windows 原生脚本统一使用 CRLF
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Shell 脚本与 Unix 风格文件统一使用 LF（跨平台克隆时避免被改成 CRLF）
+*.sh    text eol=lf
+
+# 源码 / 配置 / 文档：不强制换行符，交给各平台编辑器
+*.rs    text
+*.js    text
+*.css   text
+*.html  text
+*.json  text
+*.toml  text
+*.yml   text
+*.yaml  text
+*.md    text
+
+# 二进制文件：不要做换行符转换或 diff
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.icns  binary
+*.exe   binary
+*.dll   binary
+*.pdb   binary
+*.cer   binary
+*.pfx   binary
+
+# 语言无关的合并策略：锁定文件与生成的 schema 出现冲突时优先用当前分支
+Cargo.lock    merge=binary
