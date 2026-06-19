@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 
 final class TokenStepAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard SingleInstanceGuard.claimOrTerminateDuplicate() else { return }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
     }
