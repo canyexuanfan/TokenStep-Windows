@@ -53,6 +53,9 @@
       var settings = initialSettings || { daily_goal_tokens: 100000000, refresh_interval_seconds: 60, history_days: 180 };
       var snapshot = initialSnapshot || { totals:{tokens:0,cost:0,active_days:0}, daily:[], tools:[], models:[], sources:{} };
       var current = 'today';
+      // Latest update probe result, set either by the startup check (event)
+      // or the settings-page "check now" button. null = not yet known.
+      var latestUpdate = null;
 
       var SECTIONS = [
         { id:'today', title:'今日', sidebar:'今日步数', sub:'今天和 AI 一起走了多远', icon: ICONS.walk },
@@ -65,7 +68,7 @@
       // Build the full app shell (same as before but proven-safe).
       document.getElementById('app').innerHTML =
         '<aside class="sidebar"><div class="brand"><div class="brand-mark"><img src="../shared/logo.png" alt="TokenStep" style="width:36px;height:36px"/></div><div class="brand-text"><h1>TokenStep</h1><p>每天一个亿</p></div></div><nav class="nav" id="nav"></nav><div class="sidebar-spacer"></div><div class="privacy-badge"><span>' + ICONS.shield + '</span><div><div class="pb-title">本地统计</div><div class="pb-sub">不上传代码或对话</div></div></div></aside>' +
-        '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn" style="padding:6px 12px;margin-left:6px" id="shotBtn" title="截图">📷</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
+        '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn update-btn" style="padding:6px 10px;margin-left:6px;display:none;position:relative" id="updateBtn" title="发现新版本">🎁<span class="update-dot"></span></button><button class="btn" style="padding:6px 12px;margin-left:6px" id="shotBtn" title="截图">📷</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
 
       // Nav
       document.getElementById('nav').innerHTML = SECTIONS.map(function (s) {
@@ -75,6 +78,11 @@
         el.addEventListener('click', function () { current = el.dataset.id; render(); });
       });
       document.getElementById('refreshBtn').addEventListener('click', function () { invoke('refresh'); });
+      document.getElementById('updateBtn').addEventListener('click', function () {
+        if (latestUpdate && latestUpdate.release_url) {
+          invoke('open_release_page', { url: latestUpdate.release_url });
+        }
+      });
       document.getElementById('shotBtn').addEventListener('click', function () {
         // Render a data card to an offscreen canvas, then download as PNG.
         var c = document.createElement('canvas');
@@ -210,7 +218,13 @@
           return '<option value="' + k + '"' + (k === currentTheme ? ' selected' : '') + '>' + themes[k].title + '（' + themes[k].sub + '）</option>';
         }).join('');
         html += '<div class="card"><div class="card-title">主题配色</div><div class="setting-row"><div><div class="setting-label">界面主题</div><div class="setting-hint">切换整体配色方案，立即生效</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
-        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">0.1.0</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
+        // Update check card. If latestUpdate already shows a newer version,
+        // surface it immediately; otherwise the button re-probes on click.
+        var updHint = latestUpdate && latestUpdate.has_update
+          ? '<div class="update-result found">发现新版本 v' + latestUpdate.latest_version + ' · <a id="updDownloadLink" href="#">前往下载</a></div>'
+          : (latestUpdate ? '<div class="update-result">当前为最新版本</div>' : '<div class="update-result">点击下方按钮从 GitHub 检查新版本</div>');
+        html += '<div class="card"><div class="card-title">更新</div><div class="setting-row"><div><div class="setting-label">检查更新</div><div class="setting-hint">从 GitHub Releases 检查是否有新版本（不会自动下载安装）</div></div><button class="btn-primary" id="checkUpdateBtn">立即检查</button></div>' + updHint + '</div>';
+        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.0') + '</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
         return html;
       }
 
@@ -241,6 +255,29 @@
             window.TS.applyTheme(ts.value);
             invoke('set_theme', { theme: ts.value }).then(function (s) { settings = s; render(); });
           });
+          // "检查更新" button + download link on the update card.
+          var checkUpdateBtn = document.getElementById('checkUpdateBtn');
+          if (checkUpdateBtn) checkUpdateBtn.addEventListener('click', function () {
+            checkUpdateBtn.disabled = true;
+            checkUpdateBtn.textContent = '检查中…';
+            invoke('check_for_update').then(function (u) {
+              latestUpdate = u;
+              showUpdateIndicator(u);
+              render(); // re-render settings to reflect the result text
+              var btn = document.getElementById('checkUpdateBtn');
+              if (btn) { btn.disabled = false; btn.textContent = '立即检查'; }
+            }).catch(function () {
+              var btn = document.getElementById('checkUpdateBtn');
+              if (btn) { btn.disabled = false; btn.textContent = '立即检查'; }
+            });
+          });
+          var dlLink = document.getElementById('updDownloadLink');
+          if (dlLink) dlLink.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            if (latestUpdate && latestUpdate.release_url) {
+              invoke('open_release_page', { url: latestUpdate.release_url });
+            }
+          });
         }
         // Bind the CSV export button on the history view.
         var exportBtn = document.getElementById('exportCsvBtn');
@@ -257,6 +294,19 @@
       // events
       listen('refresh-finished', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
       listen('snapshot-updated', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
+      // Pushed by the Rust startup check / tray menu check when a newer release exists.
+      listen('update-available', function (e) {
+        latestUpdate = e.payload;
+        showUpdateIndicator(latestUpdate);
+      });
+
+      // Reveal the header update badge with a tooltip naming the new version.
+      function showUpdateIndicator(u) {
+        var btn = document.getElementById('updateBtn');
+        if (!btn || !u || !u.has_update) { if (btn) btn.style.display = 'none'; return; }
+        btn.style.display = '';
+        btn.title = '发现新版本 v' + u.latest_version + '，点击前往下载';
+      }
 
       render();
       updateHeader();

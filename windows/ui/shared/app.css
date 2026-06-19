@@ -662,6 +662,55 @@ input[type="number"]:focus {
   color: #ca8a04;
 }
 
+/* ---------- Update badge / result ---------- */
+/* Header bell/gift button with a pulsing red dot when a newer release exists. */
+.update-btn {
+  position: relative;
+}
+
+.update-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #dc2626;
+  border: 2px solid var(--surface);
+  animation: update-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes update-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+  50%      { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0); }
+}
+
+/* Settings-page "update" card result line. */
+.update-result {
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--canvas);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.update-result.found {
+  background: color-mix(in srgb, var(--green) 12%, var(--surface));
+  color: var(--green-dark);
+}
+
+.update-result a {
+  color: var(--green-dark);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-dot { animation: none; }
+}
+
 .empty {
   padding: 60px 20px;
   text-align: center;

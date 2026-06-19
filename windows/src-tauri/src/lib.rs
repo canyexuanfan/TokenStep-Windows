@@ -11,15 +11,17 @@ mod models;
 mod paths;
 mod pricing;
 mod settings;
+mod update;
 
 use models::{TokenStepSettings, UsageSnapshot};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WebviewWindowBuilder,
 };
+use tauri_plugin_shell::ShellExt;
 
 /// Shared state holding the latest snapshot + settings, refreshed by the timer
 /// and read by the frontend via commands.
@@ -84,6 +86,26 @@ fn set_theme(theme: String) -> Result<TokenStepSettings, String> {
     s.theme = theme;
     settings::save(&s).map_err(|e| e.to_string())?;
     Ok(settings::load())
+}
+
+/// Check GitHub for a newer release. Always succeeds — on network failure it
+/// returns an `UpdateCheck` with `has_update: false` rather than erroring, so
+/// the settings-page "check now" button never shows a hard error.
+#[tauri::command]
+fn check_for_update() -> update::UpdateCheck {
+    update::check()
+}
+
+/// Open a URL in the user's default browser (used by the update badge / tray
+/// item to send the user to the Releases page). Requires the `shell:allow-open`
+/// permission, already granted in capabilities/default.json.
+#[tauri::command]
+fn open_release_page(app: tauri::AppHandle, url: String) {
+    // `open` is deprecated in favor of tauri-plugin-opener, but switching plugins
+    // would add a dependency for a one-line feature. Keep it until the plugin is
+    // removed or the API hard-breaks.
+    #[allow(deprecated)]
+    let _ = app.shell().open(url, None);
 }
 
 /// Run a single collect pass on a background thread, then refresh shared state.
@@ -255,8 +277,14 @@ pub fn run() {
             // Build the tray menu.
             let open = MenuItem::with_id(app, "open", "打开仪表盘", true, None::<&str>)?;
             let refresh_item = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let check_update_item =
+                MenuItem::with_id(app, "check-update", "检查更新", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "退出 TokenStep", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &refresh_item, &quit])?;
+            let menu = Menu::with_items(
+                app,
+                &[&open, &refresh_item, &sep1, &check_update_item, &quit],
+            )?;
 
             // Tray icon: use the bundled app icon (most reliable on Windows).
             // The dynamic progress-ring redrawing via set_icon didn't render
@@ -275,6 +303,9 @@ pub fn run() {
                     }
                     "refresh" => {
                         run_refresh(app);
+                    }
+                    "check-update" => {
+                        check_update_from_menu(app);
                     }
                     "quit" => {
                         app.exit(0);
@@ -296,6 +327,27 @@ pub fn run() {
 
             // Kick off the first collection + render the real tray icon.
             run_refresh(app.handle());
+
+            // Background update check (startup). Mirrors macOS UpdateService:
+            // probe GitHub once on launch; on a hit, emit an event the UI
+            // listens for. Failures are swallowed inside update::check().
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let result = update::check();
+                if result.has_update {
+                    let _ = app_handle.emit("update-available", &result);
+                    // Reflect the finding in the tray menu label, so users who
+                    // never open the dashboard still see the new version.
+                    if let Some(item) = app_handle.menu().and_then(|m| m.get("check-update")) {
+                        if let Some(mi) = item.as_menuitem() {
+                            let _ = mi.set_text(format!(
+                                "发现新版本 v{} →",
+                                result.latest_version
+                            ));
+                        }
+                    }
+                }
+            });
 
             // Background refresh timer.
             let app_handle = app.handle().clone();
@@ -335,6 +387,8 @@ pub fn run() {
             set_theme,
             is_refreshing,
             refresh,
+            check_for_update,
+            open_release_page,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -344,6 +398,45 @@ pub fn run() {
 /// booting the full Tauri app.
 pub fn collect_for_check() -> models::UsageSnapshot {
     collector::collect()
+}
+
+/// Tray-menu "检查更新" handler. Runs the check off the UI thread, then:
+/// - on a hit: updates the menu label and opens the Releases page in a browser
+///   (the user clicked the menu item, so going straight to download is right);
+/// - on no update: flashes the label to "已是最新版" briefly, then reverts.
+///
+/// Menu label edits require finding the item via the app's menu; the menu was
+/// built with `Menu::with_items` and the item carries id "check-update".
+fn check_update_from_menu(app: &tauri::AppHandle) {
+    let app_handle = app.clone();
+    std::thread::spawn(move || {
+        let result = update::check();
+        if let Some(item) = app_handle.menu().and_then(|m| m.get("check-update")) {
+            if let Some(mi) = item.as_menuitem() {
+                if result.has_update {
+                    let _ = mi.set_text(format!("发现新版本 v{} →", result.latest_version));
+                    #[allow(deprecated)]
+                    let _ = app_handle
+                        .shell()
+                        .open(result.release_url.clone(), None);
+                    // Also notify the dashboard if it's open, so the badge appears.
+                    let _ = app_handle.emit("update-available", &result);
+                } else {
+                    let _ = mi.set_text("已是最新版");
+                    // Revert the label after a moment so the next open isn't stale.
+                    let app2 = app_handle.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                        if let Some(item) = app2.menu().and_then(|m| m.get("check-update")) {
+                            if let Some(mi) = item.as_menuitem() {
+                                let _ = mi.set_text("检查更新");
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    });
 }
 
 /// Show (or create) the dashboard window.
