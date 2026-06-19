@@ -1,0 +1,98 @@
+import SwiftUI
+
+struct StatsView: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        VStack(spacing: 22) {
+            HStack(spacing: 18) {
+                StatHeroMetric(label: "累计 AI 步数", value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), symbol: "figure.walk")
+                StatHeroMetric(label: "消耗金额", value: TokenStepFormat.money(appState.snapshot.totals.cost), symbol: "dollarsign.circle")
+                StatHeroMetric(label: "活跃天数", value: "\(appState.snapshot.totals.activeDays) 天", symbol: "flame")
+            }
+
+            HStack(alignment: .top, spacing: 22) {
+                usageList(title: "按客户端", subtitle: "累计总量分布", rows: appState.snapshot.tools.map {
+                    UsageStatRow(name: $0.tool, value: $0.tokens, percent: $0.percentValue, color: $0.displayColor)
+                })
+                usageList(title: "按模型", subtitle: "Top \(min(appState.snapshot.models.count, 10)) / \(appState.snapshot.models.count)", rows: appState.snapshot.models.prefix(10).map {
+                    UsageStatRow(name: $0.model, value: $0.tokens, percent: $0.percentValue, color: $0.displayColor)
+                })
+            }
+        }
+    }
+
+    private func usageList(title: String, subtitle: String, rows: [UsageStatRow]) -> some View {
+        TokenCard {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(title)
+                        .font(.title3.weight(.heavy))
+                        .foregroundStyle(Color.tokenInk)
+                    Spacer()
+                    Text(subtitle)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                if rows.isEmpty {
+                    Text("等待下一次同步")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
+                } else {
+                    ForEach(rows) { row in
+                        UsageProgressRow(
+                            name: row.name,
+                            value: "\(TokenStepFormat.tokens(row.value, compact: true)) · \(TokenStepFormat.percent(row.percent))",
+                            percent: row.percent,
+                            color: row.color
+                        )
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct StatHeroMetric: View {
+    var label: String
+    var value: String
+    var symbol: String
+
+    var body: some View {
+        TokenCard {
+            VStack(alignment: .leading, spacing: 15) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.tokenMint.opacity(0.24))
+                    Image(systemName: symbol)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Color.tokenGreenDark)
+                }
+                .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(value)
+                        .font(.system(size: 29, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Color.tokenInk)
+                        .minimumScaleFactor(0.62)
+                        .lineLimit(1)
+                    Text(label)
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct UsageStatRow: Identifiable {
+    var id: String { name }
+    var name: String
+    var value: Int
+    var percent: Double
+    var color: Color
+}
