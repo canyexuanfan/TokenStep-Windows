@@ -57,6 +57,7 @@ echo "Building $APP_NAME $VERSION..."
 TOKENSTEP_VERSION="$VERSION" "$ROOT_DIR/script/build_swiftui_and_run.sh" --no-launch
 
 echo "Signing app with Developer ID..."
+find "$APP_BUNDLE" \( -name ".DS_Store" -o -name "*.nssyncsc" \) -delete
 codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP_BUNDLE"
 codesign --verify --strict --verbose=2 "$APP_BUNDLE"
 
