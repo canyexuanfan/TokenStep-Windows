@@ -176,6 +176,18 @@ mod tests {
     }
 
     #[test]
+    fn windows_tag_suffix_is_compatible() {
+        // Our release tags carry a "-windows" suffix (e.g. v0.1.0-windows) to
+        // stay distinct from upstream macOS tags. The suffix must NOT make the
+        // tag compare as newer than the running build of the same version:
+        // v0.1.0-windows vs running 0.1.0 should be "equal" (no update), while
+        // v0.2.0-windows vs 0.1.0 should still report an update.
+        assert!(!is_newer("0.1.0-windows", "0.1.0"));
+        assert!(is_newer("0.2.0-windows", "0.1.0"));
+        assert!(is_newer("0.1.1-windows", "0.1.0"));
+    }
+
+    #[test]
     fn strip_prefix() {
         assert_eq!(super::strip_v_prefix("v0.2.0"), "0.2.0");
         assert_eq!(super::strip_v_prefix("V0.2.0"), "0.2.0");
