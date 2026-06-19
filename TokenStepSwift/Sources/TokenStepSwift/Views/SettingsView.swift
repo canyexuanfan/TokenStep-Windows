@@ -43,7 +43,7 @@ struct SettingsView: View {
                 Text("设置")
                     .font(.system(size: 34, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                Text("让 TokenStep 按你的节奏记录 AI 步数")
+                Text("让 TokenStep 按你的节奏记录 Token 消耗")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -156,7 +156,7 @@ struct SettingsView: View {
                         Text("登录后自动启动 TokenStep")
                             .font(.headline.weight(.heavy))
                             .foregroundStyle(Color.tokenInk)
-                        Text("像步数一样默默记录，避免漏掉每天的 AI 使用量。")
+                        Text("像步数一样默默记录，避免漏掉每天的 Token 消耗。")
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

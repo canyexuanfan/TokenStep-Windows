@@ -8,7 +8,7 @@ struct PrivacyView: View {
                     Text("本地优先")
                         .font(.title3.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
-                    PrivacyRow(index: 1, title: "只统计 token 数量", description: "用于计算今日 AI 步数、历史趋势和消耗金额。")
+                    PrivacyRow(index: 1, title: "只统计 token 数量", description: "用于计算今日 Token 消耗、历史趋势和消耗金额。")
                     PrivacyRow(index: 2, title: "不上传代码或对话", description: "所有数据文件都保留在这台 Mac 上。")
                     PrivacyRow(index: 3, title: "消耗金额仅供参考", description: "按本地价格表粗略估算，不等于真实账单。")
                 }

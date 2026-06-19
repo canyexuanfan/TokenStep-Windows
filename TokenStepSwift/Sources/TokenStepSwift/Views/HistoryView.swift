@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HistoryView: View {
     @EnvironmentObject private var appState: AppState
+    var historyLimit: Int? = nil
 
     var body: some View {
         VStack(spacing: 22) {
@@ -39,7 +40,7 @@ struct HistoryView: View {
                             Text("全部明细")
                                 .font(.title3.weight(.heavy))
                                 .foregroundStyle(Color.tokenInk)
-                            Text("\(appState.visibleHistoryRows.count) 条记录，向下滚动查看完整历史")
+                            Text(historySummaryText)
                                 .font(.callout.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
@@ -48,7 +49,7 @@ struct HistoryView: View {
 
                     LazyVStack(spacing: 0) {
                         header
-                        ForEach(appState.visibleHistoryRows) { row in
+                        ForEach(historyRows) { row in
                             HistoryRow(row: row, goal: appState.settings.dailyGoalTokens)
                         }
                     }
@@ -57,12 +58,24 @@ struct HistoryView: View {
         }
     }
 
+    private var historyRows: [DailyUsage] {
+        let rows = appState.visibleHistoryRows
+        guard let historyLimit else { return rows }
+        return Array(rows.prefix(historyLimit))
+    }
+
+    private var historySummaryText: String {
+        if let historyLimit {
+            return "最近 \(min(historyLimit, historyRows.count)) 天，适合保存为截图"
+        }
+        return "\(appState.visibleHistoryRows.count) 条记录，向下滚动查看完整历史"
+    }
+
     private var header: some View {
         HStack(spacing: 16) {
             Text("日期").frame(width: 118, alignment: .leading)
-            Text("AI 步数").frame(width: 126, alignment: .leading)
-            Text("圈数").frame(width: 110, alignment: .leading)
-            Text("消耗金额").frame(width: 112, alignment: .leading)
+            Text("Token 消耗").frame(width: 150, alignment: .leading)
+            Text("消耗金额").frame(width: 126, alignment: .leading)
             Text("主力工具").frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.caption.weight(.heavy))
@@ -76,9 +89,6 @@ struct HistoryView: View {
 private struct HistoryRow: View {
     var row: DailyUsage
     var goal: Int
-    private var lap: TokenStepLapProgress {
-        TokenStepLapProgress(tokens: row.totalTokens, goal: goal)
-    }
 
     var body: some View {
         HStack(spacing: 16) {
@@ -88,13 +98,9 @@ private struct HistoryRow: View {
             Text(TokenStepFormat.tokens(row.totalTokens))
                 .fontWeight(.heavy)
                 .foregroundStyle(Color.tokenInk)
-                .frame(width: 126, alignment: .leading)
-            Text(lapText)
-                .fontWeight(.heavy)
-                .foregroundStyle(row.totalTokens >= goal ? lap.color : .secondary)
-                .frame(width: 110, alignment: .leading)
+                .frame(width: 150, alignment: .leading)
             Text(TokenStepFormat.money(row.cost))
-                .frame(width: 112, alignment: .leading)
+                .frame(width: 126, alignment: .leading)
                 .foregroundStyle(Color.tokenInk.opacity(0.72))
             HStack(spacing: 8) {
                 Circle()
@@ -118,12 +124,5 @@ private struct HistoryRow: View {
 
     private var dominantTool: String {
         row.tools.max(by: { $0.value < $1.value })?.key ?? "无"
-    }
-
-    private var lapText: String {
-        if row.totalTokens >= max(goal, 1) {
-            return "\(lap.lapTitle) \(lap.lapPercentText)"
-        }
-        return TokenStepFormat.percent(lap.rawProgress * 100)
     }
 }

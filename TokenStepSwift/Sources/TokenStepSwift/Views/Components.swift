@@ -180,6 +180,43 @@ struct TokenCard<Content: View>: View {
     }
 }
 
+struct ScreenshotMenuButton: View {
+    var copyTitle: String
+    var saveTitle: String
+    var help: String
+    var copyAction: () -> Void
+    var saveAction: () -> Void
+
+    var body: some View {
+        Menu {
+            Button {
+                copyAction()
+            } label: {
+                Label(copyTitle, systemImage: "doc.on.clipboard")
+            }
+
+            Button {
+                saveAction()
+            } label: {
+                Label(saveTitle, systemImage: "square.and.arrow.down")
+            }
+        } label: {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(Color.tokenInk.opacity(0.76))
+                .frame(width: 34, height: 34)
+                .background(Color.tokenSurface, in: Circle())
+                .overlay(Circle().stroke(Color.black.opacity(0.07)))
+                .shadow(color: Color.black.opacity(0.055), radius: 9, x: 0, y: 5)
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
 struct UsageProgressRow: View {
     var name: String
     var value: String

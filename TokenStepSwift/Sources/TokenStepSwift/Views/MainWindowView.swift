@@ -19,7 +19,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var sidebarTitle: String {
         switch self {
-        case .today: "今日步数"
+        case .today: "今日消耗"
         case .history: "历史活动"
         case .stats: "用量统计"
         case .privacy: "隐私"
@@ -28,7 +28,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .today: "今天和 AI 一起走了多远"
+        case .today: "今天的 Token 使用节奏"
         case .history: "长期节奏和所有历史记录"
         case .stats: "按客户端和模型拆开看"
         case .privacy: "只统计数量，不读取内容"
@@ -41,6 +41,22 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .history: "square.grid.3x3.fill"
         case .stats: "chart.bar.xaxis"
         case .privacy: "lock.shield.fill"
+        }
+    }
+
+    var screenshotFilePrefix: String {
+        switch self {
+        case .today: "today"
+        case .history: "history-30d"
+        case .stats: "stats"
+        case .privacy: "privacy"
+        }
+    }
+
+    var saveScreenshotTitle: String {
+        switch self {
+        case .history: "保存当前页 PNG（最近 30 天）"
+        default: "保存当前页 PNG"
         }
     }
 }
@@ -169,22 +185,57 @@ struct MainWindowView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 9) {
-                HStack(spacing: 8) {
-                    Circle()
-                        .fill(appState.isRefreshing ? Color.secondary.opacity(0.7) : Color.tokenGreen)
-                        .frame(width: 7, height: 7)
-                    Text(appState.isRefreshing ? "同步中" : "已同步")
-                        .font(.callout.weight(.bold))
+                HStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(appState.isRefreshing ? Color.secondary.opacity(0.7) : Color.tokenGreen)
+                            .frame(width: 7, height: 7)
+                        Text(appState.isRefreshing ? "同步中" : "已同步")
+                            .font(.callout.weight(.bold))
+                    }
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .background(Color.tokenSurface, in: Capsule())
+                    .overlay(Capsule().stroke(Color.black.opacity(0.06)))
+
+                    ScreenshotMenuButton(
+                        copyTitle: "复制当前页截图",
+                        saveTitle: selection.saveScreenshotTitle,
+                        help: "截取当前页",
+                        copyAction: copyCurrentPageScreenshot,
+                        saveAction: saveCurrentPageScreenshot
+                    )
                 }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 8)
-                .background(Color.tokenSurface, in: Capsule())
-                .overlay(Capsule().stroke(Color.black.opacity(0.06)))
 
                 Text("更新 \(TokenStepFormat.generatedTime(appState.snapshot.generatedAt))")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var currentPageScreenshot: some View {
+        DashboardScreenshotView(section: selection)
+            .environmentObject(appState)
+            .environment(\.isScreenshotRendering, true)
+    }
+
+    private func copyCurrentPageScreenshot() {
+        do {
+            try ScreenshotExporter.copy(currentPageScreenshot)
+        } catch {
+            appState.lastError = error.localizedDescription
+        }
+    }
+
+    private func saveCurrentPageScreenshot() {
+        do {
+            try ScreenshotExporter.save(
+                currentPageScreenshot,
+                suggestedFileName: ScreenshotExporter.suggestedFileName(prefix: selection.screenshotFilePrefix)
+            )
+        } catch {
+            appState.lastError = error.localizedDescription
         }
     }
 

@@ -6,7 +6,7 @@ struct StatsView: View {
     var body: some View {
         VStack(spacing: 22) {
             HStack(spacing: 18) {
-                StatHeroMetric(label: "累计 AI 步数", value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), symbol: "figure.walk")
+                StatHeroMetric(label: "累计 Token 消耗", value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), symbol: "figure.walk")
                 StatHeroMetric(label: "消耗金额", value: TokenStepFormat.money(appState.snapshot.totals.cost), symbol: "dollarsign.circle")
                 StatHeroMetric(label: "活跃天数", value: "\(appState.snapshot.totals.activeDays) 天", symbol: "flame")
             }

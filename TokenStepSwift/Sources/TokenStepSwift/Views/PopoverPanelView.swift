@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PopoverPanelView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.isScreenshotRendering) private var isScreenshotRendering
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -31,7 +32,7 @@ struct PopoverPanelView: View {
                 Text("TokenStep")
                     .font(.system(size: 24, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                Text("像步数一样记录 AI 使用量")
+                Text("每日 Token 消耗追踪")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -48,6 +49,16 @@ struct PopoverPanelView: View {
             .padding(.vertical, 7)
             .background(Color.tokenSurface, in: Capsule())
             .overlay(Capsule().stroke(Color.black.opacity(0.055)))
+
+            if !isScreenshotRendering {
+                ScreenshotMenuButton(
+                    copyTitle: "复制浮层截图",
+                    saveTitle: "保存浮层 PNG",
+                    help: "截取浮层",
+                    copyAction: copyPopoverScreenshot,
+                    saveAction: savePopoverScreenshot
+                )
+            }
         }
     }
 
@@ -56,7 +67,7 @@ struct PopoverPanelView: View {
         return TokenCard {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("今日 AI 步数")
+                    Text("今日 Token 消耗")
                         .font(.headline.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
                     Spacer()
@@ -170,6 +181,31 @@ struct PopoverPanelView: View {
                     NSApplication.shared.terminate(nil)
                 }
             }
+        }
+    }
+
+    private var popoverScreenshot: some View {
+        PopoverPanelView()
+            .environmentObject(appState)
+            .environment(\.isScreenshotRendering, true)
+    }
+
+    private func copyPopoverScreenshot() {
+        do {
+            try ScreenshotExporter.copy(popoverScreenshot)
+        } catch {
+            appState.lastError = error.localizedDescription
+        }
+    }
+
+    private func savePopoverScreenshot() {
+        do {
+            try ScreenshotExporter.save(
+                popoverScreenshot,
+                suggestedFileName: ScreenshotExporter.suggestedFileName(prefix: "popover")
+            )
+        } catch {
+            appState.lastError = error.localizedDescription
         }
     }
 
