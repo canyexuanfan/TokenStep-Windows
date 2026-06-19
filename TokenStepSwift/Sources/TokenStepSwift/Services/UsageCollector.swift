@@ -60,9 +60,9 @@ enum UsageCollector {
         }
 
         let records = rows.compactMap { row -> UsageRecord? in
-            let tokens = integerValue(row["tokens_used"])
+            let tokens = integerValue(row["tokens_used"] as Any)
             guard tokens > 0,
-                  let day = dayString(fromEpoch: row["created_at"])
+                  let day = dayString(fromEpoch: row["created_at"] as Any)
             else {
                 return nil
             }
@@ -598,7 +598,7 @@ private struct CollectorResult {
 }
 
 private struct CollectorCache: Codable {
-    static let currentVersion = 1
+    static let currentVersion = 2
 
     var version = currentVersion
     var files: [String: CachedUsageFile] = [:]

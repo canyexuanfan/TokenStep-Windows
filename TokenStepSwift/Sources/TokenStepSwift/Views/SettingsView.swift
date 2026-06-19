@@ -19,6 +19,7 @@ struct SettingsView: View {
 
                     LazyVGrid(columns: columns, spacing: 18) {
                         dailyGoalCard
+                        themeCard
                         refreshCard
                         updateCard
                         autostartCard
@@ -140,6 +141,37 @@ struct SettingsView: View {
                     symbol: appState.settings.refreshIntervalSeconds == 0 ? "hand.raised.fill" : "timer",
                     title: "当前节奏",
                     value: appState.settings.refreshIntervalSeconds == 0 ? "手动更新" : "每 \(TokenStepFormat.intervalLabel(appState.settings.refreshIntervalSeconds))",
+                    tint: .tokenGreen
+                )
+
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var themeCard: some View {
+        SettingsCard(title: "主题色", symbol: "paintpalette.fill") {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("菜单栏、圆环、活动墙和按钮会一起跟随主题变化。")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 9) {
+                    ForEach(TokenStepTheme.allCases) { theme in
+                        ThemeSwatchButton(
+                            theme: theme,
+                            selected: appState.settings.theme == theme
+                        ) {
+                            appState.setTheme(theme)
+                        }
+                    }
+                }
+
+                StatusLine(
+                    symbol: "sparkles",
+                    title: "当前主题",
+                    value: appState.settings.theme.title,
                     tint: .tokenGreen
                 )
 
@@ -294,6 +326,7 @@ struct SettingsView: View {
             Button {
                 appState.setGoal(TokenStepSettings.defaults.dailyGoalTokens)
                 appState.setRefreshInterval(TokenStepSettings.defaults.refreshIntervalSeconds)
+                appState.setTheme(TokenStepSettings.defaults.theme)
                 appState.setAutoUpdateEnabled(TokenStepSettings.defaults.autoUpdateEnabled)
                 appState.setAskBeforeDownloadingUpdates(TokenStepSettings.defaults.askBeforeDownloadingUpdates)
                 appState.setRequireVerifiedUpdates(TokenStepSettings.defaults.requireVerifiedUpdates)
@@ -398,6 +431,60 @@ private struct GoalStepButton: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.black.opacity(0.05)))
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct ThemeSwatchButton: View {
+    var theme: TokenStepTheme
+    var selected: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 7) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    theme.palette.accentSoft.color,
+                                    theme.palette.accent.color,
+                                    theme.palette.accentDark.color
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 38, height: 38)
+                        .shadow(color: theme.palette.accentDark.color.opacity(selected ? 0.22 : 0.10), radius: 8, x: 0, y: 4)
+
+                    if selected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+                }
+
+                VStack(spacing: 1) {
+                    Text(theme.title)
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(selected ? Color.tokenInk : Color.tokenInk.opacity(0.74))
+                    Text(theme.subtitle)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 88)
+            .background(selected ? theme.palette.accentSoft.color.opacity(0.22) : Color.tokenTrack.opacity(0.24), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(selected ? theme.palette.accent.color.opacity(0.46) : Color.black.opacity(0.045), lineWidth: selected ? 1.4 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("切换到\(theme.title)主题")
     }
 }
 

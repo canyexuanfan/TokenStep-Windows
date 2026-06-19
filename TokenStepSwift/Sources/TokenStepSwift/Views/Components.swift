@@ -5,6 +5,7 @@ struct StatusBarLabelView: View {
     var tokens: Int
     var lap: TokenStepLapProgress
     var refreshing: Bool
+    var theme: TokenStepTheme
 
     var body: some View {
         HStack(spacing: 7) {
@@ -13,6 +14,7 @@ struct StatusBarLabelView: View {
                 .interpolation(.high)
                 .frame(width: 22, height: 22)
                 .accessibilityLabel("\(lap.lapTitle) \(lap.lapPercentText)")
+                .id(theme.id)
 
             Text(TokenStepFormat.tokens(tokens, compact: true))
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -356,6 +358,6 @@ func contributionColor(tokens: Int, goal: Int) -> Color {
     case 0.65...: return .tokenGreenDark
     case 0.35..<0.65: return .tokenGreen
     case 0.12..<0.35: return .tokenMint
-    default: return Color(red: 216 / 255, green: 243 / 255, blue: 220 / 255)
+    default: return .tokenLowActivity
     }
 }

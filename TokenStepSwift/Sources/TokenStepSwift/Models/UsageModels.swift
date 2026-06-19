@@ -86,6 +86,7 @@ struct TokenStepSettings: Codable {
     var dailyGoalTokens: Int
     var refreshIntervalSeconds: Int
     var historyDays: Int
+    var theme: TokenStepTheme
     var autoUpdateEnabled: Bool
     var askBeforeDownloadingUpdates: Bool
     var requireVerifiedUpdates: Bool
@@ -95,6 +96,7 @@ struct TokenStepSettings: Codable {
         case dailyGoalTokens = "daily_goal_tokens"
         case refreshIntervalSeconds = "refresh_interval_seconds"
         case historyDays = "history_days"
+        case theme
         case autoUpdateEnabled = "auto_update_enabled"
         case askBeforeDownloadingUpdates = "ask_before_downloading_updates"
         case requireVerifiedUpdates = "require_verified_updates"
@@ -105,6 +107,7 @@ struct TokenStepSettings: Codable {
         dailyGoalTokens: 100_000_000,
         refreshIntervalSeconds: 60,
         historyDays: 180,
+        theme: .green,
         autoUpdateEnabled: true,
         askBeforeDownloadingUpdates: true,
         requireVerifiedUpdates: true,
@@ -115,6 +118,7 @@ struct TokenStepSettings: Codable {
         dailyGoalTokens: Int,
         refreshIntervalSeconds: Int,
         historyDays: Int,
+        theme: TokenStepTheme,
         autoUpdateEnabled: Bool,
         askBeforeDownloadingUpdates: Bool,
         requireVerifiedUpdates: Bool,
@@ -123,6 +127,7 @@ struct TokenStepSettings: Codable {
         self.dailyGoalTokens = dailyGoalTokens
         self.refreshIntervalSeconds = refreshIntervalSeconds
         self.historyDays = historyDays
+        self.theme = theme
         self.autoUpdateEnabled = autoUpdateEnabled
         self.askBeforeDownloadingUpdates = askBeforeDownloadingUpdates
         self.requireVerifiedUpdates = requireVerifiedUpdates
@@ -135,6 +140,8 @@ struct TokenStepSettings: Codable {
         dailyGoalTokens = try container.decodeIfPresent(Int.self, forKey: .dailyGoalTokens) ?? defaults.dailyGoalTokens
         refreshIntervalSeconds = try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? defaults.refreshIntervalSeconds
         historyDays = try container.decodeIfPresent(Int.self, forKey: .historyDays) ?? defaults.historyDays
+        let themeID = try container.decodeIfPresent(String.self, forKey: .theme)
+        theme = themeID.flatMap(TokenStepTheme.init(rawValue:)) ?? defaults.theme
         autoUpdateEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoUpdateEnabled) ?? defaults.autoUpdateEnabled
         askBeforeDownloadingUpdates = try container.decodeIfPresent(Bool.self, forKey: .askBeforeDownloadingUpdates) ?? defaults.askBeforeDownloadingUpdates
         requireVerifiedUpdates = try container.decodeIfPresent(Bool.self, forKey: .requireVerifiedUpdates) ?? defaults.requireVerifiedUpdates

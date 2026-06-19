@@ -24,7 +24,8 @@ struct TokenStepApp: App {
             StatusBarLabelView(
                 tokens: appState.today.totalTokens,
                 lap: appState.todayLap,
-                refreshing: appState.isRefreshing
+                refreshing: appState.isRefreshing,
+                theme: appState.settings.theme
             )
         }
         .menuBarExtraStyle(.window)

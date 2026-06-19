@@ -30,7 +30,15 @@ enum TokenStepFormat {
 
     static func generatedTime(_ value: String?) -> String {
         guard let value, !value.isEmpty else { return "等待同步" }
-        return value.replacingOccurrences(of: "T", with: " ").prefix(16).description
+        guard let date = isoDate(value) else {
+            return value.replacingOccurrences(of: "T", with: " ").prefix(16).description
+        }
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        return formatter.string(from: date)
     }
 
     static func intervalLabel(_ seconds: Int) -> String {
@@ -45,6 +53,25 @@ enum TokenStepFormat {
         let text = String(format: "%.\(digits)f", value)
         return text.replacingOccurrences(of: #"(\.0+|(?<=\.\d)0+)$"#, with: "", options: .regularExpression)
     }
+
+    private static func isoDate(_ value: String) -> Date? {
+        if let date = isoFormatterWithFractional.date(from: value) {
+            return date
+        }
+        return isoFormatter.date(from: value)
+    }
+
+    private static let isoFormatterWithFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }
 
 extension DateFormatter {
@@ -59,12 +86,13 @@ extension DateFormatter {
 
 extension Color {
     static let tokenInk = Color(red: 31 / 255, green: 41 / 255, blue: 55 / 255)
-    static let tokenCanvas = Color(red: 247 / 255, green: 250 / 255, blue: 247 / 255)
-    static let tokenSurface = Color(red: 255 / 255, green: 255 / 255, blue: 252 / 255)
-    static let tokenGreen = Color(red: 45 / 255, green: 164 / 255, blue: 78 / 255)
-    static let tokenGreenDark = Color(red: 33 / 255, green: 110 / 255, blue: 57 / 255)
-    static let tokenMint = Color(red: 155 / 255, green: 233 / 255, blue: 168 / 255)
-    static let tokenTrack = Color(red: 235 / 255, green: 237 / 255, blue: 240 / 255)
+    static var tokenCanvas: Color { TokenStepThemeRuntime.palette.canvas.color }
+    static var tokenSurface: Color { TokenStepThemeRuntime.palette.surface.color }
+    static var tokenGreen: Color { TokenStepThemeRuntime.palette.accent.color }
+    static var tokenGreenDark: Color { TokenStepThemeRuntime.palette.accentDark.color }
+    static var tokenMint: Color { TokenStepThemeRuntime.palette.accentSoft.color }
+    static var tokenTrack: Color { TokenStepThemeRuntime.palette.track.color }
+    static var tokenLowActivity: Color { TokenStepThemeRuntime.palette.lowActivity.color }
 }
 
 extension ToolUsage {

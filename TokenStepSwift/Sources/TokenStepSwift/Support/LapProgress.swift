@@ -59,11 +59,7 @@ struct TokenStepLapProgress {
     }
 
     static func rgb(for lap: Int) -> (red: Double, green: Double, blue: Double) {
-        switch max(lap, 1) {
-        case 1: return (64 / 255, 196 / 255, 99 / 255)
-        case 2: return (48 / 255, 161 / 255, 78 / 255)
-        case 3: return (33 / 255, 110 / 255, 57 / 255)
-        default: return (14 / 255, 68 / 255, 41 / 255)
-        }
+        let rgb = TokenStepThemeRuntime.palette.ringRGB(for: lap)
+        return (rgb.red, rgb.green, rgb.blue)
     }
 }

@@ -45,6 +45,7 @@ enum DataService {
             dailyGoalTokens: max(1_000_000, settings.dailyGoalTokens),
             refreshIntervalSeconds: intervals.contains(settings.refreshIntervalSeconds) ? settings.refreshIntervalSeconds : 60,
             historyDays: min(365, max(7, settings.historyDays)),
+            theme: settings.theme,
             autoUpdateEnabled: settings.autoUpdateEnabled,
             askBeforeDownloadingUpdates: settings.askBeforeDownloadingUpdates,
             requireVerifiedUpdates: settings.requireVerifiedUpdates,
