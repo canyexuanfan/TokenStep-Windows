@@ -478,10 +478,13 @@
       var _origRender = render;
       render = function () {
         _origRender();
+        // Always sync the active language so refreshHeaderI18n/t() see the
+        // current setting even when applyLanguage is skipped (zhHans case).
+        window.__tsLang = settings.language || 'zhHans';
         if (typeof applyLanguage === 'function' && settings.language && settings.language !== 'zhHans') {
           applyLanguage(settings.language);
         }
-        // Header elements live outside #view; refresh their language too.
+        // Header + sidebar elements live outside #view; refresh their language.
         refreshHeaderI18n();
       };
 
