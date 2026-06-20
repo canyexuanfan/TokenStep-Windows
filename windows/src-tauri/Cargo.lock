@@ -3802,6 +3802,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "glob",
+ "open",
  "parking_lot",
  "png 0.17.16",
  "reqwest 0.12.28",

@@ -53,6 +53,7 @@
       var settings = initialSettings || { daily_goal_tokens: 100000000, refresh_interval_seconds: 60, history_days: 180 };
       var snapshot = initialSnapshot || { totals:{tokens:0,cost:0,active_days:0}, daily:[], tools:[], models:[], sources:{} };
       var current = 'today';
+      var latestUpdate = null;
       var SECTIONS = [
         { id:'today', title:'今日', sidebar:'今日步数', sub:'今天和 AI 一起走了多远', icon: ICONS.walk },
         { id:'history', title:'历史', sidebar:'历史活动', sub:'长期节奏和所有历史记录', icon: ICONS.grid },
@@ -64,7 +65,7 @@
       // Build the full app shell (same as before but proven-safe).
       document.getElementById('app').innerHTML =
         '<aside class="sidebar"><div class="brand"><div class="brand-mark"><img src="../shared/logo.png" alt="TokenStep" style="width:36px;height:36px"/></div><div class="brand-text"><h1>TokenStep</h1><p>每天一个亿</p></div></div><nav class="nav" id="nav"></nav><div class="sidebar-spacer"></div><div class="privacy-badge"><span>' + ICONS.shield + '</span><div><div class="pb-title">本地统计</div><div class="pb-sub">不上传代码或对话</div></div></div></aside>' +
-        '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn" style="padding:6px 12px;margin-left:6px" id="shotBtn" title="截图">📷</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
+        '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn" style="padding:6px 10px;margin-left:6px;display:none" id="updateBtn" title="发现新版本">🎁</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="shotBtn" title="截图">📷</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
 
       // Nav
       document.getElementById('nav').innerHTML = SECTIONS.map(function (s) {
@@ -73,6 +74,21 @@
       document.querySelectorAll('.nav-item').forEach(function (el) {
         el.addEventListener('click', function () { current = el.dataset.id; render(); });
       });
+      // Update badge in the header: click → open GitHub release page.
+      document.getElementById('updateBtn').addEventListener('click', function () {
+        if (latestUpdate && latestUpdate.release_url) {
+          invoke('open_release_page', { url: latestUpdate.release_url });
+        }
+      });
+      // Auto-check for updates on startup (non-blocking, silent).
+      invoke('check_for_update').then(function (u) {
+        latestUpdate = u;
+        var btn = document.getElementById('updateBtn');
+        if (btn && u.has_update) {
+          btn.style.display = '';
+          btn.title = '发现新版本 v' + u.latest_version + '，点击前往下载';
+        }
+      }).catch(function () { /* silent fail */ });
       document.getElementById('refreshBtn').addEventListener('click', function () {
         var eb = document.getElementById('errorBanner');
         if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">刷新中…</div>';
@@ -253,8 +269,13 @@
           return '<option value="' + k + '"' + (k === currentTheme ? ' selected' : '') + '>' + themes[k].title + '（' + themes[k].sub + '）</option>';
         }).join('');
         html += '<div class="card"><div class="card-title">主题配色</div><div class="setting-row"><div><div class="setting-label">界面主题</div><div class="setting-hint">切换整体配色方案，立即生效</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
+        // Update check card.
+        var updHint = latestUpdate && latestUpdate.has_update
+          ? '<div style="margin-top:10px;padding:10px;background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:10px;font-weight:700;color:var(--green-dark)">🎉 发现新版本 v' + latestUpdate.latest_version + ' · <a id="updDownloadLink" href="#" style="color:var(--green-dark);text-decoration:underline">前往下载</a></div>'
+          : (latestUpdate ? '<div style="margin-top:10px;color:var(--muted)">当前为最新版本 v' + latestUpdate.current_version + '</div>' : '<div style="margin-top:10px;color:var(--muted)">点击下方按钮从 GitHub 检查新版本</div>');
+        html += '<div class="card"><div class="card-title">更新</div><div class="setting-row"><div><div class="setting-label">检查更新</div><div class="setting-hint">从 GitHub Releases 检查是否有新版本</div></div><button class="btn" id="checkUpdateBtn">立即检查</button></div>' + updHint + '</div>';
         html += '<div class="card"><div class="card-title">截图</div><div class="setting-row"><div><div class="setting-label">截图保存位置</div><div class="setting-hint" id="screenshotDirHint">' + (settings.screenshot_dir ? settings.screenshot_dir : '默认：程序所在目录') + '</div></div><button class="btn" id="pickScreenshotDirBtn">选择文件夹</button></div></div>';
-        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">0.1.0</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
+        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.0') + '</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
         return html;
       }
 
@@ -297,6 +318,31 @@
                 });
               }
             });
+          });
+          // Update check button + download link.
+          var checkUpdateBtn = document.getElementById('checkUpdateBtn');
+          if (checkUpdateBtn) checkUpdateBtn.addEventListener('click', function () {
+            checkUpdateBtn.disabled = true;
+            checkUpdateBtn.textContent = '检查中…';
+            invoke('check_for_update').then(function (u) {
+              latestUpdate = u;
+              var hdr = document.getElementById('updateBtn');
+              if (hdr) hdr.style.display = u.has_update ? '' : 'none';
+              if (hdr && u.has_update) hdr.title = '发现新版本 v' + u.latest_version + '，点击前往下载';
+              render();
+              var btn2 = document.getElementById('checkUpdateBtn');
+              if (btn2) { btn2.disabled = false; btn2.textContent = '立即检查'; }
+            }).catch(function () {
+              var btn2 = document.getElementById('checkUpdateBtn');
+              if (btn2) { btn2.disabled = false; btn2.textContent = '检查失败，稍后重试'; }
+            });
+          });
+          var dlLink = document.getElementById('updDownloadLink');
+          if (dlLink) dlLink.addEventListener('click', function (ev) {
+            ev.preventDefault();
+            if (latestUpdate && latestUpdate.release_url) {
+              invoke('open_release_page', { url: latestUpdate.release_url });
+            }
           });
         }
         // Bind the CSV export button on the history view.

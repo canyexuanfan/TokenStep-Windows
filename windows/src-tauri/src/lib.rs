@@ -443,6 +443,8 @@ pub fn run() {
             save_screenshot,
             set_screenshot_dir,
             pick_folder,
+            check_for_update,
+            open_release_page,
             is_refreshing,
             refresh,
             check_for_update,
