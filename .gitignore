@@ -19,6 +19,7 @@ windows/src-tauri/gen/schemas/
 # Stray device-name file accidentally created by Windows shell redirects
 nul
 # Built release artifacts — distribute via GitHub Releases, not in the repo
+/TokenStep.exe
 /TokenStep_*.exe
 /TokenStep*.dmg
 /TokenStep*.zip

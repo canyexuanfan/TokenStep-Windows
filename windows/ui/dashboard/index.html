@@ -53,10 +53,6 @@
       var settings = initialSettings || { daily_goal_tokens: 100000000, refresh_interval_seconds: 60, history_days: 180 };
       var snapshot = initialSnapshot || { totals:{tokens:0,cost:0,active_days:0}, daily:[], tools:[], models:[], sources:{} };
       var current = 'today';
-      // Latest update probe result, set either by the startup check (event)
-      // or the settings-page "check now" button. null = not yet known.
-      var latestUpdate = null;
-
       var SECTIONS = [
         { id:'today', title:'今日', sidebar:'今日步数', sub:'今天和 AI 一起走了多远', icon: ICONS.walk },
         { id:'history', title:'历史', sidebar:'历史活动', sub:'长期节奏和所有历史记录', icon: ICONS.grid },
@@ -68,7 +64,7 @@
       // Build the full app shell (same as before but proven-safe).
       document.getElementById('app').innerHTML =
         '<aside class="sidebar"><div class="brand"><div class="brand-mark"><img src="../shared/logo.png" alt="TokenStep" style="width:36px;height:36px"/></div><div class="brand-text"><h1>TokenStep</h1><p>每天一个亿</p></div></div><nav class="nav" id="nav"></nav><div class="sidebar-spacer"></div><div class="privacy-badge"><span>' + ICONS.shield + '</span><div><div class="pb-title">本地统计</div><div class="pb-sub">不上传代码或对话</div></div></div></aside>' +
-        '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn update-btn" style="padding:6px 10px;margin-left:6px;display:none;position:relative" id="updateBtn" title="发现新版本">🎁<span class="update-dot"></span></button><button class="btn" style="padding:6px 12px;margin-left:6px" id="shotBtn" title="截图">📷</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
+        '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn" style="padding:6px 12px;margin-left:6px" id="shotBtn" title="截图">📷</button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
 
       // Nav
       document.getElementById('nav').innerHTML = SECTIONS.map(function (s) {
@@ -77,32 +73,71 @@
       document.querySelectorAll('.nav-item').forEach(function (el) {
         el.addEventListener('click', function () { current = el.dataset.id; render(); });
       });
-      document.getElementById('refreshBtn').addEventListener('click', function () { invoke('refresh'); });
-      document.getElementById('updateBtn').addEventListener('click', function () {
-        if (latestUpdate && latestUpdate.release_url) {
-          invoke('open_release_page', { url: latestUpdate.release_url });
-        }
+      document.getElementById('refreshBtn').addEventListener('click', function () {
+        var eb = document.getElementById('errorBanner');
+        if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">刷新中…</div>';
+        var dot = document.getElementById('syncDot');
+        var txt = document.getElementById('syncText');
+        if (dot) dot.classList.add('busy');
+        if (txt) txt.textContent = '同步中…';
+        this.disabled = true;
+        this.classList.add('refreshing');
+        var self = this;
+        var t0 = Date.now();
+        window.TS.invoke('refresh').then(function () {
+          return window.TS.invoke('get_snapshot');
+        }).then(function (s) {
+          snapshot = s; render(); updateHeader();
+          // Ensure "同步中…" stays visible at least 800ms so the user sees it.
+          var elapsed = Date.now() - t0;
+          var finish = function () {
+            if (dot) dot.classList.remove('busy');
+            if (txt) txt.textContent = '已同步';
+            self.disabled = false;
+            self.classList.remove('refreshing');
+            if (eb) eb.innerHTML = '';
+          };
+          if (elapsed < 800) setTimeout(finish, 800 - elapsed); else finish();
+        }).catch(function (e) {
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">刷新失败: ' + (e && e.message ? e.message : e) + '</div>';
+          if (txt) txt.textContent = '同步失败';
+          if (dot) dot.classList.remove('busy');
+          self.disabled = false;
+          self.classList.remove('refreshing');
+        });
       });
       document.getElementById('shotBtn').addEventListener('click', function () {
-        // Render a data card to an offscreen canvas, then download as PNG.
-        var c = document.createElement('canvas');
-        c.width = 720; c.height = 420;
-        var t = todayDaily();
-        window.TS.renderDataCard(c, {
-          today: t,
-          settings: settings,
-          active_days: snapshot.totals.active_days,
-          total_tokens: snapshot.totals.tokens,
-        });
-        c.toBlob(function (blob) {
-          var url = URL.createObjectURL(blob);
-          var a = document.createElement('a');
-          a.href = url;
-          var d = new Date().toISOString().slice(0, 10);
-          a.download = 'TokenStep-today-' + d + '.png';
-          document.body.appendChild(a); a.click(); document.body.removeChild(a);
-          setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
-        }, 'image/png');
+        var eb = document.getElementById('errorBanner');
+        try {
+          var c = document.createElement('canvas');
+          c.width = 720; c.height = 420;
+          var t = todayDaily();
+          window.TS.renderDataCard(c, {
+            today: t,
+            settings: settings,
+            active_days: snapshot.totals.active_days,
+            total_tokens: snapshot.totals.tokens,
+          });
+          // toDataURL gives a base64 PNG; decode to bytes for the Rust save dialog.
+          var dataUrl = c.toDataURL('image/png');
+          var b64 = dataUrl.split(',')[1];
+          // Send as a JSON string so Tauri serializes it; Rust side expects Vec<u8>.
+          var bin = atob(b64);
+          var arr = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          window.TS.invoke('save_screenshot', { data: Array.from(arr) }).then(function (path) {
+            if (path) {
+              if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">截图已保存到：<br>' + path + '</div>';
+            } else {
+              if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee;border-radius:8px">截图保存失败</div>';
+            }
+            setTimeout(function () { if (eb) eb.innerHTML = ''; }, 4000);
+          }).catch(function (e) {
+            if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">保存失败: ' + (e && e.message ? e.message : e) + '</div>';
+          });
+        } catch (e) {
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">截图失败: ' + (e && e.message ? e.message : e) + '</div>';
+        }
       });
 
       function todayDaily() {
@@ -218,13 +253,8 @@
           return '<option value="' + k + '"' + (k === currentTheme ? ' selected' : '') + '>' + themes[k].title + '（' + themes[k].sub + '）</option>';
         }).join('');
         html += '<div class="card"><div class="card-title">主题配色</div><div class="setting-row"><div><div class="setting-label">界面主题</div><div class="setting-hint">切换整体配色方案，立即生效</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
-        // Update check card. If latestUpdate already shows a newer version,
-        // surface it immediately; otherwise the button re-probes on click.
-        var updHint = latestUpdate && latestUpdate.has_update
-          ? '<div class="update-result found">发现新版本 v' + latestUpdate.latest_version + ' · <a id="updDownloadLink" href="#">前往下载</a></div>'
-          : (latestUpdate ? '<div class="update-result">当前为最新版本</div>' : '<div class="update-result">点击下方按钮从 GitHub 检查新版本</div>');
-        html += '<div class="card"><div class="card-title">更新</div><div class="setting-row"><div><div class="setting-label">检查更新</div><div class="setting-hint">从 GitHub Releases 检查是否有新版本（不会自动下载安装）</div></div><button class="btn-primary" id="checkUpdateBtn">立即检查</button></div>' + updHint + '</div>';
-        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.0') + '</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
+        html += '<div class="card"><div class="card-title">截图</div><div class="setting-row"><div><div class="setting-label">截图保存位置</div><div class="setting-hint" id="screenshotDirHint">' + (settings.screenshot_dir ? settings.screenshot_dir : '默认：程序所在目录') + '</div></div><button class="btn" id="pickScreenshotDirBtn">选择文件夹</button></div></div>';
+        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">0.1.0</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
         return html;
       }
 
@@ -255,28 +285,18 @@
             window.TS.applyTheme(ts.value);
             invoke('set_theme', { theme: ts.value }).then(function (s) { settings = s; render(); });
           });
-          // "检查更新" button + download link on the update card.
-          var checkUpdateBtn = document.getElementById('checkUpdateBtn');
-          if (checkUpdateBtn) checkUpdateBtn.addEventListener('click', function () {
-            checkUpdateBtn.disabled = true;
-            checkUpdateBtn.textContent = '检查中…';
-            invoke('check_for_update').then(function (u) {
-              latestUpdate = u;
-              showUpdateIndicator(u);
-              render(); // re-render settings to reflect the result text
-              var btn = document.getElementById('checkUpdateBtn');
-              if (btn) { btn.disabled = false; btn.textContent = '立即检查'; }
-            }).catch(function () {
-              var btn = document.getElementById('checkUpdateBtn');
-              if (btn) { btn.disabled = false; btn.textContent = '立即检查'; }
+          // Screenshot save-folder picker.
+          var pickBtn = document.getElementById('pickScreenshotDirBtn');
+          if (pickBtn) pickBtn.addEventListener('click', function () {
+            invoke('pick_folder').then(function (dir) {
+              if (dir) {
+                invoke('set_screenshot_dir', { dir: dir }).then(function (s) {
+                  settings = s;
+                  var hint = document.getElementById('screenshotDirHint');
+                  if (hint) hint.textContent = dir;
+                });
+              }
             });
-          });
-          var dlLink = document.getElementById('updDownloadLink');
-          if (dlLink) dlLink.addEventListener('click', function (ev) {
-            ev.preventDefault();
-            if (latestUpdate && latestUpdate.release_url) {
-              invoke('open_release_page', { url: latestUpdate.release_url });
-            }
           });
         }
         // Bind the CSV export button on the history view.
@@ -295,19 +315,6 @@
       listen('refresh-finished', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
       listen('snapshot-updated', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
       // Pushed by the Rust startup check / tray menu check when a newer release exists.
-      listen('update-available', function (e) {
-        latestUpdate = e.payload;
-        showUpdateIndicator(latestUpdate);
-      });
-
-      // Reveal the header update badge with a tooltip naming the new version.
-      function showUpdateIndicator(u) {
-        var btn = document.getElementById('updateBtn');
-        if (!btn || !u || !u.has_update) { if (btn) btn.style.display = 'none'; return; }
-        btn.style.display = '';
-        btn.title = '发现新版本 v' + u.latest_version + '，点击前往下载';
-      }
-
       render();
       updateHeader();
     }

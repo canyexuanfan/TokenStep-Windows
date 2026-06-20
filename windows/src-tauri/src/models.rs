@@ -130,6 +130,9 @@ pub struct TokenStepSettings {
     /// Color theme: green (default) / ocean / violet / amber / graphite.
     #[serde(rename = "theme", default = "default_theme")]
     pub theme: String,
+    /// Directory where screenshots are saved by default (empty = exe dir).
+    #[serde(rename = "screenshot_dir", default)]
+    pub screenshot_dir: String,
 }
 
 fn default_true() -> bool {
@@ -148,6 +151,7 @@ impl Default for TokenStepSettings {
             history_days: 180,
             close_to_tray: true,
             theme: "green".to_string(),
+            screenshot_dir: String::new(),
         }
     }
 }

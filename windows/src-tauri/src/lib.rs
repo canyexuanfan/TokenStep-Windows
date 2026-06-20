@@ -88,6 +88,61 @@ fn set_theme(theme: String) -> Result<TokenStepSettings, String> {
     Ok(settings::load())
 }
 
+/// Save a PNG screenshot SILENTLY (no dialog) to `<exe_dir>/share/` or the
+/// configured screenshot_dir. Returns the full saved path.
+#[tauri::command]
+fn save_screenshot(_app: tauri::AppHandle, data: Vec<u8>) -> Result<String, String> {
+    let today = chrono::Utc::now()
+        .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
+        .format("%Y-%m-%d")
+        .to_string();
+    // Resolve the save dir: configured, else <exe_dir>/share.
+    let dir = {
+        let cfg = settings::load();
+        if !cfg.screenshot_dir.is_empty() {
+            std::path::PathBuf::from(&cfg.screenshot_dir)
+        } else {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("share")))
+                .unwrap_or_else(|| std::path::PathBuf::from("share"))
+        }
+    };
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Auto-rename if file exists: TokenStep-today-2026-06-20.png, -2.png, -3.png...
+    let mut path = dir.join(format!("TokenStep-today-{}.png", today));
+    let mut n = 2;
+    while path.exists() {
+        path = dir.join(format!("TokenStep-today-{}-{}.png", today, n));
+        n += 1;
+    }
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Set the default screenshot save directory (called from Settings UI).
+#[tauri::command]
+fn set_screenshot_dir(dir: String) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.screenshot_dir = dir;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+/// Pick a folder via native dialog (for the screenshot-dir setting).
+#[tauri::command]
+fn pick_folder(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let path = app.dialog().file().blocking_pick_folder();
+    match path {
+        Some(p) => {
+            let p = p.into_path().map_err(|e| e.to_string())?;
+            Ok(p.to_string_lossy().to_string())
+        }
+        None => Ok(String::new()),
+    }
+}
+
 /// Check GitHub for a newer release. Always succeeds — on network failure it
 /// returns an `UpdateCheck` with `has_update: false` rather than erroring, so
 /// the settings-page "check now" button never shows a hard error.
@@ -147,10 +202,9 @@ fn refresh(app: tauri::AppHandle) {
 
 /// Update the tray icon (dynamic progress ring) + tooltip after a collection.
 ///
-/// The ring is rasterized at runtime and encoded with the standard `png` crate
-/// (the earlier hand-written DEFLATE produced PNGs that the image decoder
-/// silently rejected, leaving the tray blank). With a standards-compliant PNG,
-/// `set_icon` works reliably — matching pystray's behavior on Windows.
+/// Update the tray icon (dynamic progress ring) + tooltip after a collection.
+/// Uses the `png` crate for encoding (the hand-written DEFLATE was rejected).
+/// Initial startup shows the static logo; this replaces it once data is ready.
 fn render_tray_icon(app: &tauri::AppHandle, tokens: i64, progress: f64, refreshing: bool) {
     let Some(tray) = app.tray_by_id("tokenstep-tray") else {
         return;
@@ -268,6 +322,7 @@ fn today_progress(state: &Arc<AppState>) -> (i64, f64) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(AppState::default()))
         .setup(|app| {
             // Load settings + run an initial collect so the UI has data.
@@ -286,9 +341,9 @@ pub fn run() {
                 &[&open, &refresh_item, &sep1, &check_update_item, &quit],
             )?;
 
-            // Tray icon: use the bundled app icon (most reliable on Windows).
-            // The dynamic progress-ring redrawing via set_icon didn't render
-            // in the tray, so we show the static logo + a live tooltip instead.
+            // Tray icon: the bundled app icon (proven to display reliably on
+            // Windows). Runtime set_icon with a dynamic ring was unreliable, so
+            // we keep the static logo and surface progress via the tooltip.
             let icon = app.default_window_icon()
                 .cloned()
                 .unwrap_or_else(|| tauri::image::Image::new(LOGO_PNG, 128, 128));
@@ -385,6 +440,9 @@ pub fn run() {
             set_refresh_interval,
             set_close_to_tray,
             set_theme,
+            save_screenshot,
+            set_screenshot_dir,
+            pick_folder,
             is_refreshing,
             refresh,
             check_for_update,

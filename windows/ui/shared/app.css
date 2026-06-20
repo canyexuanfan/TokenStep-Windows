@@ -599,6 +599,11 @@ td.total {
   cursor: default;
 }
 
+/* Spinning refresh icon while syncing (matches macOS button rotation). */
+.btn.refreshing svg {
+  animation: spin 0.9s linear infinite;
+}
+
 /* ---------- Settings ---------- */
 .setting-row {
   display: flex;

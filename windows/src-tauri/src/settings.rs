@@ -53,5 +53,6 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         history_days: s.history_days.clamp(7, 365),
         close_to_tray: s.close_to_tray,
         theme,
+        screenshot_dir: s.screenshot_dir,
     }
 }
