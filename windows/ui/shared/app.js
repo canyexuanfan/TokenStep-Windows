@@ -425,6 +425,7 @@ function applyTheme(name) {
 window.TS = {
   invoke,
   listen,
+  t,
   formatTokens,
   formatMoney,
   formatPercent,

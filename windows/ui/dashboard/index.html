@@ -93,11 +93,11 @@
       }).catch(function () { /* silent fail */ });
       document.getElementById('refreshBtn').addEventListener('click', function () {
         var eb = document.getElementById('errorBanner');
-        if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">刷新中…</div>';
+        if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">' + window.TS.t('刷新中…') + '</div>';
         var dot = document.getElementById('syncDot');
         var txt = document.getElementById('syncText');
         if (dot) dot.classList.add('busy');
-        if (txt) txt.textContent = '同步中…';
+        if (txt) { txt.textContent = window.TS.t('同步中…'); txt.dataset.syncing = '1'; }
         this.disabled = true;
         this.classList.add('refreshing');
         var self = this;
@@ -110,7 +110,7 @@
           var elapsed = Date.now() - t0;
           var finish = function () {
             if (dot) dot.classList.remove('busy');
-            if (txt) txt.textContent = '已同步';
+            if (txt) { txt.textContent = window.TS.t('已同步'); delete txt.dataset.syncing; }
             self.disabled = false;
             self.classList.remove('refreshing');
             if (eb) eb.innerHTML = '';
@@ -412,8 +412,14 @@
           if (langSel) langSel.addEventListener('change', function () {
             invoke('set_language', { language: langSel.value }).then(function (s) {
               settings = s;
-              if (typeof applyLanguage === 'function') applyLanguage(s.language);
+              // render() rebuilds the #view DOM from Chinese templates, then
+              // the render-wrapper calls applyLanguage to translate. Order
+              // matters: translate AFTER render, not before.
               render();
+              // Header text (sync status / "updated at") lives outside #view
+              // and isn't rebuilt by render(), so refresh it explicitly so the
+              // new language reaches it too.
+              updateHeader();
             });
           });
           // Screenshot save-folder picker.
@@ -475,10 +481,45 @@
         if (typeof applyLanguage === 'function' && settings.language && settings.language !== 'zhHans') {
           applyLanguage(settings.language);
         }
+        // Header elements live outside #view; refresh their language too.
+        refreshHeaderI18n();
       };
 
       function updateHeader() {
-        document.getElementById('updated').textContent = '更新 ' + (snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : '等待同步');
+        // Build the "updated at" string in Chinese, then translate via t() so
+        // the prefix ("更新 "/"Updated ") follows the current language.
+        var prefix = (window.__tsLang && window.__tsLang !== 'zhHans' && window.I18N) ? (window.I18N[window.__tsLang] || {})['更新 '] || '更新 ' : '更新 ';
+        var when = snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : ((window.__tsLang && window.__tsLang !== 'zhHans' && window.I18N) ? (window.I18N[window.__tsLang] || {})['等待同步'] || '等待同步' : '等待同步');
+        document.getElementById('updated').textContent = prefix + when;
+      }
+
+      // Translate header elements that live OUTSIDE #view (so render() never
+      // rebuilds them): the sync-status text, button tooltips, and the update
+      // badge title. Called after every language switch + every render().
+      function refreshHeaderI18n() {
+        var lang = window.__tsLang || 'zhHans';
+        if (lang === 'zhHans' || !window.I18N) {
+          // Reset to Chinese source values so switching back from EN/zhHant
+          // restores the original text.
+          var st = document.getElementById('syncText'); if (st && !st.dataset.syncing) st.textContent = '已同步';
+          var ub = document.getElementById('updateBtn'); if (ub) ub.title = '发现新版本';
+          var sb = document.getElementById('shotBtn'); if (sb) sb.title = '截图';
+          var rb = document.getElementById('refreshBtn'); if (rb) rb.title = '刷新';
+          updateHeader();
+          return;
+        }
+        var T = window.I18N[lang] || {};
+        var st = document.getElementById('syncText');
+        if (st) {
+          var cur = st.textContent;
+          // Only translate the idle "已同步"; leave "同步中…" (already keyed) to refresh.
+          if (T['已同步'] && cur === '已同步') st.textContent = T['已同步'];
+          else if (cur && T[cur]) st.textContent = T[cur];
+        }
+        var ub = document.getElementById('updateBtn'); if (ub) ub.title = T['发现新版本'] || '发现新版本';
+        var sb = document.getElementById('shotBtn'); if (sb) sb.title = T['截图'] || '截图';
+        var rb = document.getElementById('refreshBtn'); if (rb) rb.title = T['刷新'] || '刷新';
+        updateHeader();
       }
 
       // ── Update dialog ──────────────────────────────────────────────
