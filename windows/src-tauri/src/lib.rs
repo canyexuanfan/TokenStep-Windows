@@ -95,6 +95,14 @@ fn set_theme(theme: String) -> Result<TokenStepSettings, String> {
     Ok(settings::load())
 }
 
+#[tauri::command]
+fn set_language(language: String) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.language = language;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
 /// Save a PNG screenshot SILENTLY (no dialog) to `<exe_dir>/share/` or the
 /// configured screenshot_dir. Returns the full saved path.
 #[tauri::command]
@@ -447,6 +455,7 @@ pub fn run() {
             set_refresh_interval,
             set_close_to_tray,
             set_theme,
+            set_language,
             save_screenshot,
             set_screenshot_dir,
             pick_folder,
