@@ -50,9 +50,10 @@
       },
       "nsis": {
         "installerIcon": "icons/icon.ico",
-        "installMode": "currentUser",
+        "installMode": "both",
         "displayLanguageSelector": false,
-        "languages": ["SimpChinese", "English"]
+        "languages": ["SimpChinese", "English"],
+        "installerHooks": "nsis-hooks.nsh"
       }
     }
   },
