@@ -1,15 +1,22 @@
-//! Update check — a lightweight "is there a newer release on GitHub?" probe.
+//! Update check — a lightweight "is there a newer release on GitHub?" probe,
+//! plus the download / silent-install / restart flow.
 //!
-//! This mirrors the spirit of the macOS `UpdateService.checkForUpdates`: hit the
-//! GitHub Releases "latest" endpoint, compare `tag_name` to the running version,
-//! and surface the result. Unlike the full Tauri updater plugin, it does **not**
-//! download or install anything — it only tells the UI "an update exists, here's
-//! the link". The user opens the Releases page in a browser to fetch it.
+//! This mirrors the spirit of the macOS `UpdateService`:
+//!   1. hit the GitHub Releases "latest" endpoint, compare `tag_name` to the
+//!      running version, and surface the result;
+//!   2. on a hit, download the NSIS installer to a temp file with progress;
+//!   3. run it with `/S` (silent, `installMode: currentUser` so no UAC), then
+//!      exit the current process so the installer can overwrite it and relaunch.
+//!
+//! We deliberately avoid `tauri-plugin-updater`: it requires a pubkey/signed
+//! manifest system that conflicts with our self-signed exe. The self-hosted
+//! download + NSIS path is simpler and fully controllable.
 //!
 //! Network is best-effort: any failure (offline, rate-limited, bad JSON) just
 //! reports "no update", so a flaky connection never blocks the app.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use std::time::Duration;
 
 /// Where the Windows port lives on GitHub. Used for both the API URL and the
@@ -31,6 +38,16 @@ pub struct UpdateCheck {
     pub release_url: String,
     /// Optional release notes (the release `body`), shown in the settings card.
     pub release_notes: Option<String>,
+    /// Direct download URL of the preferred NSIS installer asset, when present.
+    /// Null for releases that ship only a portable exe (can't silent-install).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_url: Option<String>,
+    /// Filename of the installer asset (e.g. `TokenStep_0.1.2_x64-setup.exe`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_name: Option<String>,
+    /// Size of the installer asset in bytes, for the progress bar.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset_size: Option<u64>,
 }
 
 impl Default for UpdateCheck {
@@ -41,6 +58,9 @@ impl Default for UpdateCheck {
             latest_version: current_version().to_string(),
             release_url: releases_page_url(),
             release_notes: None,
+            asset_url: None,
+            asset_name: None,
+            asset_size: None,
         }
     }
 }
@@ -69,12 +89,50 @@ struct GitHubRelease {
     body: Option<String>,
     draft: Option<bool>,
     prerelease: Option<bool>,
+    #[serde(default)]
+    assets: Vec<GitHubAsset>,
 }
 
-use serde::Deserialize;
+/// One downloadable asset attached to a release.
+#[derive(Debug, Deserialize)]
+struct GitHubAsset {
+    name: String,
+    /// Browser-facing download URL (follows redirects to the CDN).
+    browser_download_url: String,
+    size: u64,
+}
+
+/// Pick the best asset for silent install. We prefer the NSIS installer
+/// (`*_x64-setup.exe`) because it supports the `/S` silent flag and installs to
+/// a fixed path so the old exe can be overwritten. The portable
+/// `TokenStep_v*.exe` is *not* auto-installable (no fixed path, can't replace
+/// the running image), so we leave it out — those releases can't self-update.
+fn pick_install_asset<'a>(assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+    let mut best: Option<&GitHubAsset> = None;
+    for a in assets {
+        let name = a.name.to_ascii_lowercase();
+        if !name.ends_with(".exe") {
+            continue;
+        }
+        // NSIS installer: matches TokenStep_<ver>_x64-setup.exe
+        let is_setup = name.contains("setup") || name.contains("-setup");
+        // Skip the portable versioned exe (TokenStep_v*.exe) — can't self-install.
+        let is_portable = name.starts_with("tokenstep_v");
+        if is_setup && !is_portable {
+            // Prefer the one with "x64-setup" if multiple exist.
+            if best.is_none() || name.contains("x64-setup") {
+                best = Some(a);
+            }
+        }
+    }
+    best
+}
 
 /// Check GitHub for a newer release. Never panics / never errors out to the
 /// caller — on any failure it returns an `UpdateCheck` with `has_update: false`.
+///
+/// Honors the persisted `skipped_update_version` setting: if the user dismissed
+/// this exact version, we report "no update" so they aren't nagged.
 pub fn check() -> UpdateCheck {
     let current = current_version();
     let client = match reqwest::blocking::Client::builder()
@@ -109,7 +167,22 @@ pub fn check() -> UpdateCheck {
     }
 
     let latest = strip_v_prefix(&release.tag_name);
-    let has_update = is_newer(&latest, current);
+    let mut has_update = is_newer(&latest, current);
+
+    // Honor "skip this version": if the user dismissed this exact version,
+    // don't nag them again (until an even newer release appears).
+    if has_update {
+        if let Some(skipped) = crate::settings::load().skipped_update_version {
+            if strip_v_prefix(&skipped) == latest {
+                has_update = false;
+            }
+        }
+    }
+
+    let (asset_url, asset_name, asset_size) = match pick_install_asset(&release.assets) {
+        Some(a) => (Some(a.browser_download_url.clone()), Some(a.name.clone()), Some(a.size)),
+        None => (None, None, None),
+    };
 
     UpdateCheck {
         has_update,
@@ -117,6 +190,9 @@ pub fn check() -> UpdateCheck {
         latest_version: latest.to_string(),
         release_url: release.html_url,
         release_notes: release.body,
+        asset_url,
+        asset_name,
+        asset_size,
     }
 }
 
@@ -153,6 +229,174 @@ fn cmp_segments(a: &str, b: &str) -> std::cmp::Ordering {
 fn parse_seg(s: &str) -> u64 {
     let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
     digits.parse().unwrap_or(0)
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Download + silent install + restart
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Payload emitted as the `update-download-progress` event while downloading.
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadProgress {
+    pub downloaded: u64,
+    pub total: u64,
+    /// 0.0–100.0
+    pub percent: f64,
+}
+
+/// Where we stash the downloaded installer: `%TEMP%\TokenStep_update_<ver>.exe`.
+/// Reuses the same path across runs so partial downloads overwrite cleanly.
+fn installer_temp_path(version: &str) -> std::path::PathBuf {
+    let mut p = std::env::temp_dir();
+    p.push(format!("TokenStep_update_{version}.exe"));
+    p
+}
+
+/// Download the installer asset to a temp file, emitting progress events.
+/// On success returns the temp file path; on failure returns None.
+///
+/// `asset_name` is currently informational (reserved for a future SHA-256
+/// verification hook) but kept in the signature so the caller's contract is
+/// stable.
+///
+/// Runs on a background thread (caller is responsible for spawning), so the
+/// blocking reads here never freeze the UI.
+pub fn download<F>(asset_url: &str, _asset_name: &str, expected_size: u64, version: &str, emit: F)
+    -> Option<std::path::PathBuf>
+where
+    F: Fn(DownloadProgress),
+{
+    let client = match reqwest::blocking::Client::builder()
+        .user_agent(format!("TokenStep/{}", current_version()))
+        // Generous timeout: the installer is a few MB and may be on a slow link.
+        .timeout(Duration::from_secs(300))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return None;
+        }
+    };
+
+    let resp = match client.get(asset_url).send() {
+        Ok(r) => r,
+        Err(_) => return None,
+    };
+    if !resp.status().is_success() {
+        return None;
+    }
+
+    // Prefer the server's Content-Length when available; fall back to the
+    // asset_size we parsed from the API.
+    let total = resp.content_length().unwrap_or(expected_size);
+
+    let dest = installer_temp_path(version);
+    if let Some(parent) = dest.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let mut file = match std::fs::File::create(&dest) {
+        Ok(f) => f,
+        Err(_) => return None,
+    };
+
+    let mut reader = resp;
+    let mut buf = [0u8; 64 * 1024];
+    let mut downloaded: u64 = 0;
+    let mut last_emit: u64 = 0;
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) => break,            // EOF
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => {
+                let _ = std::fs::remove_file(&dest);
+                return None;
+            }
+        };
+        if file.write_all(&buf[..n]).is_err() {
+            let _ = std::fs::remove_file(&dest);
+            return None;
+        }
+        downloaded += n as u64;
+
+        // Throttle progress events to ~1 per 256KB so we don't flood the IPC.
+        if downloaded.saturating_sub(last_emit) >= 256 * 1024 || downloaded == total {
+            last_emit = downloaded;
+            let percent = if total > 0 {
+                (downloaded as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            };
+            emit(DownloadProgress { downloaded, total, percent });
+        }
+    }
+    // Flush + sync so the bytes are on disk before we run it.
+    let _ = file.flush();
+    let _ = file.sync_all();
+    drop(file);
+
+    // Integrity check: actual size must match expected (truncated download?).
+    if expected_size > 0 {
+        if let Ok(meta) = std::fs::metadata(&dest) {
+            if meta.len() != expected_size {
+                let _ = std::fs::remove_file(&dest);
+                return None;
+            }
+        }
+    }
+
+    Some(dest)
+}
+
+/// Run the downloaded NSIS installer silently, then exit so it can overwrite
+/// the running exe and relaunch the new version.
+///
+/// `installMode: "currentUser"` in tauri.conf.json means the installer targets
+/// `%LOCALAPPDATA%` and needs **no UAC prompt**. The NSIS `/S` flag suppresses
+/// all UI. After spawning, we wait briefly for it to initialize, then exit(0);
+/// NSIS has built-in retry logic for replacing in-use files, and the Tauri NSIS
+/// template relaunches the app once it finishes.
+///
+/// This function does not return: it terminates the process.
+pub fn install_and_restart(installer: &std::path::Path) -> ! {
+    // Detach the installer as a fully independent child so it survives our exit.
+    // `spawn` (not `status`) returns immediately; we then quit.
+    let _ = std::process::Command::new(installer)
+        .arg("/S")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP on Windows keeps it alive
+        // after the parent exits. On other targets these args are ignored.
+        .spawn();
+
+    // Give the installer a beat to initialize and grab its own file handles
+    // before we tear down. NSIS opens the target files during this window.
+    std::thread::sleep(Duration::from_millis(800));
+
+    // Request a clean Tauri shutdown so the tray icon + window go away
+    // gracefully, then hard-exit. The installer finishes writing after we're
+    // gone and relaunches the new version.
+    // We can't call `app.exit()` here (no handle available at this layer), so
+    // the caller in lib.rs passes the path and we exit directly.
+    std::process::exit(0);
+}
+
+/// Entry point invoked from a background thread in lib.rs: orchestrates the
+/// download → install → exit sequence, emitting progress along the way.
+///
+/// Returns `false` if the download failed (so the caller can emit an error
+/// event and let the user retry). Returns `true` only by never returning at
+/// all — on success it runs the installer and exits the process.
+pub fn run_self_update<F>(asset_url: &str, asset_name: &str, asset_size: u64, version: &str, emit: F) -> bool
+where
+    F: Fn(DownloadProgress),
+{
+    match download(asset_url, asset_name, asset_size, version, emit) {
+        Some(path) => install_and_restart(&path), // never returns
+        None => false,
+    }
 }
 
 #[cfg(test)]

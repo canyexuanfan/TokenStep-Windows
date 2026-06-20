@@ -211,7 +211,16 @@ const I18N = {
     "采集脚本退出码 %d：%@": "Collector exited with code %d: %@",
     "切换到%@主题": "Switch to %@ theme",
     "TokenStep 自动更新失败": "TokenStep Auto Update Failed",
-    "请手动把 DMG 里的 TokenStep 拖到 Applications。": "Please drag TokenStep from the DMG into Applications manually."
+    "请手动把 DMG 里的 TokenStep 拖到 Applications。": "Please drag TokenStep from the DMG into Applications manually.",
+    "安装完成后会自动重启到新版本": "Will automatically restart into the new version after install",
+    "自动安装到原目录": "Auto-install to the original folder",
+    "下载后会静默替换旧版本": "Silently replaces the old version after download",
+    "下载中…": "Downloading…",
+    "下载失败，请检查网络后重试。": "Download failed. Please check your network and retry.",
+    "安装并重启": "Install & Restart",
+    "立即检查": "Check Now",
+    "检查中…": "Checking…",
+    "可用": "available"
   },
   "zhHant": {
     "简体中文": "簡體中文",
@@ -425,7 +434,16 @@ const I18N = {
     "采集脚本退出码 %d：%@": "採集腳本退出碼 %d：%@",
     "切换到%@主题": "切換到%@主題",
     "TokenStep 自动更新失败": "TokenStep 自動更新失敗",
-    "请手动把 DMG 里的 TokenStep 拖到 Applications。": "請手動把 DMG 裡的 TokenStep 拖到 Applications。"
+    "请手动把 DMG 里的 TokenStep 拖到 Applications。": "請手動把 DMG 裡的 TokenStep 拖到 Applications。",
+    "安装完成后会自动重启到新版本": "安裝完成後會自動重啟到新版本",
+    "自动安装到原目录": "自動安裝到原目錄",
+    "下载后会静默替换旧版本": "下載後會靜默替換舊版本",
+    "下载中…": "下載中…",
+    "下载失败，请检查网络后重试。": "下載失敗，請檢查網路後重試。",
+    "安装并重启": "安裝並重啟",
+    "立即检查": "立即檢查",
+    "检查中…": "檢查中…",
+    "可用": "可用"
   }
 };
 

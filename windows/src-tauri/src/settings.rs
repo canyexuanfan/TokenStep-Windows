@@ -58,5 +58,6 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
             let valid = ["zhHans", "en", "zhHant"];
             if valid.contains(&s.language.as_str()) { s.language.clone() } else { "zhHans".to_string() }
         },
+        skipped_update_version: s.skipped_update_version.filter(|v| !v.trim().is_empty()),
     }
 }

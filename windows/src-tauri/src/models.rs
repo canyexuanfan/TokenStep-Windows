@@ -136,6 +136,11 @@ pub struct TokenStepSettings {
     /// UI language: zhHans (default) / en / zhHant.
     #[serde(rename = "language", default = "default_lang")]
     pub language: String,
+    /// A version string the user chose to skip via the update dialog.
+    /// When the latest release matches this, the update check reports
+    /// `has_update: false` so the user isn't nagged about it again.
+    #[serde(rename = "skipped_update_version", default, skip_serializing_if = "Option::is_none")]
+    pub skipped_update_version: Option<String>,
 }
 
 fn default_lang() -> String {
@@ -160,6 +165,7 @@ impl Default for TokenStepSettings {
             theme: "green".to_string(),
             screenshot_dir: String::new(),
             language: "zhHans".to_string(),
+            skipped_update_version: None,
         }
     }
 }

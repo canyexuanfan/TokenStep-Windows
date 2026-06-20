@@ -178,6 +178,58 @@ fn open_release_page(app: tauri::AppHandle, url: String) {
     let _ = app.shell().open(url, None);
 }
 
+/// Download + silently install + restart to the latest release. Triggered by
+/// the update dialog's "安装并重启" button.
+///
+/// The frontend passes the asset metadata it received from `check_for_update`
+/// (so we don't re-hit the API). Progress is streamed back via the
+/// `update-download-progress` event; on completion this command never returns
+/// (the process exits so the installer can replace the exe).
+#[tauri::command]
+fn download_and_install_update(
+    app: tauri::AppHandle,
+    asset_url: String,
+    asset_name: String,
+    asset_size: u64,
+    version: String,
+) {
+    std::thread::spawn(move || {
+        // Clear any "skipped" marker for this version now that the user is
+        // actively installing it.
+        {
+            let mut s = settings::load();
+            if s.skipped_update_version.as_deref() == Some(version.as_str()) {
+                s.skipped_update_version = None;
+                let _ = settings::save(&s);
+            }
+        }
+        update::run_self_update(&asset_url, &asset_name, asset_size, &version, |p| {
+            let _ = app.emit("update-download-progress", &p);
+        });
+        // On success run_self_update exits the process and never reaches here.
+        // If it returned, the download failed — tell the frontend so it can
+        // show a retry button.
+        let _ = app.emit("update-download-error", ());
+    });
+}
+
+/// Record that the user wants to skip a specific version. The next
+/// `check_for_update` will report no update until an even newer release appears.
+#[tauri::command]
+fn skip_update_version(version: String) {
+    let mut s = settings::load();
+    s.skipped_update_version = Some(version);
+    let _ = settings::save(&s);
+}
+
+/// Clear any previously-skipped version (a "reset" button on the settings card).
+#[tauri::command]
+fn reset_skipped_update() {
+    let mut s = settings::load();
+    s.skipped_update_version = None;
+    let _ = settings::save(&s);
+}
+
 /// Run a single collect pass on a background thread, then refresh shared state.
 fn run_refresh(app: &tauri::AppHandle) {
     let app = app.clone();
@@ -461,11 +513,12 @@ pub fn run() {
             pick_folder,
             check_for_update,
             open_release_page,
+            download_and_install_update,
+            skip_update_version,
+            reset_skipped_update,
             is_refreshing,
             read_codex_quota,
             refresh,
-            check_for_update,
-            open_release_page,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -478,8 +531,9 @@ pub fn collect_for_check() -> models::UsageSnapshot {
 }
 
 /// Tray-menu "检查更新" handler. Runs the check off the UI thread, then:
-/// - on a hit: updates the menu label and opens the Releases page in a browser
-///   (the user clicked the menu item, so going straight to download is right);
+/// - on a hit: updates the menu label and opens the dashboard so the update
+///   dialog can present the download/install flow (no longer jumps to a
+///   browser — the in-app dialog handles everything);
 /// - on no update: flashes the label to "已是最新版" briefly, then reverts.
 ///
 /// Menu label edits require finding the item via the app's menu; the menu was
@@ -492,11 +546,10 @@ fn check_update_from_menu(app: &tauri::AppHandle) {
             if let Some(mi) = item.as_menuitem() {
                 if result.has_update {
                     let _ = mi.set_text(format!("发现新版本 v{} →", result.latest_version));
-                    #[allow(deprecated)]
-                    let _ = app_handle
-                        .shell()
-                        .open(result.release_url.clone(), None);
-                    // Also notify the dashboard if it's open, so the badge appears.
+                    // Bring the dashboard forward so the user sees the update
+                    // dialog instead of a browser tab.
+                    show_dashboard(&app_handle);
+                    // Notify the dashboard so it pops the update dialog + badge.
                     let _ = app_handle.emit("update-available", &result);
                 } else {
                     let _ = mi.set_text("已是最新版");
