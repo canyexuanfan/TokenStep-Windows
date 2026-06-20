@@ -34,4 +34,16 @@ echo.
 echo === Build complete ===
 echo Installer(s) written to:
 dir /b "%CD%\target\release\bundle\nsis\*.exe" 2>nul
+
+REM Show the final repo-root artifacts (signed + versioned) from sign.bat.
+echo.
+echo Final release artifacts in repo root:
+set "ROOT=%~dp0..\.."
+pushd "%ROOT%" >nul
+for %%F in (TokenStep.exe TokenStep_v*.exe TokenStep_*_x64-setup.exe) do (
+    if exist "%%F" echo   - %%F
+)
+popd >nul
+echo.
+echo See windows\docs\PACKAGING.md for the naming convention.
 endlocal
