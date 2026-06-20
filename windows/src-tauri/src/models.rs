@@ -136,6 +136,11 @@ pub struct TokenStepSettings {
     /// UI language: zhHans (default) / en / zhHant.
     #[serde(rename = "language", default = "default_lang")]
     pub language: String,
+    /// Whether the Codex quota card (5h / 7d rate limits) is shown on the
+    /// Today view. Mirrors upstream `showCodexQuota`; default off so the card
+    /// only appears when the user opts in.
+    #[serde(rename = "show_codex_quota", default)]
+    pub show_codex_quota: bool,
     /// A version string the user chose to skip via the update dialog.
     /// When the latest release matches this, the update check reports
     /// `has_update: false` so the user isn't nagged about it again.
@@ -166,6 +171,7 @@ impl Default for TokenStepSettings {
             screenshot_dir: String::new(),
             language: "zhHans".to_string(),
             skipped_update_version: None,
+            show_codex_quota: false,
         }
     }
 }

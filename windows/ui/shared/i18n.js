@@ -220,7 +220,10 @@ const I18N = {
     "安装并重启": "Install & Restart",
     "立即检查": "Check Now",
     "检查中…": "Checking…",
-    "可用": "available"
+    "可用": "available",
+    "Codex 额度显示": "Codex Quota Display",
+    "显示 Codex 配额卡片": "Show Codex quota card",
+    "在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭": "Show 5-hour / 7-day remaining quota on the Today page (off by default)"
   },
   "zhHant": {
     "简体中文": "簡體中文",
@@ -443,7 +446,10 @@ const I18N = {
     "安装并重启": "安裝並重啟",
     "立即检查": "立即檢查",
     "检查中…": "檢查中…",
-    "可用": "可用"
+    "可用": "可用",
+    "Codex 额度显示": "Codex 額度顯示",
+    "显示 Codex 配额卡片": "顯示 Codex 配額卡片",
+    "在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭": "在「今日」頁面顯示 5 小時 / 7 天剩餘額度，預設關閉"
   }
 };
 
