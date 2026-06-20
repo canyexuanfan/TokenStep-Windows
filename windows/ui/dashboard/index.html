@@ -124,35 +124,83 @@
           self.classList.remove('refreshing');
         });
       });
+      // Save a canvas as PNG via the Rust save_screenshot command, surfacing
+      // the result path (or an error) in the error banner.
+      function saveCanvasPng(canvas, eb, label) {
+        var dataUrl = canvas.toDataURL('image/png');
+        var b64 = dataUrl.split(',')[1];
+        var bin = atob(b64);
+        var arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        window.TS.invoke('save_screenshot', { data: Array.from(arr) }).then(function (path) {
+          if (path) {
+            if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">' + (label || '截图') + '已保存到：<br>' + path + '</div>';
+          } else {
+            if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee;border-radius:8px">截图保存失败</div>';
+          }
+          setTimeout(function () { if (eb) eb.innerHTML = ''; }, 4000);
+        }).catch(function (e) {
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">保存失败: ' + (e && e.message ? e.message : e) + '</div>';
+        });
+      }
+
+      // Render an arbitrary DOM element to a canvas via SVG <foreignObject>.
+      // Works in WebView2 (img-src data: is allowed by the CSP). Falls back to
+      // null on any error so callers can show a friendly message.
+      function domToCanvas(el) {
+        var rect = el.getBoundingClientRect();
+        var w = Math.ceil(rect.width);
+        var h = Math.ceil(rect.height);
+        if (w < 2 || h < 2) return null;
+        // Clone, inline computed styles so the SVG render matches the live DOM.
+        var clone = el.cloneNode(true);
+        var withStyles = document.createElement('div');
+        withStyles.appendChild(clone);
+        // Inline a background so transparent areas aren't black in the PNG.
+        var bg = getComputedStyle(document.body).backgroundColor || '#ffffff';
+        // Serialize to XHTML (foreignObject requires XML, not HTML).
+        var xs = new XMLSerializer().serializeAsString(withStyles);
+        var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">' +
+          '<foreignObject x="0" y="0" width="100%" height="100%">' +
+          '<div xmlns="http://www.w3.org/1999/xhtml" style="width:' + w + 'px;height:' + h + 'px;background:' + bg + ';">' +
+          xs + '</div></foreignObject></svg>';
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        var img = new Image();
+        // Return a promise; resolve once the SVG image loads and is drawn.
+        return new Promise(function (resolve, reject) {
+          img.onload = function () { try { c.getContext('2d').drawImage(img, 0, 0); resolve(c); } catch (e) { reject(e); } };
+          img.onerror = function () { reject(new Error('render failed')); };
+          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        });
+      }
+
       document.getElementById('shotBtn').addEventListener('click', function () {
         var eb = document.getElementById('errorBanner');
         try {
-          var c = document.createElement('canvas');
-          c.width = 720; c.height = 420;
-          var t = todayDaily();
-          window.TS.renderDataCard(c, {
-            today: t,
-            settings: settings,
-            active_days: snapshot.totals.active_days,
-            total_tokens: snapshot.totals.tokens,
-          });
-          // toDataURL gives a base64 PNG; decode to bytes for the Rust save dialog.
-          var dataUrl = c.toDataURL('image/png');
-          var b64 = dataUrl.split(',')[1];
-          // Send as a JSON string so Tauri serializes it; Rust side expects Vec<u8>.
-          var bin = atob(b64);
-          var arr = new Uint8Array(bin.length);
-          for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-          window.TS.invoke('save_screenshot', { data: Array.from(arr) }).then(function (path) {
-            if (path) {
-              if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">截图已保存到：<br>' + path + '</div>';
-            } else {
-              if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee;border-radius:8px">截图保存失败</div>';
-            }
-            setTimeout(function () { if (eb) eb.innerHTML = ''; }, 4000);
-          }).catch(function (e) {
-            if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">保存失败: ' + (e && e.message ? e.message : e) + '</div>';
-          });
+          if (current === 'today') {
+            // Today page: use the bespoke renderDataCard (matches macOS look).
+            var c = document.createElement('canvas');
+            c.width = 720; c.height = 420;
+            var t = todayDaily();
+            window.TS.renderDataCard(c, {
+              today: t,
+              settings: settings,
+              active_days: snapshot.totals.active_days,
+              total_tokens: snapshot.totals.tokens,
+            });
+            saveCanvasPng(c, eb);
+          } else {
+            // Other pages (settings/history/stats/privacy): snapshot the live DOM.
+            var view = document.getElementById('view');
+            if (!view) { if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">截图失败：找不到内容区域</div>'; return; }
+            domToCanvas(view).then(function (canvas) {
+              saveCanvasPng(canvas, eb);
+            }).catch(function (e) {
+              if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">截图失败: ' + (e && e.message ? e.message : e) + '（请改用系统截图）</div>';
+              setTimeout(function () { if (eb) eb.innerHTML = ''; }, 4000);
+            });
+          }
         } catch (e) {
           if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">截图失败: ' + (e && e.message ? e.message : e) + '</div>';
         }
@@ -238,8 +286,10 @@
           '<div class="card">' + distributionInner('主力模型', snapshot.models.slice(0, 5)) + '</div>' +
         '</div>';
 
-        // ---- Codex quota card (lazy-loaded on render) ----
-        var quotaCard = '<div class="card" id="quotaCard"><div class="card-title">Codex 配额</div><div id="quotaContent" style="color:var(--muted);padding:10px 0">加载中…</div></div>';
+        // ---- Codex quota card (only when the user opted in via Settings) ----
+        var quotaCard = settings.show_codex_quota
+          ? '<div class="card" id="quotaCard"><div class="card-title">Codex 配额</div><div id="quotaContent" style="color:var(--muted);padding:10px 0">加载中…</div></div>'
+          : '';
 
         return hero + metricStrip + quotaCard + activityCard + distCards;
       }
@@ -315,6 +365,9 @@
           '<option value="zhHant"' + (curLang === 'zhHant' ? ' selected' : '') + '>繁體中文</option>';
         html += '<div class="card"><div class="card-title">语言</div><div class="setting-row"><div><div class="setting-label">界面语言</div><div class="setting-hint">切换后立即生效</div></div><select id="langSelect">' + langOpts + '</select></div></div>';
         html += '<div class="card"><div class="card-title">主题配色</div><div class="setting-row"><div><div class="setting-label">界面主题</div><div class="setting-hint">切换整体配色方案，立即生效</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
+        // Codex quota display toggle (mirrors upstream showCodexQuota, default off).
+        var quotaChecked = settings.show_codex_quota ? ' checked' : '';
+        html += '<div class="card"><div class="card-title">Codex 额度显示</div><div class="setting-row"><div><div class="setting-label">显示 Codex 配额卡片</div><div class="setting-hint">在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭</div></div><label class="switch"><input type="checkbox" id="showQuotaToggle"' + quotaChecked + '/><span class="slider"></span></label></div></div>';
         // Update check card.
         var updHint = latestUpdate && latestUpdate.has_update
           ? '<div style="margin-top:10px;padding:10px;background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:10px;font-weight:700;color:var(--green-dark)">🎉 发现新版本 v' + latestUpdate.latest_version + ' · <a id="updDownloadLink" href="#" style="color:var(--green-dark);text-decoration:underline;cursor:pointer">立即安装</a></div>'
@@ -375,6 +428,11 @@
                 });
               }
             });
+          });
+          // Codex quota display toggle.
+          var quotaToggle = document.getElementById('showQuotaToggle');
+          if (quotaToggle) quotaToggle.addEventListener('change', function () {
+            invoke('set_show_codex_quota', { enabled: quotaToggle.checked }).then(function (s) { settings = s; render(); });
           });
           // Update check button + download link.
           var checkUpdateBtn = document.getElementById('checkUpdateBtn');

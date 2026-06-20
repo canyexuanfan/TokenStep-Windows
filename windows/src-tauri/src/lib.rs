@@ -96,9 +96,21 @@ fn set_theme(theme: String) -> Result<TokenStepSettings, String> {
 }
 
 #[tauri::command]
-fn set_language(language: String) -> Result<TokenStepSettings, String> {
+fn set_language(app: tauri::AppHandle, language: String) -> Result<TokenStepSettings, String> {
     let mut s = settings::load();
     s.language = language;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    // Rebuild the tray menu so the new language takes effect immediately.
+    rebuild_tray_menu(&app);
+    Ok(settings::load())
+}
+
+/// Toggle whether the Codex quota card is shown on the Today view. Mirrors
+/// the upstream `showCodexQuota` setting.
+#[tauri::command]
+fn set_show_codex_quota(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.show_codex_quota = enabled;
     settings::save(&s).map_err(|e| e.to_string())?;
     Ok(settings::load())
 }
@@ -203,7 +215,11 @@ fn download_and_install_update(
                 let _ = settings::save(&s);
             }
         }
-        update::run_self_update(&asset_url, &asset_name, asset_size, &version, |p| {
+        // Resolve the installed exe path the NSIS installer writes to
+        // (installMode: currentUser → %LOCALAPPDATA%\TokenStep\tokenstep.exe).
+        // The relaunch helper starts this path after the silent install.
+        let installed_exe = installed_exe_path();
+        update::run_self_update(&asset_url, &asset_name, asset_size, &version, &installed_exe, |p| {
             let _ = app.emit("update-download-progress", &p);
         });
         // On success run_self_update exits the process and never reaches here.
@@ -280,9 +296,12 @@ fn render_tray_icon(app: &tauri::AppHandle, tokens: i64, progress: f64, refreshi
     let _ = tray.set_icon(Some(tauri::image::Image::new(&png, TRAY_SIZE, TRAY_SIZE)));
 
     let pct = (progress.clamp(0.0, 1.0) * 100.0).round() as i64;
-    let status = if refreshing { "（同步中）" } else { "" };
+    let lang = settings::load().language;
+    let today_lbl = tray_text("tip_today", &lang);
+    let status = if refreshing { tray_text("tip_syncing", &lang) } else { "" };
     let _ = tray.set_tooltip(Some(format!(
-        "TokenStep — 今日 {} ({}){}",
+        "TokenStep — {} {} ({}){}",
+        today_lbl,
         human_tokens(tokens),
         pct,
         status
@@ -385,6 +404,80 @@ fn today_progress(state: &Arc<AppState>) -> (i64, f64) {
     (tokens, progress)
 }
 
+/// The absolute path the NSIS installer writes the new exe to.
+///
+/// `installMode: "currentUser"` (tauri.conf.json) installs to
+/// `%LOCALAPPDATA%\<productName>\tokenstep.exe`. This is the path the update
+/// relaunch helper must start once the silent install finishes.
+///
+/// Falls back to the currently-running exe's path if LOCALAPPDATA is unset
+/// (e.g. running from a portable copy), so the helper still has a target.
+fn installed_exe_path() -> std::path::PathBuf {
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let mut p = std::path::PathBuf::from(local);
+        p.push("TokenStep");
+        p.push("tokenstep.exe");
+        if p.exists() {
+            return p;
+        }
+    }
+    // Fallback: the running exe (portable / dev). The installer may not write
+    // here, but it's the best guess and the user can still relaunch manually.
+    std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("tokenstep.exe"))
+}
+
+/// Localized text for the tray menu + tooltip. Rust can't read the JS i18n
+/// table, so we keep a tiny mirror here for the 4 menu items + app name +
+/// tooltip fragments.
+/// Keys: "open", "refresh", "check_update", "quit", "app_name",
+///       "tip_today" (e.g. "今日"), "tip_syncing" (e.g. "（同步中）").
+fn tray_text(key: &str, lang: &str) -> &'static str {
+    // zhHant falls back to zhHans text where it matches, differing only where
+    // needed (they're nearly identical for these short labels).
+    match (lang, key) {
+        ("en", "open") => "Open Dashboard",
+        ("en", "refresh") => "Refresh Now",
+        ("en", "check_update") => "Check for Updates",
+        ("en", "quit") => "Quit TokenStep",
+        ("en", "app_name") => "TokenStep",
+        ("en", "tip_today") => "Today",
+        ("en", "tip_syncing") => " (syncing)",
+        ("zhHant", "open") => "開啟儀表板",
+        ("zhHant", "refresh") => "立即重新整理",
+        ("zhHant", "check_update") => "檢查更新",
+        ("zhHant", "quit") => "結束 TokenStep",
+        ("zhHant", "app_name") => "TokenStep",
+        ("zhHant", "tip_today") => "今日",
+        ("zhHant", "tip_syncing") => "（同步中）",
+        // zhHans (default) + any unrecognized lang
+        (_, "open") => "打开仪表盘",
+        (_, "refresh") => "立即刷新",
+        (_, "check_update") => "检查更新",
+        (_, "quit") => "退出 TokenStep",
+        (_, "app_name") => "TokenStep",
+        (_, "tip_today") => "今日",
+        (_, "tip_syncing") => "（同步中）",
+        _ => "",
+    }
+}
+
+/// Rebuild the tray menu labels from the persisted language setting. Called on
+/// startup and whenever `set_language` changes the setting.
+fn rebuild_tray_menu(app: &tauri::AppHandle) {
+    let lang = settings::load().language;
+    let set = |id: &str, text: &str| {
+        if let Some(item) = app.menu().and_then(|m| m.get(id)) {
+            if let Some(mi) = item.as_menuitem() {
+                let _ = mi.set_text(text);
+            }
+        }
+    };
+    set("open", tray_text("open", &lang));
+    set("refresh", tray_text("refresh", &lang));
+    set("check-update", tray_text("check_update", &lang));
+    set("quit", tray_text("quit", &lang));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -394,15 +487,17 @@ pub fn run() {
         .setup(|app| {
             // Load settings + run an initial collect so the UI has data.
             let state: tauri::State<'_, Arc<AppState>> = app.state();
-            *state.settings.lock() = settings::load();
+            let initial_settings = settings::load();
+            let lang = initial_settings.language.clone();
+            *state.settings.lock() = initial_settings;
 
-            // Build the tray menu.
-            let open = MenuItem::with_id(app, "open", "打开仪表盘", true, None::<&str>)?;
-            let refresh_item = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)?;
+            // Build the tray menu in the user's saved language.
+            let open = MenuItem::with_id(app, "open", tray_text("open", &lang), true, None::<&str>)?;
+            let refresh_item = MenuItem::with_id(app, "refresh", tray_text("refresh", &lang), true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let check_update_item =
-                MenuItem::with_id(app, "check-update", "检查更新", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出 TokenStep", true, None::<&str>)?;
+                MenuItem::with_id(app, "check-update", tray_text("check_update", &lang), true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", tray_text("quit", &lang), true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
                 &[&open, &refresh_item, &sep1, &check_update_item, &quit],
@@ -508,6 +603,7 @@ pub fn run() {
             set_close_to_tray,
             set_theme,
             set_language,
+            set_show_codex_quota,
             save_screenshot,
             set_screenshot_dir,
             pick_folder,

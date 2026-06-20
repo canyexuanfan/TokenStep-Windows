@@ -349,52 +349,103 @@ where
     Some(dest)
 }
 
-/// Run the downloaded NSIS installer silently, then exit so it can overwrite
-/// the running exe and relaunch the new version.
+/// Run the downloaded NSIS installer silently, then relaunch the app.
 ///
-/// `installMode: "currentUser"` in tauri.conf.json means the installer targets
-/// `%LOCALAPPDATA%` and needs **no UAC prompt**. The NSIS `/S` flag suppresses
-/// all UI. After spawning, we wait briefly for it to initialize, then exit(0);
-/// NSIS has built-in retry logic for replacing in-use files, and the Tauri NSIS
-/// template relaunches the app once it finishes.
+/// The reliable Windows self-update pattern (used by VSCode/Electron updaters):
+/// a small `.bat` helper is written to `%TEMP%`, detached, then this process
+/// exits. The bat waits for us to die, runs the NSIS installer with `/S`
+/// (silent, `installMode: currentUser` so no UAC), then starts the freshly
+/// installed exe and self-deletes.
+///
+/// Why a bat and not `MUI_FINISHPAGE_RUN`? Because `/S` skips ALL NSIS UI
+/// pages including the finish page, so any finish-page relaunch hook is
+/// ignored. The bat is the only mechanism that works in silent mode.
+///
+/// `installed_exe` is the absolute path the installer will write the new exe
+/// to (the currentUser install location). We relaunch exactly that path.
 ///
 /// This function does not return: it terminates the process.
-pub fn install_and_restart(installer: &std::path::Path) -> ! {
-    // Detach the installer as a fully independent child so it survives our exit.
-    // `spawn` (not `status`) returns immediately; we then quit.
-    let _ = std::process::Command::new(installer)
-        .arg("/S")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP on Windows keeps it alive
-        // after the parent exits. On other targets these args are ignored.
-        .spawn();
+pub fn install_and_restart(installer: &std::path::Path, installed_exe: &std::path::Path) -> ! {
+    let pid = std::process::id();
+    let installer = escape_bat_path(&installer.to_string_lossy());
+    let exe = escape_bat_path(&installed_exe.to_string_lossy());
+    let our_pid = pid.to_string();
 
-    // Give the installer a beat to initialize and grab its own file handles
-    // before we tear down. NSIS opens the target files during this window.
-    std::thread::sleep(Duration::from_millis(800));
+    // The helper bat: wait for our PID to vanish → run installer → relaunch →
+    // self-delete. `start ""` launches the exe detached so the bat can exit.
+    let bat = format!(
+        "@echo off\r\n\
+         setlocal\r\n\
+         :: Wait for the old TokenStep process (PID {pid}) to exit.\r\n\
+         :wait\r\n\
+         tasklist /fi \"PID eq {pid}\" 2>nul | find \"{pid}\" >nul\r\n\
+         if not errorlevel 1 (\r\n\
+             timeout /t 1 /nobreak >nul\r\n\
+             goto wait\r\n\
+         )\r\n\
+         :: Run the NSIS installer silently. /S = no UI. currentUser = no UAC.\r\n\
+         \"{installer}\" /S\r\n\
+         :: Give the installer a moment to release file handles.\r\n\
+         timeout /t 2 /nobreak >nul\r\n\
+         :: Relaunch the freshly installed TokenStep, detached.\r\n\
+         if exist \"{exe}\" (\r\n\
+             start \"\" \"{exe}\"\r\n\
+         )\r\n\
+         :: Self-delete this helper bat.\r\n\
+         (goto) 2>nul | del \"%~f0\"\r\n",
+        pid = our_pid,
+        installer = installer,
+        exe = exe,
+    );
 
-    // Request a clean Tauri shutdown so the tray icon + window go away
-    // gracefully, then hard-exit. The installer finishes writing after we're
-    // gone and relaunches the new version.
-    // We can't call `app.exit()` here (no handle available at this layer), so
-    // the caller in lib.rs passes the path and we exit directly.
+    // Write the helper to %TEMP%\TokenStep_update_helper.bat.
+    let mut helper = std::env::temp_dir();
+    helper.push("TokenStep_update_helper.bat");
+    if let Ok(mut f) = std::fs::File::create(&helper) {
+        let _ = f.write_all(bat.as_bytes());
+        let _ = f.flush();
+        drop(f);
+
+        // Detach the helper via cmd /c so it survives our exit.
+        // CREATE_NO_WINDOW keeps it from flashing a console.
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "/B", ""])
+            .arg(&helper)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        // Brief grace period so the helper is running before we exit.
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    // Exit — the helper takes over from here.
     std::process::exit(0);
+}
+
+/// Escape a Windows path for safe embedding inside a .bat double-quoted arg.
+/// We only need to neutralize `"` and `%`; backslashes are fine in paths.
+fn escape_bat_path(s: &str) -> String {
+    s.replace('"', "").replace('%', "%%")
 }
 
 /// Entry point invoked from a background thread in lib.rs: orchestrates the
 /// download → install → exit sequence, emitting progress along the way.
 ///
+/// `installed_exe` is the absolute path the NSIS installer writes the new exe
+/// to (the currentUser install location); the relaunch helper starts that path
+/// after the installer finishes.
+///
 /// Returns `false` if the download failed (so the caller can emit an error
 /// event and let the user retry). Returns `true` only by never returning at
 /// all — on success it runs the installer and exits the process.
-pub fn run_self_update<F>(asset_url: &str, asset_name: &str, asset_size: u64, version: &str, emit: F) -> bool
+pub fn run_self_update<F>(asset_url: &str, asset_name: &str, asset_size: u64, version: &str, installed_exe: &std::path::Path, emit: F) -> bool
 where
     F: Fn(DownloadProgress),
 {
     match download(asset_url, asset_name, asset_size, version, emit) {
-        Some(path) => install_and_restart(&path), // never returns
+        Some(path) => install_and_restart(&path, installed_exe), // never returns
         None => false,
     }
 }
