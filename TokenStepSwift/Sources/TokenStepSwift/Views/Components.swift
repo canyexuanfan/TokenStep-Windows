@@ -6,6 +6,7 @@ struct StatusBarLabelView: View {
     var lap: TokenStepLapProgress
     var refreshing: Bool
     var theme: TokenStepTheme
+    var language: TokenStepLanguage
 
     var body: some View {
         HStack(spacing: 7) {
@@ -14,15 +15,16 @@ struct StatusBarLabelView: View {
                 .interpolation(.high)
                 .frame(width: 22, height: 22)
                 .accessibilityLabel("\(lap.lapTitle) \(lap.lapPercentText)")
-                .id(theme.id)
+                .id("\(theme.id)-\(language.resolved.id)")
 
-            Text(TokenStepFormat.tokens(tokens, compact: true))
+            Text(TokenStepFormat.tokens(tokens, compact: true, language: language))
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(Color.primary)
         }
         .padding(.horizontal, 2)
         .frame(height: 24)
+        .id("\(theme.id)-\(language.resolved.id)")
     }
 }
 

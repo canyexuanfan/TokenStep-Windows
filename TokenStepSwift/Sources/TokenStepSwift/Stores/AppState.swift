@@ -26,8 +26,8 @@ final class AppState: ObservableObject {
         applyDefaultAutostartIfNeeded()
         configureTimer()
         refreshCodexQuota()
-        refresh()
-        checkForUpdatesIfNeeded()
+        refreshIfSnapshotIsStale()
+        scheduleDeferredUpdateCheck()
     }
 
     deinit {
@@ -92,6 +92,10 @@ final class AppState: ObservableObject {
         return TokenIslandDisplayDetector.fallbackReason
     }
 
+    var appearanceID: String {
+        "\(settings.theme.id)-\(settings.language.resolved.id)"
+    }
+
     func load() {
         let loadedSettings = DataService.loadSettings()
         TokenStepLocalization.apply(loadedSettings.language)
@@ -108,10 +112,11 @@ final class AppState: ObservableObject {
         guard !isRefreshing else { return }
         isRefreshing = true
         lastError = nil
+        let historyDays = settings.historyDays
         Task {
             do {
                 try await Task.detached(priority: .utility) {
-                    try DataService.runCollector()
+                    try DataService.runCollectorInHelper(historyDays: historyDays)
                 }.value
             } catch {
                 lastError = error.localizedDescription
@@ -320,6 +325,33 @@ final class AppState: ObservableObject {
                 self?.refresh()
             }
         }
+        timer?.tolerance = min(TimeInterval(settings.refreshIntervalSeconds) * 0.1, 30)
+    }
+
+    private func refreshIfSnapshotIsStale() {
+        guard settings.refreshIntervalSeconds > 0 else {
+            if snapshot.generatedAt == nil {
+                refresh()
+            }
+            return
+        }
+        guard let generatedAt = snapshot.generatedAt,
+              let generatedDate = Self.parseGeneratedAt(generatedAt)
+        else {
+            refresh()
+            return
+        }
+        if Date().timeIntervalSince(generatedDate) >= TimeInterval(settings.refreshIntervalSeconds) {
+            refresh()
+        }
+    }
+
+    private func scheduleDeferredUpdateCheck() {
+        guard settings.autoUpdateEnabled else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            checkForUpdatesIfNeeded()
+        }
     }
 
     private func checkForUpdatesIfNeeded() {
@@ -347,4 +379,23 @@ final class AppState: ObservableObject {
         )
         try Data("applied\n".utf8).write(to: AppPaths.autostartDefaultMarker, options: .atomic)
     }
+
+    private static func parseGeneratedAt(_ value: String) -> Date? {
+        if let date = generatedAtISOWithFractional.date(from: value) {
+            return date
+        }
+        return generatedAtISO.date(from: value)
+    }
+
+    private static let generatedAtISOWithFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let generatedAtISO: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }

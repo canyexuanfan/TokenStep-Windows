@@ -2,12 +2,15 @@ import Foundation
 
 enum UsageCollector {
     private static let timezone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+    private static let maxRelevantLineBytes = 1_048_576
 
-    static func collect() -> UsageSnapshot {
+    static func collect(historyDays: Int = TokenStepSettings.defaults.historyDays) -> UsageSnapshot {
         var cache = loadCache()
+        compactCacheRecords(&cache)
         var livePaths = Set<String>()
-        let codex = collectCodex(cache: &cache, livePaths: &livePaths)
-        let claude = collectClaudeCode(cache: &cache, livePaths: &livePaths)
+        let sourceCutoff = sourceFileCutoffDate(historyDays: historyDays)
+        let codex = collectCodex(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
+        let claude = collectClaudeCode(cache: &cache, livePaths: &livePaths, modifiedSince: sourceCutoff)
         cache.files = cache.files.filter { livePaths.contains($0.key) }
         saveCache(cache)
         return aggregate(
@@ -19,8 +22,8 @@ enum UsageCollector {
         )
     }
 
-    private static func collectCodex(cache: inout CollectorCache, livePaths: inout Set<String>) -> CollectorResult {
-        let jsonlResult = collectCodexFromJSONL(cache: &cache, livePaths: &livePaths)
+    private static func collectCodex(cache: inout CollectorCache, livePaths: inout Set<String>, modifiedSince cutoffDate: Date?) -> CollectorResult {
+        let jsonlResult = collectCodexFromJSONL(cache: &cache, livePaths: &livePaths, modifiedSince: cutoffDate)
         if jsonlResult.source.status == "ok" {
             return jsonlResult
         }
@@ -88,13 +91,13 @@ enum UsageCollector {
         )
     }
 
-    private static func collectCodexFromJSONL(cache: inout CollectorCache, livePaths: inout Set<String>) -> CollectorResult {
+    private static func collectCodexFromJSONL(cache: inout CollectorCache, livePaths: inout Set<String>, modifiedSince cutoffDate: Date?) -> CollectorResult {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let roots = [
             home.appendingPathComponent(".codex/sessions", isDirectory: true),
             home.appendingPathComponent(".codex/archived_sessions", isDirectory: true)
         ]
-        let paths = roots.flatMap { jsonlFiles(under: $0) }
+        let paths = roots.flatMap { jsonlFiles(under: $0, modifiedSince: cutoffDate) }
         var records: [UsageRecord] = []
         var seen = Set<String>()
 
@@ -153,8 +156,9 @@ enum UsageCollector {
                     )
                 }
             }
-            records.append(contentsOf: fileRecords)
-            updateCache(path: path, tool: "Codex", records: fileRecords, cache: &cache)
+            let compactedFileRecords = compactRecords(fileRecords)
+            records.append(contentsOf: compactedFileRecords)
+            updateCache(path: path, tool: "Codex", records: compactedFileRecords, cache: &cache)
         }
 
         return CollectorResult(
@@ -167,10 +171,10 @@ enum UsageCollector {
         )
     }
 
-    private static func collectClaudeCode(cache: inout CollectorCache, livePaths: inout Set<String>) -> CollectorResult {
+    private static func collectClaudeCode(cache: inout CollectorCache, livePaths: inout Set<String>, modifiedSince cutoffDate: Date?) -> CollectorResult {
         let root = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true)
-        let paths = jsonlFiles(under: root)
+        let paths = jsonlFiles(under: root, modifiedSince: cutoffDate)
         var records: [UsageRecord] = []
         var seen = Set<String>()
 
@@ -218,8 +222,9 @@ enum UsageCollector {
                     )
                 }
             }
-            records.append(contentsOf: fileRecords)
-            updateCache(path: path, tool: "Claude Code", records: fileRecords, cache: &cache)
+            let compactedFileRecords = compactRecords(fileRecords)
+            records.append(contentsOf: compactedFileRecords)
+            updateCache(path: path, tool: "Claude Code", records: compactedFileRecords, cache: &cache)
         }
 
         return CollectorResult(
@@ -294,11 +299,11 @@ enum UsageCollector {
         )
     }
 
-    private static func jsonlFiles(under root: URL) -> [URL] {
+    private static func jsonlFiles(under root: URL, modifiedSince cutoffDate: Date? = nil) -> [URL] {
         guard FileManager.default.fileExists(atPath: root.path),
               let enumerator = FileManager.default.enumerator(
                 at: root,
-                includingPropertiesForKeys: [.isRegularFileKey],
+                includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
                 options: [.skipsHiddenFiles]
               )
         else {
@@ -308,8 +313,14 @@ enum UsageCollector {
         return enumerator.compactMap { item in
             guard let url = item as? URL,
                   url.pathExtension == "jsonl",
-                  (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
+                  values.isRegularFile == true
             else {
+                return nil
+            }
+            if let cutoffDate,
+               let modificationDate = values.contentModificationDate,
+               modificationDate < cutoffDate {
                 return nil
             }
             return url
@@ -338,6 +349,44 @@ enum UsageCollector {
         )
     }
 
+    private static func compactCacheRecords(_ cache: inout CollectorCache) {
+        for key in cache.files.keys {
+            guard let cached = cache.files[key] else { continue }
+            let compacted = compactRecords(cached.records)
+            guard compacted.count != cached.records.count else { continue }
+            cache.files[key] = CachedUsageFile(
+                tool: cached.tool,
+                size: cached.size,
+                modificationTime: cached.modificationTime,
+                records: compacted
+            )
+        }
+    }
+
+    private static func compactRecords(_ records: [UsageRecord]) -> [UsageRecord] {
+        var grouped = [CompactRecordKey: TokenUsageCounts]()
+        for record in records {
+            let key = CompactRecordKey(date: record.date, tool: record.tool, model: record.model)
+            grouped[key, default: TokenUsageCounts()].add(record.usage)
+        }
+
+        return grouped
+            .map { key, usage in
+                UsageRecord(
+                    date: key.date,
+                    timestamp: nil,
+                    tool: key.tool,
+                    model: key.model,
+                    usage: usage
+                )
+            }
+            .sorted {
+                if $0.date != $1.date { return $0.date < $1.date }
+                if $0.tool != $1.tool { return $0.tool < $1.tool }
+                return $0.model < $1.model
+            }
+    }
+
     private static func fileMetadata(for url: URL) -> (size: UInt64, modificationTime: TimeInterval)? {
         guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
               let size = values.fileSize,
@@ -361,7 +410,7 @@ enum UsageCollector {
     private static func saveCache(_ cache: CollectorCache) {
         do {
             let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            encoder.outputFormatting = [.sortedKeys]
             let data = try encoder.encode(cache)
             try FileManager.default.createDirectory(
                 at: AppPaths.collectorCacheJSON.deletingLastPathComponent(),
@@ -373,6 +422,10 @@ enum UsageCollector {
         }
     }
 
+    private static func sourceFileCutoffDate(historyDays: Int) -> Date? {
+        Calendar.current.date(byAdding: .day, value: -max(7, historyDays + 1), to: Date())
+    }
+
     private static func forEachLine(in url: URL, matchingAny markers: [String] = [], _ body: (String) -> Void) throws {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -381,6 +434,17 @@ enum UsageCollector {
         let markerData = markers.map { Data($0.utf8) }
         var buffer = Data()
         buffer.reserveCapacity(128 * 1024)
+        var discardingOversizedLine = false
+
+        func processLine(_ lineData: Data) {
+            guard lineMatches(lineData, markers: markerData),
+                  let line = String(data: lineData, encoding: .utf8),
+                  !line.isEmpty
+            else {
+                return
+            }
+            body(line)
+        }
 
         while true {
             guard let chunk = try handle.read(upToCount: 64 * 1024), !chunk.isEmpty else {
@@ -393,13 +457,11 @@ enum UsageCollector {
             var searchRange = buffer.startIndex..<buffer.endIndex
             while let range = buffer.range(of: newline, options: [], in: searchRange) {
                 let lineEnd = range.lowerBound
-                if lineEnd > lineStart {
+                if discardingOversizedLine {
+                    discardingOversizedLine = false
+                } else if lineEnd > lineStart {
                     let lineData = buffer.subdata(in: lineStart..<lineEnd)
-                    if lineMatches(lineData, markers: markerData),
-                       let line = String(data: lineData, encoding: .utf8),
-                       !line.isEmpty {
-                        body(line)
-                    }
+                    processLine(lineData)
                 }
                 consumedEnd = range.upperBound
                 lineStart = range.upperBound
@@ -409,13 +471,17 @@ enum UsageCollector {
             if consumedEnd > buffer.startIndex {
                 buffer.removeSubrange(buffer.startIndex..<consumedEnd)
             }
+
+            if buffer.count > maxRelevantLineBytes {
+                discardingOversizedLine = true
+                buffer.removeAll(keepingCapacity: true)
+            }
         }
 
-        if !buffer.isEmpty,
-           lineMatches(buffer, markers: markerData),
-           let line = String(data: buffer, encoding: .utf8),
-           !line.isEmpty {
-            body(line)
+        if !discardingOversizedLine,
+           !buffer.isEmpty,
+           buffer.count <= maxRelevantLineBytes {
+            processLine(buffer)
         }
     }
 
@@ -619,6 +685,12 @@ private struct UsageRecord: Codable {
     var usage: TokenUsageCounts
 }
 
+private struct CompactRecordKey: Hashable {
+    var date: String
+    var tool: String
+    var model: String
+}
+
 private struct TokenUsageCounts: Codable {
     var inputTokens = 0
     var outputTokens = 0
@@ -626,6 +698,15 @@ private struct TokenUsageCounts: Codable {
     var cacheReadInputTokens = 0
     var reasoningOutputTokens = 0
     var totalTokens = 0
+
+    mutating func add(_ other: TokenUsageCounts) {
+        inputTokens += other.inputTokens
+        outputTokens += other.outputTokens
+        cacheCreationInputTokens += other.cacheCreationInputTokens
+        cacheReadInputTokens += other.cacheReadInputTokens
+        reasoningOutputTokens += other.reasoningOutputTokens
+        totalTokens += other.totalTokens
+    }
 }
 
 private struct UsageAccumulator {
