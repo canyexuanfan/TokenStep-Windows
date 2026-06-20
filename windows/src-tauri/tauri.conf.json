@@ -50,7 +50,7 @@
       },
       "nsis": {
         "installerIcon": "icons/icon.ico",
-        "installMode": "both",
+        "installMode": "currentUser",
         "displayLanguageSelector": false,
         "languages": ["SimpChinese", "English"],
         "installerHooks": "nsis-hooks.nsh"
