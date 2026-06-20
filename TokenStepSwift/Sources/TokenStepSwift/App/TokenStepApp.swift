@@ -21,12 +21,23 @@ struct TokenStepApp: App {
             PopoverPanelView()
                 .environmentObject(appState)
         } label: {
-            StatusBarLabelView(
-                tokens: appState.today.totalTokens,
-                lap: appState.todayLap,
-                refreshing: appState.isRefreshing,
-                theme: appState.settings.theme
-            )
+            Group {
+                if appState.shouldShowTokenIsland {
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityHidden(true)
+                } else {
+                    StatusBarLabelView(
+                        tokens: appState.today.totalTokens,
+                        lap: appState.todayLap,
+                        refreshing: appState.isRefreshing,
+                        theme: appState.settings.theme
+                    )
+                }
+            }
+            .onAppear {
+                TokenIslandWindowPresenter.shared.bind(appState: appState)
+            }
         }
         .menuBarExtraStyle(.window)
 
@@ -36,17 +47,17 @@ struct TokenStepApp: App {
         }
         .commands {
             CommandMenu("TokenStep") {
-                Button("刷新") {
+                Button(L("刷新")) {
                     appState.refresh()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
 
-                Button("打开 TokenStep") {
+                Button(L("打开 TokenStep")) {
                     MainWindowPresenter.shared.show(appState: appState)
                 }
                 .keyboardShortcut("o", modifiers: [.command])
 
-                Button("设置") {
+                Button(L("设置")) {
                     SettingsWindowPresenter.shared.show(appState: appState)
                 }
                 .keyboardShortcut(",", modifiers: [.command])

@@ -28,7 +28,7 @@ struct DashboardScreenshotView: View {
                 Text("TokenStep")
                     .font(.system(size: 25, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                Text("每天一个亿")
+                Text(L("每天一个亿"))
                     .font(.callout.weight(.bold))
                     .foregroundStyle(Color.tokenGreenDark)
             }
@@ -39,7 +39,7 @@ struct DashboardScreenshotView: View {
                 Text(section.title)
                     .font(.system(size: 34, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                Text("更新 \(TokenStepFormat.generatedTime(appState.snapshot.generatedAt))")
+                Text("\(L("更新")) \(TokenStepFormat.generatedTime(appState.snapshot.generatedAt))")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }

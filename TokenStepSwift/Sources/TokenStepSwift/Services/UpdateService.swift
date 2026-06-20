@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 struct AvailableUpdate: Identifiable, Equatable {
@@ -19,10 +20,17 @@ struct AvailableUpdate: Identifiable, Equatable {
     var noteLines: [String] {
         let cleaned = notes
             .split(separator: "\n")
-            .map { line in
-                line.trimmingCharacters(in: CharacterSet(charactersIn: "-• ").union(.whitespacesAndNewlines))
+            .compactMap { line -> String? in
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                guard !trimmed.hasPrefix("#") else { return nil }
+                guard !trimmed.lowercased().hasPrefix("sha256") else { return nil }
+                let cleaned = trimmed
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "-•* ").union(.whitespacesAndNewlines))
+                    .replacingOccurrences(of: "`", with: "")
+                    .replacingOccurrences(of: "**", with: "")
+                return cleaned.isEmpty ? nil : cleaned
             }
-            .filter { !$0.isEmpty && !$0.lowercased().hasPrefix("sha256") }
         return Array(cleaned.prefix(upTo: min(4, cleaned.count))).map { String($0) }
     }
 }
@@ -88,16 +96,17 @@ enum UpdateService {
         try? FileManager.default.removeItem(at: destination)
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
         try preflightDMG(destination, requireVerified: requireVerified)
-        try launchInstaller(for: destination, requireVerified: requireVerified)
+        try launchInstaller(for: destination, version: update.version, requireVerified: requireVerified)
         return destination
     }
 
     private static func preflightDMG(_ dmgURL: URL, requireVerified: Bool) throws {
+        detachStaleTokenStepMounts()
         let mountPoint = FileManager.default.temporaryDirectory
             .appendingPathComponent("tokenstep-preflight-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true)
         defer {
-            _ = try? runProcess("/usr/bin/hdiutil", arguments: ["detach", mountPoint.path, "-quiet"])
+            _ = try? runProcess("/usr/bin/hdiutil", arguments: ["detach", mountPoint.path, "-force", "-quiet"])
             try? FileManager.default.removeItem(at: mountPoint)
         }
 
@@ -128,7 +137,7 @@ enum UpdateService {
             && (try? runProcess("/usr/bin/codesign", arguments: ["--verify", "--deep", "--strict", appURL.path])) != nil
     }
 
-    private static func launchInstaller(for dmgURL: URL, requireVerified: Bool) throws {
+    private static func launchInstaller(for dmgURL: URL, version: String, requireVerified: Bool) throws {
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("tokenstep-install-\(UUID().uuidString)")
             .appendingPathExtension("sh")
@@ -136,11 +145,20 @@ enum UpdateService {
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let script = installerScript(
             dmgPath: dmgURL.path,
+            version: version,
             currentPID: currentPID,
             logPath: logURL.path,
             requireVerified: requireVerified,
             scriptPath: scriptURL.path
         )
+        let launchLog = """
+        TokenStep update launcher prepared at \(Date())
+        Expected version: \(version)
+        DMG: \(dmgURL.path)
+        Script: \(scriptURL.path)
+
+        """
+        try launchLog.write(to: logURL, atomically: true, encoding: .utf8)
         try script.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
@@ -151,40 +169,63 @@ enum UpdateService {
         process.standardError = nil
         do {
             try process.run()
+            exitCurrentAppAfterLaunchingInstaller()
         } catch {
             throw UpdateError.installFailed
         }
     }
 
+    private static func exitCurrentAppAfterLaunchingInstaller() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            NSApp.terminate(nil)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            Darwin.exit(0)
+        }
+    }
+
     private static func installerScript(
         dmgPath: String,
+        version: String,
         currentPID: Int32,
         logPath: String,
         requireVerified: Bool,
         scriptPath: String
     ) -> String {
-        """
+        let failureTitle = L("TokenStep 自动更新失败")
+        let failureBody = L("请手动把 DMG 里的 TokenStep 拖到 Applications。")
+        return """
         #!/bin/bash
         set -euo pipefail
 
         DMG=\(shellQuote(dmgPath))
         DEST="/Applications/TokenStep.app"
         APP_NAME="TokenStep.app"
+        EXECUTABLE_NAME="TokenStepSwift"
+        EXPECTED_VERSION=\(shellQuote(version))
         CURRENT_PID="\(currentPID)"
         LOG=\(shellQuote(logPath))
         REQUIRE_VERIFIED="\(requireVerified ? "1" : "0")"
         SCRIPT_PATH=\(shellQuote(scriptPath))
+        FAILURE_TITLE=\(shellQuote(failureTitle))
+        FAILURE_BODY=\(shellQuote(failureBody))
         MOUNT_POINT=""
+        MOUNT_ROOT=""
         BACKUP=""
 
         mkdir -p "$(dirname "$LOG")"
         exec >>"$LOG" 2>&1
         echo "TokenStep update installer started at $(date)"
+        echo "Expected version: $EXPECTED_VERSION"
+        echo "DMG: $DMG"
+        echo "Destination: $DEST"
 
         cleanup() {
           if [ -n "$MOUNT_POINT" ] && [ -d "$MOUNT_POINT" ]; then
-            /usr/bin/hdiutil detach "$MOUNT_POINT" -quiet || true
-            /bin/rmdir "$MOUNT_POINT" 2>/dev/null || true
+            /usr/bin/hdiutil detach "$MOUNT_POINT" -force -quiet || true
+          fi
+          if [ -n "$MOUNT_ROOT" ] && [ -d "$MOUNT_ROOT" ]; then
+            /bin/rm -rf "$MOUNT_ROOT" 2>/dev/null || true
           fi
           /bin/rm -f "$SCRIPT_PATH" 2>/dev/null || true
         }
@@ -195,36 +236,83 @@ enum UpdateService {
             if [ -n "$BACKUP" ] && [ -d "$BACKUP" ] && [ ! -d "$DEST" ]; then
               /bin/mv "$BACKUP" "$DEST" || true
             fi
-            /usr/bin/osascript -e 'display notification "请手动把 DMG 里的 TokenStep 拖到 Applications。" with title "TokenStep 自动更新失败"' || true
+            /usr/bin/osascript -e "display notification \\"$FAILURE_BODY\\" with title \\"$FAILURE_TITLE\\"" || true
           fi
           cleanup
           exit "$STATUS"
         }
         trap finish EXIT
 
-        while /bin/kill -0 "$CURRENT_PID" 2>/dev/null; do
-          /bin/sleep 0.2
-        done
+        detach_tokenstep_mounts() {
+          /sbin/mount | while IFS= read -r line; do
+            if [[ "$line" == *" on /Volumes/TokenStep"* || "$line" == *tokenstep-preflight-* || "$line" == *tokenstep-update.* || "$line" == *tokenstep-update-root.* ]]; then
+              MP="${line#* on }"
+              MP="${MP%% (*}"
+              echo "Detaching stale mount: $MP"
+              /usr/bin/hdiutil detach "$MP" -force -quiet || true
+            fi
+          done
+        }
 
-        MOUNT_POINT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/tokenstep-update.XXXXXX")"
-        /usr/bin/hdiutil attach -nobrowse -quiet -mountpoint "$MOUNT_POINT" "$DMG"
+        detach_tokenstep_mounts
+
+        MOUNT_ROOT="$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/tokenstep-update-root.XXXXXX")"
+        echo "Mounting DMG under $MOUNT_ROOT"
+        ATTACH_OUTPUT="$(/usr/bin/hdiutil attach -nobrowse -readonly -mountroot "$MOUNT_ROOT" "$DMG" 2>&1)" || {
+          echo "hdiutil attach failed"
+          echo "$ATTACH_OUTPUT"
+          exit 1
+        }
+        echo "$ATTACH_OUTPUT"
+        MOUNT_POINT="$(printf '%s\n' "$ATTACH_OUTPUT" | /usr/bin/awk '/\\// { mount=$NF } END { print mount }')"
+        if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT" ]; then
+          echo "Mounted volume path not found"
+          exit 1
+        }
+        echo "Mounted at $MOUNT_POINT"
 
         SRC="$(/usr/bin/find "$MOUNT_POINT" -name "$APP_NAME" -type d -print -quit)"
         if [ -z "$SRC" ]; then
           echo "TokenStep.app not found in DMG"
           exit 1
         fi
+        echo "Found source app: $SRC"
 
         if [ "$REQUIRE_VERIFIED" = "1" ]; then
+          echo "Verifying source app"
           /usr/sbin/spctl --assess --type execute "$SRC"
           /usr/bin/codesign --verify --deep --strict "$SRC"
         fi
 
+        SRC_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SRC/Contents/Info.plist" 2>/dev/null || true)"
+        echo "Source version: $SRC_VERSION"
+        if [ "$SRC_VERSION" != "$EXPECTED_VERSION" ]; then
+          echo "Source version mismatch: expected $EXPECTED_VERSION, got $SRC_VERSION"
+          exit 1
+        fi
+
+        echo "Stopping old TokenStep process"
+        /bin/kill -TERM "$CURRENT_PID" 2>/dev/null || true
+        /usr/bin/pkill -x "$EXECUTABLE_NAME" 2>/dev/null || true
+        for _ in {1..50}; do
+          if ! /usr/bin/pgrep -x "$EXECUTABLE_NAME" >/dev/null 2>&1; then
+            break
+          fi
+          /bin/sleep 0.2
+        done
+        if /usr/bin/pgrep -x "$EXECUTABLE_NAME" >/dev/null 2>&1; then
+          echo "Force stopping old TokenStep process"
+          /usr/bin/pkill -9 -x "$EXECUTABLE_NAME" 2>/dev/null || true
+          /bin/sleep 0.4
+        fi
+
         BACKUP="/Applications/TokenStep.app.previous.$(/bin/date +%s)"
         if [ -d "$DEST" ]; then
+          echo "Backing up existing app to $BACKUP"
           /bin/mv "$DEST" "$BACKUP"
         fi
 
+        echo "Copying new app into Applications"
         if ! /usr/bin/ditto "$SRC" "$DEST"; then
           /bin/rm -rf "$DEST"
           if [ -d "$BACKUP" ]; then
@@ -238,8 +326,23 @@ enum UpdateService {
           /bin/rm -rf "$BACKUP"
         fi
 
+        INSTALLED_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEST/Contents/Info.plist" 2>/dev/null || true)"
+        echo "Installed version: $INSTALLED_VERSION"
+        if [ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]; then
+          echo "Installed version mismatch: expected $EXPECTED_VERSION, got $INSTALLED_VERSION"
+          exit 1
+        fi
+
         /usr/bin/xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
-        /usr/bin/open "$DEST"
+        echo "Opening updated app"
+        /usr/bin/open -n "$DEST"
+        for _ in {1..25}; do
+          if /usr/bin/pgrep -x "$EXECUTABLE_NAME" >/dev/null 2>&1; then
+            echo "Updated app relaunched"
+            break
+          fi
+          /bin/sleep 0.2
+        done
         echo "TokenStep update installer finished at $(date)"
         """
     }
@@ -264,6 +367,26 @@ enum UpdateService {
         }
         return output.fileHandleForReading.readDataToEndOfFile()
     }
+
+    private static func detachStaleTokenStepMounts() {
+        guard let output = try? runProcess("/sbin/mount", arguments: []),
+              let text = String(data: output, encoding: .utf8)
+        else { return }
+
+        for line in text.split(separator: "\n").map(String.init) {
+            guard line.contains(" on /Volumes/TokenStep")
+                    || line.contains("tokenstep-preflight-")
+                    || line.contains("tokenstep-update.")
+                    || line.contains("tokenstep-update-root.")
+            else { continue }
+
+            guard let range = line.range(of: " on ") else { continue }
+            let afterOn = line[range.upperBound...]
+            guard let endRange = afterOn.range(of: " (") else { continue }
+            let mountPoint = String(afterOn[..<endRange.lowerBound])
+            _ = try? runProcess("/usr/bin/hdiutil", arguments: ["detach", mountPoint, "-force", "-quiet"])
+        }
+    }
 }
 
 enum UpdateError: LocalizedError {
@@ -276,15 +399,15 @@ enum UpdateError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .checkFailed:
-            return "检查更新失败，请稍后再试。"
+            return L("检查更新失败，请稍后再试。")
         case .missingDMG:
-            return "新版本没有可下载的 DMG。"
+            return L("新版本没有可下载的 DMG。")
         case .downloadFailed:
-            return "下载更新失败，请稍后再试。"
+            return L("下载更新失败，请稍后再试。")
         case .verificationFailed:
-            return "新版本未通过签名或公证验证，已停止安装。"
+            return L("新版本未通过签名或公证验证，已停止安装。")
         case .installFailed:
-            return "自动安装失败，请稍后重试，或手动把 TokenStep 拖到 Applications。"
+            return L("自动安装失败，请稍后重试，或手动把 TokenStep 拖到 Applications。")
         }
     }
 }

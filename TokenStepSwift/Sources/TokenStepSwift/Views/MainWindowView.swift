@@ -10,28 +10,28 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .today: "今日"
-        case .history: "历史"
-        case .stats: "统计"
-        case .privacy: "隐私"
+        case .today: L("今日")
+        case .history: L("历史")
+        case .stats: L("统计")
+        case .privacy: L("隐私")
         }
     }
 
     var sidebarTitle: String {
         switch self {
-        case .today: "今日消耗"
-        case .history: "历史活动"
-        case .stats: "用量统计"
-        case .privacy: "隐私"
+        case .today: L("今日消耗")
+        case .history: L("历史活动")
+        case .stats: L("用量统计")
+        case .privacy: L("隐私")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .today: "今天的 Token 使用节奏"
-        case .history: "长期节奏和所有历史记录"
-        case .stats: "按客户端和模型拆开看"
-        case .privacy: "只统计数量，不读取内容"
+        case .today: L("今天的 Token 使用节奏")
+        case .history: L("长期节奏和所有历史记录")
+        case .stats: L("按客户端和模型拆开看")
+        case .privacy: L("只统计数量，不读取内容")
         }
     }
 
@@ -55,8 +55,8 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var saveScreenshotTitle: String {
         switch self {
-        case .history: "保存当前页 PNG（最近 30 天）"
-        default: "保存当前页 PNG"
+        case .history: L("保存当前页 PNG（最近 30 天）")
+        default: L("保存当前页 PNG")
         }
     }
 }
@@ -81,7 +81,7 @@ struct MainWindowView: View {
                 Button {
                     appState.refresh()
                 } label: {
-                    Label(appState.isRefreshing ? "同步中" : "刷新", systemImage: "arrow.clockwise")
+                    Label(appState.isRefreshing ? L("同步中") : L("刷新"), systemImage: "arrow.clockwise")
                 }
                 .disabled(appState.isRefreshing)
             }
@@ -96,7 +96,7 @@ struct MainWindowView: View {
                     Text("TokenStep")
                         .font(.system(size: 25, weight: .heavy, design: .rounded))
                         .foregroundStyle(Color.tokenInk)
-                    Text("每天一个亿")
+                    Text(L("每天一个亿"))
                         .font(.callout.weight(.bold))
                         .foregroundStyle(Color.tokenGreen)
                 }
@@ -182,7 +182,7 @@ struct MainWindowView: View {
                         Circle()
                             .fill(appState.isRefreshing ? Color.secondary.opacity(0.7) : Color.tokenGreen)
                             .frame(width: 7, height: 7)
-                        Text(appState.isRefreshing ? "同步中" : "已同步")
+                        Text(appState.isRefreshing ? L("同步中") : L("已同步"))
                             .font(.callout.weight(.bold))
                     }
                     .padding(.horizontal, 13)
@@ -191,15 +191,15 @@ struct MainWindowView: View {
                     .overlay(Capsule().stroke(Color.black.opacity(0.06)))
 
                     ScreenshotMenuButton(
-                        copyTitle: "复制当前页截图",
+                        copyTitle: L("复制当前页截图"),
                         saveTitle: selection.saveScreenshotTitle,
-                        help: "截取当前页",
+                        help: L("截取当前页"),
                         copyAction: copyCurrentPageScreenshot,
                         saveAction: saveCurrentPageScreenshot
                     )
                 }
 
-                Text("更新 \(TokenStepFormat.generatedTime(appState.snapshot.generatedAt))")
+                Text("\(L("更新")) \(TokenStepFormat.generatedTime(appState.snapshot.generatedAt))")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -312,7 +312,7 @@ private struct SidebarSettingsButton: View {
                 }
                 .frame(width: 34, height: 34)
 
-                Text("设置")
+                Text(L("设置"))
                     .font(.callout.weight(.heavy))
                     .foregroundStyle(Color.tokenInk.opacity(0.86))
 
@@ -339,7 +339,7 @@ private struct SidebarSettingsButton: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
-        .accessibilityLabel("设置")
+        .accessibilityLabel(L("设置"))
     }
 }
 
@@ -352,10 +352,10 @@ private struct SidebarPrivacyStatus: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("本地统计")
+                Text(L("本地统计"))
                     .font(.caption.weight(.heavy))
                     .foregroundStyle(Color.tokenGreenDark)
-                Text("不上传代码或对话")
+                Text(L("不上传代码或对话"))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

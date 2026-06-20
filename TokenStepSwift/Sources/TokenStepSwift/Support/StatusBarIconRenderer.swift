@@ -1,8 +1,16 @@
 import AppKit
 
 enum StatusBarIconRenderer {
-    static func progressRing(progress: Double, lap: Int, refreshing: Bool) -> NSImage {
-        let size = NSSize(width: 22, height: 22)
+    static func progressRing(
+        progress: Double,
+        lap: Int,
+        refreshing: Bool,
+        size: CGFloat = 22,
+        radius: CGFloat = 8.7,
+        lineWidth: CGFloat = 3,
+        showsCenterDot: Bool = true
+    ) -> NSImage {
+        let size = NSSize(width: size, height: size)
         let image = NSImage(size: size)
         image.lockFocus()
 
@@ -13,8 +21,6 @@ enum StatusBarIconRenderer {
 
         let progress = min(max(progress, 0), 1)
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
-        let radius: CGFloat = 8.7
-        let lineWidth: CGFloat = 3
 
         context.setLineWidth(lineWidth)
         context.setLineCap(.round)
@@ -34,11 +40,14 @@ enum StatusBarIconRenderer {
         )
         context.strokePath()
 
-        let dotColor = refreshing
-            ? NSColor.secondaryLabelColor.withAlphaComponent(0.78)
-            : ringColor
-        dotColor.setFill()
-        NSBezierPath(ovalIn: NSRect(x: center.x - 1.65, y: center.y - 1.65, width: 3.3, height: 3.3)).fill()
+        if showsCenterDot {
+            let dotColor = refreshing
+                ? NSColor.secondaryLabelColor.withAlphaComponent(0.78)
+                : ringColor
+            dotColor.setFill()
+            let dotSize = max(2.4, size.width * 0.15)
+            NSBezierPath(ovalIn: NSRect(x: center.x - dotSize / 2, y: center.y - dotSize / 2, width: dotSize, height: dotSize)).fill()
+        }
 
         image.unlockFocus()
         image.isTemplate = false

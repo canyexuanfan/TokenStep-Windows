@@ -17,7 +17,7 @@ MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 EXECUTABLE="$BUILD_DIR/$PRODUCT_NAME"
 ICON_FILE="$ROOT_DIR/TokenUsageMenuApp/assets/TokenStepIcon.icns"
-VERSION="${TOKENSTEP_VERSION:-0.1.11}"
+VERSION="${TOKENSTEP_VERSION:-0.1.14}"
 LAUNCH=true
 VERIFY=false
 
@@ -41,6 +41,7 @@ pkill -x "$PRODUCT_NAME" 2>/dev/null || true
 pkill -x "$APP_NAME" 2>/dev/null || true
 
 mkdir -p "$BUILD_DIR" "$DIST_DIR" "$OVERLAY_DIR"
+python3 "$ROOT_DIR/script/check_localization.py"
 cat > "$EMPTY_MODULEMAP" <<'EOF'
 // Intentionally empty.
 // CLT 16.x can leave both module.modulemap and bridging.modulemap defining SwiftBridging.

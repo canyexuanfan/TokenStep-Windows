@@ -82,6 +82,131 @@ struct SourceInfo: Codable {
     var records: Int?
 }
 
+struct CodexQuotaSnapshot: Equatable {
+    var fetchedAt: Date?
+    var fiveHour: CodexQuotaWindow?
+    var sevenDay: CodexQuotaWindow?
+
+    var isAvailable: Bool {
+        fiveHour != nil || sevenDay != nil
+    }
+
+    static let unavailable = CodexQuotaSnapshot(fetchedAt: nil, fiveHour: nil, sevenDay: nil)
+}
+
+struct CodexQuotaWindow: Equatable, Identifiable {
+    enum Kind: Equatable {
+        case fiveHour
+        case sevenDay
+    }
+
+    var kind: Kind
+    var usedPercent: Double
+    var resetsAt: Date?
+
+    var id: String {
+        switch kind {
+        case .fiveHour: return "5h"
+        case .sevenDay: return "7d"
+        }
+    }
+
+    var title: String {
+        switch kind {
+        case .fiveHour: return L("5 小时")
+        case .sevenDay: return L("7 天")
+        }
+    }
+
+    var remainingPercent: Double {
+        min(max(100 - usedPercent, 0), 100)
+    }
+}
+
+enum TokenIslandDisplayPlacement: String, CaseIterable, Identifiable, Codable {
+    case automatic = "auto"
+    case notchLeft = "notch_left"
+    case notchRight = "notch_right"
+    case menuBar = "menu_bar"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .automatic: return L("自动")
+        case .notchLeft: return L("刘海左侧")
+        case .notchRight: return L("刘海右侧")
+        case .menuBar: return L("菜单栏")
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .automatic: return L("自动")
+        case .notchLeft: return L("左侧")
+        case .notchRight: return L("右侧")
+        case .menuBar: return L("菜单栏")
+        }
+    }
+}
+
+enum TokenStepLanguage: String, CaseIterable, Identifiable, Codable {
+    case system
+    case zhHans = "zh-Hans"
+    case en
+    case zhHant = "zh-Hant"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return L("跟随系统")
+        case .zhHans: return "简体中文"
+        case .en: return "English"
+        case .zhHant: return "繁體中文"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .system: return L("自动匹配 macOS")
+        case .zhHans: return "简体"
+        case .en: return "English"
+        case .zhHant: return "繁體"
+        }
+    }
+
+    var localeIdentifier: String {
+        switch resolved {
+        case .system:
+            return "zh-Hans"
+        case .zhHans:
+            return "zh-Hans"
+        case .en:
+            return "en"
+        case .zhHant:
+            return "zh-Hant"
+        }
+    }
+
+    var resolved: TokenStepLanguage {
+        guard self == .system else { return self }
+        for identifier in Locale.preferredLanguages {
+            let lowercased = identifier.lowercased()
+            if lowercased.hasPrefix("zh-hant") || lowercased.hasPrefix("zh-tw") || lowercased.hasPrefix("zh-hk") {
+                return .zhHant
+            }
+            if lowercased.hasPrefix("en") {
+                return .en
+            }
+            if lowercased.hasPrefix("zh") {
+                return .zhHans
+            }
+        }
+        return .zhHans
+    }
+}
+
 struct TokenStepSettings: Codable {
     var dailyGoalTokens: Int
     var refreshIntervalSeconds: Int
@@ -90,6 +215,10 @@ struct TokenStepSettings: Codable {
     var autoUpdateEnabled: Bool
     var askBeforeDownloadingUpdates: Bool
     var requireVerifiedUpdates: Bool
+    var tokenIslandEnabled: Bool
+    var tokenIslandPlacement: TokenIslandDisplayPlacement
+    var showCodexQuota: Bool
+    var language: TokenStepLanguage
     var skippedUpdateVersion: String?
 
     enum CodingKeys: String, CodingKey {
@@ -100,6 +229,10 @@ struct TokenStepSettings: Codable {
         case autoUpdateEnabled = "auto_update_enabled"
         case askBeforeDownloadingUpdates = "ask_before_downloading_updates"
         case requireVerifiedUpdates = "require_verified_updates"
+        case tokenIslandEnabled = "token_island_enabled"
+        case tokenIslandPlacement = "token_island_placement"
+        case showCodexQuota = "show_codex_quota"
+        case language
         case skippedUpdateVersion = "skipped_update_version"
     }
 
@@ -111,6 +244,10 @@ struct TokenStepSettings: Codable {
         autoUpdateEnabled: true,
         askBeforeDownloadingUpdates: true,
         requireVerifiedUpdates: true,
+        tokenIslandEnabled: true,
+        tokenIslandPlacement: .automatic,
+        showCodexQuota: false,
+        language: .system,
         skippedUpdateVersion: nil
     )
 
@@ -122,6 +259,10 @@ struct TokenStepSettings: Codable {
         autoUpdateEnabled: Bool,
         askBeforeDownloadingUpdates: Bool,
         requireVerifiedUpdates: Bool,
+        tokenIslandEnabled: Bool,
+        tokenIslandPlacement: TokenIslandDisplayPlacement,
+        showCodexQuota: Bool,
+        language: TokenStepLanguage,
         skippedUpdateVersion: String?
     ) {
         self.dailyGoalTokens = dailyGoalTokens
@@ -131,6 +272,10 @@ struct TokenStepSettings: Codable {
         self.autoUpdateEnabled = autoUpdateEnabled
         self.askBeforeDownloadingUpdates = askBeforeDownloadingUpdates
         self.requireVerifiedUpdates = requireVerifiedUpdates
+        self.tokenIslandEnabled = tokenIslandEnabled
+        self.tokenIslandPlacement = tokenIslandPlacement
+        self.showCodexQuota = showCodexQuota
+        self.language = language
         self.skippedUpdateVersion = skippedUpdateVersion
     }
 
@@ -145,6 +290,17 @@ struct TokenStepSettings: Codable {
         autoUpdateEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoUpdateEnabled) ?? defaults.autoUpdateEnabled
         askBeforeDownloadingUpdates = try container.decodeIfPresent(Bool.self, forKey: .askBeforeDownloadingUpdates) ?? defaults.askBeforeDownloadingUpdates
         requireVerifiedUpdates = try container.decodeIfPresent(Bool.self, forKey: .requireVerifiedUpdates) ?? defaults.requireVerifiedUpdates
+        let legacyTokenIslandEnabled = try container.decodeIfPresent(Bool.self, forKey: .tokenIslandEnabled)
+        tokenIslandEnabled = legacyTokenIslandEnabled ?? defaults.tokenIslandEnabled
+        if let placement = try container.decodeIfPresent(TokenIslandDisplayPlacement.self, forKey: .tokenIslandPlacement) {
+            tokenIslandPlacement = placement
+        } else if legacyTokenIslandEnabled == false {
+            tokenIslandPlacement = .menuBar
+        } else {
+            tokenIslandPlacement = defaults.tokenIslandPlacement
+        }
+        showCodexQuota = try container.decodeIfPresent(Bool.self, forKey: .showCodexQuota) ?? defaults.showCodexQuota
+        language = try container.decodeIfPresent(TokenStepLanguage.self, forKey: .language) ?? defaults.language
         skippedUpdateVersion = try container.decodeIfPresent(String.self, forKey: .skippedUpdateVersion)
     }
 }

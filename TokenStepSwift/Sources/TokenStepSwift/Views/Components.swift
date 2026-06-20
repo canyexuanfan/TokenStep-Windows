@@ -318,11 +318,11 @@ struct ContributionWallView: View {
             }
 
             HStack {
-                MetricPill(label: "活跃", value: "\(rows.filter { $0.totalTokens > 0 }.count) 天")
-                MetricPill(label: "达标", value: "\(rows.filter { $0.totalTokens >= goal }.count) 天")
-                MetricPill(label: "最高", value: TokenStepFormat.tokens(rows.map(\.totalTokens).max() ?? 0, compact: true))
+                MetricPill(label: L("活跃"), value: localizedDays(rows.filter { $0.totalTokens > 0 }.count))
+                MetricPill(label: L("达标"), value: localizedDays(rows.filter { $0.totalTokens >= goal }.count))
+                MetricPill(label: L("最高"), value: TokenStepFormat.tokens(rows.map(\.totalTokens).max() ?? 0, compact: true))
                 Spacer()
-                Text("少")
+                Text(L("少"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 ForEach([0, Int(Double(goal) * 0.25), Int(Double(goal) * 0.7), goal, goal * 2, goal * 3], id: \.self) { value in
@@ -330,11 +330,15 @@ struct ContributionWallView: View {
                         .fill(contributionColor(tokens: value, goal: goal))
                         .frame(width: 15, height: 15)
                 }
-                Text("多")
+                Text(L("多"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func localizedDays(_ count: Int) -> String {
+        TokenStepLocalization.language == .en ? "\(count)d" : "\(count) 天"
     }
 }
 

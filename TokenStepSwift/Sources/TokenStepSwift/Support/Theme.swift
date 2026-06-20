@@ -62,21 +62,21 @@ enum TokenStepTheme: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
-        case .green: return "青绿"
-        case .ocean: return "海蓝"
-        case .violet: return "紫藤"
-        case .amber: return "琥珀"
-        case .graphite: return "石墨"
+        case .green: return L("青绿")
+        case .ocean: return L("海蓝")
+        case .violet: return L("紫藤")
+        case .amber: return L("琥珀")
+        case .graphite: return L("石墨")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .green: return "默认"
-        case .ocean: return "清爽"
+        case .green: return L("默认")
+        case .ocean: return L("清爽")
         case .violet: return "Agent"
-        case .amber: return "温暖"
-        case .graphite: return "专注"
+        case .amber: return L("温暖")
+        case .graphite: return L("专注")
         }
     }
 

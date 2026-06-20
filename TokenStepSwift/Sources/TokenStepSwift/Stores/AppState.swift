@@ -8,12 +8,15 @@ final class AppState: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var autostartEnabled = false
     @Published private(set) var isCheckingForUpdates = false
+    @Published private(set) var isRefreshingCodexQuota = false
+    @Published private(set) var codexQuota: CodexQuotaSnapshot = .unavailable
     @Published private(set) var isDownloadingUpdate = false
     @Published private(set) var updateDownloadProgress = 0.0
-    @Published private(set) var updateInstallStatus = "准备更新"
+    @Published private(set) var updateInstallStatus = L("准备更新")
     @Published private(set) var availableUpdate: AvailableUpdate?
     @Published private(set) var lastUpdateCheckAt: Date?
     @Published private(set) var updateDownloadedURL: URL?
+    @Published private(set) var tokenIslandAvailable = TokenIslandDisplayDetector.isAvailable
     @Published var lastError: String?
 
     private var timer: Timer?
@@ -22,6 +25,7 @@ final class AppState: ObservableObject {
         load()
         applyDefaultAutostartIfNeeded()
         configureTimer()
+        refreshCodexQuota()
         refresh()
         checkForUpdatesIfNeeded()
     }
@@ -60,11 +64,43 @@ final class AppState: ObservableObject {
         Array(snapshot.daily.reversed())
     }
 
+    var shouldShowTokenIsland: Bool {
+        settings.tokenIslandPlacement != .menuBar
+            && TokenIslandDisplayDetector.isAvailable(for: settings.tokenIslandPlacement, size: TokenIslandWindowPresenter.collapsedSize)
+    }
+
+    var tokenIslandStatus: String {
+        switch settings.tokenIslandPlacement {
+        case .menuBar:
+            return L("菜单栏模式")
+        case .automatic:
+            return shouldShowTokenIsland ? L("自动：刘海旁") : L("自动：菜单栏")
+        case .notchLeft:
+            return shouldShowTokenIsland ? L("刘海左侧") : L("菜单栏模式")
+        case .notchRight:
+            return shouldShowTokenIsland ? L("刘海右侧") : L("菜单栏模式")
+        }
+    }
+
+    var tokenIslandStatusDetail: String {
+        if shouldShowTokenIsland {
+            return L("鼠标移入后展开浮层")
+        }
+        if settings.tokenIslandPlacement == .menuBar {
+            return L("仅使用右上角菜单栏入口")
+        }
+        return TokenIslandDisplayDetector.fallbackReason
+    }
+
     func load() {
         let loadedSettings = DataService.loadSettings()
+        TokenStepLocalization.apply(loadedSettings.language)
         TokenStepThemeRuntime.apply(loadedSettings.theme)
         settings = loadedSettings
         snapshot = (try? DataService.loadSnapshot()) ?? .empty
+        if !loadedSettings.showCodexQuota {
+            codexQuota = .unavailable
+        }
         autostartEnabled = AutostartService.isEnabled
     }
 
@@ -82,11 +118,39 @@ final class AppState: ObservableObject {
             }
             load()
             isRefreshing = false
+            refreshCodexQuota()
+        }
+    }
+
+    func refreshCodexQuota() {
+        guard settings.showCodexQuota else {
+            codexQuota = .unavailable
+            isRefreshingCodexQuota = false
+            return
+        }
+        guard !isRefreshingCodexQuota else { return }
+        isRefreshingCodexQuota = true
+        Task {
+            do {
+                let quota = try await Task.detached(priority: .utility) {
+                    try CodexQuotaService.read()
+                }.value
+                codexQuota = quota
+            } catch {
+                if !codexQuota.isAvailable {
+                    codexQuota = .unavailable
+                }
+            }
+            isRefreshingCodexQuota = false
         }
     }
 
     func clearError() {
         lastError = nil
+    }
+
+    func refreshTokenIslandAvailability() {
+        tokenIslandAvailable = TokenIslandDisplayDetector.isAvailable(for: settings.tokenIslandPlacement, size: TokenIslandWindowPresenter.collapsedSize)
     }
 
     func setGoal(_ tokens: Int) {
@@ -104,6 +168,35 @@ final class AppState: ObservableObject {
         TokenStepThemeRuntime.apply(theme)
         settings.theme = theme
         saveSettingsAndReload()
+    }
+
+    func setLanguage(_ language: TokenStepLanguage) {
+        TokenStepLocalization.apply(language)
+        settings.language = language
+        saveSettingsAndReload()
+        updateInstallStatus = L("准备更新")
+    }
+
+    func setTokenIslandEnabled(_ enabled: Bool) {
+        setTokenIslandPlacement(enabled ? .automatic : .menuBar)
+    }
+
+    func setTokenIslandPlacement(_ placement: TokenIslandDisplayPlacement) {
+        settings.tokenIslandPlacement = placement
+        settings.tokenIslandEnabled = placement != .menuBar
+        saveSettingsAndReload()
+        refreshTokenIslandAvailability()
+    }
+
+    func setCodexQuotaVisible(_ visible: Bool) {
+        settings.showCodexQuota = visible
+        saveSettingsAndReload()
+        if visible {
+            refreshCodexQuota()
+        } else {
+            codexQuota = .unavailable
+            isRefreshingCodexQuota = false
+        }
     }
 
     func setAutoUpdateEnabled(_ enabled: Bool) {
@@ -172,7 +265,7 @@ final class AppState: ObservableObject {
         guard let update = availableUpdate, !isDownloadingUpdate else { return }
         isDownloadingUpdate = true
         updateDownloadProgress = 0
-        updateInstallStatus = "正在下载"
+        updateInstallStatus = L("正在下载")
         updateDownloadedURL = nil
         lastError = nil
         Task {
@@ -185,11 +278,10 @@ final class AppState: ObservableObject {
                 }
                 updateDownloadedURL = url
                 updateDownloadProgress = 1
-                updateInstallStatus = "正在安装并重启"
-                NSApp.terminate(nil)
+                updateInstallStatus = L("正在安装并重启")
             } catch {
                 lastError = error.localizedDescription
-                updateInstallStatus = "更新失败"
+                updateInstallStatus = L("更新失败")
                 isDownloadingUpdate = false
             }
         }
@@ -210,6 +302,7 @@ final class AppState: ObservableObject {
         do {
             try DataService.saveSettings(settings)
             let loadedSettings = DataService.loadSettings()
+            TokenStepLocalization.apply(loadedSettings.language)
             TokenStepThemeRuntime.apply(loadedSettings.theme)
             settings = loadedSettings
         } catch {

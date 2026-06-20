@@ -10,15 +10,15 @@ struct HistoryView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("近 8 个月活动墙")
+                            Text(L("近 8 个月活动墙"))
                                 .font(.title3.weight(.heavy))
                                 .foregroundStyle(Color.tokenInk)
-                            Text("颜色越深，越接近或超过每日目标")
+                            Text(L("颜色越深，越接近或超过每日目标"))
                                 .font(.callout.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        Text("\(appState.snapshot.totals.activeDays) 个活跃日")
+                        Text(LFormat("%d 个活跃日", appState.snapshot.totals.activeDays))
                             .font(.callout.weight(.bold))
                             .foregroundStyle(Color.tokenGreenDark)
                             .padding(.horizontal, 12)
@@ -37,7 +37,7 @@ struct HistoryView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("全部明细")
+                            Text(L("全部明细"))
                                 .font(.title3.weight(.heavy))
                                 .foregroundStyle(Color.tokenInk)
                             Text(historySummaryText)
@@ -66,17 +66,17 @@ struct HistoryView: View {
 
     private var historySummaryText: String {
         if let historyLimit {
-            return "最近 \(min(historyLimit, historyRows.count)) 天，适合保存为截图"
+            return LFormat("最近 %d 天，适合保存为截图", min(historyLimit, historyRows.count))
         }
-        return "\(appState.visibleHistoryRows.count) 条记录，向下滚动查看完整历史"
+        return LFormat("%d 条记录，向下滚动查看完整历史", appState.visibleHistoryRows.count)
     }
 
     private var header: some View {
         HStack(spacing: 16) {
-            Text("日期").frame(width: 118, alignment: .leading)
-            Text("Token 消耗").frame(width: 150, alignment: .leading)
-            Text("消耗金额").frame(width: 126, alignment: .leading)
-            Text("主力工具").frame(maxWidth: .infinity, alignment: .leading)
+            Text(L("日期")).frame(width: 118, alignment: .leading)
+            Text(L("Token 消耗")).frame(width: 150, alignment: .leading)
+            Text(L("消耗金额")).frame(width: 126, alignment: .leading)
+            Text(L("主力工具")).frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.caption.weight(.heavy))
         .foregroundStyle(.secondary)
@@ -123,6 +123,6 @@ private struct HistoryRow: View {
     }
 
     private var dominantTool: String {
-        row.tools.max(by: { $0.value < $1.value })?.key ?? "无"
+        row.tools.max(by: { $0.value < $1.value })?.key ?? L("无")
     }
 }

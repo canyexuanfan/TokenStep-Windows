@@ -3,38 +3,73 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 18),
-        GridItem(.flexible(), spacing: 18)
-    ]
+    @Environment(\.isScreenshotRendering) private var isScreenshotRendering
+    var captureMode = false
 
     var body: some View {
+        Group {
+            if captureMode {
+                captureBody
+            } else {
+                windowBody
+            }
+        }
+        .id(appState.settings.theme.id)
+    }
+
+    private var windowBody: some View {
         ZStack {
             TokenStepBackdrop()
 
             ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
-                    header
-
-                    LazyVGrid(columns: columns, spacing: 18) {
-                        dailyGoalCard
-                        themeCard
-                        refreshCard
-                        updateCard
-                        autostartCard
-                        privacyCard
-                    }
-
-                    footer
-                }
-                .padding(.top, 36)
-                .padding(.horizontal, 34)
-                .padding(.bottom, 24)
+                settingsContent
+                    .padding(.top, 36)
+                    .padding(.horizontal, 34)
+                    .padding(.bottom, 24)
             }
         }
         .frame(width: 920, height: 760)
-        .id(appState.settings.theme.id)
+    }
+
+    private var captureBody: some View {
+        ZStack {
+            TokenStepBackdrop()
+            settingsContent
+                .padding(.top, 36)
+                .padding(.horizontal, 34)
+                .padding(.bottom, 24)
+        }
+        .frame(width: 920)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var settingsContent: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            header
+            cardGrid
+            footer
+        }
+    }
+
+    private var cardGrid: some View {
+        VStack(spacing: 18) {
+            HStack(alignment: .top, spacing: 18) {
+                dailyGoalCard
+                themeCard
+            }
+            HStack(alignment: .top, spacing: 18) {
+                languageCard
+                displayCard
+            }
+            HStack(alignment: .top, spacing: 18) {
+                refreshCard
+                updateCard
+            }
+            HStack(alignment: .top, spacing: 18) {
+                autostartCard
+                privacyCard
+            }
+        }
     }
 
     private var header: some View {
@@ -42,10 +77,10 @@ struct SettingsView: View {
             TokenStepMark(size: 54)
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("设置")
+                Text(L("设置"))
                     .font(.system(size: 34, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                Text("让 TokenStep 按你的节奏记录 Token 消耗")
+                Text(L("让 TokenStep 按你的节奏记录 Token 消耗"))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -56,7 +91,7 @@ struct SettingsView: View {
                 Circle()
                     .fill(Color.tokenGreen)
                     .frame(width: 8, height: 8)
-                Text("本地统计")
+                Text(L("本地统计"))
                     .font(.callout.weight(.heavy))
                     .foregroundStyle(Color.tokenGreenDark)
             }
@@ -64,11 +99,46 @@ struct SettingsView: View {
             .padding(.vertical, 10)
             .background(Color.tokenMint.opacity(0.22), in: Capsule())
             .overlay(Capsule().stroke(Color.tokenGreen.opacity(0.12)))
+
+            if !isScreenshotRendering && !captureMode {
+                ScreenshotMenuButton(
+                    copyTitle: L("复制设置截图"),
+                    saveTitle: L("保存设置 PNG"),
+                    help: L("截取设置页"),
+                    copyAction: copySettingsScreenshot,
+                    saveAction: saveSettingsScreenshot
+                )
+            }
+        }
+    }
+
+    private var settingsScreenshot: some View {
+        SettingsView(captureMode: true)
+            .environmentObject(appState)
+            .environment(\.isScreenshotRendering, true)
+    }
+
+    private func copySettingsScreenshot() {
+        do {
+            try ScreenshotExporter.copy(settingsScreenshot)
+        } catch {
+            appState.lastError = error.localizedDescription
+        }
+    }
+
+    private func saveSettingsScreenshot() {
+        do {
+            try ScreenshotExporter.save(
+                settingsScreenshot,
+                suggestedFileName: ScreenshotExporter.suggestedFileName(prefix: "settings")
+            )
+        } catch {
+            appState.lastError = error.localizedDescription
         }
     }
 
     private var dailyGoalCard: some View {
-        SettingsCard(title: "每日目标", symbol: "figure.walk.circle.fill") {
+        SettingsCard(title: L("每日目标"), symbol: "figure.walk.circle.fill") {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .center, spacing: 18) {
                     ZStack {
@@ -85,7 +155,7 @@ struct SettingsView: View {
                             .font(.system(size: 34, weight: .heavy, design: .rounded))
                             .foregroundStyle(Color.tokenInk)
                             .monospacedDigit()
-                        Text("token / 天")
+                        Text(L("token / 天"))
                             .font(.callout.weight(.bold))
                             .foregroundStyle(.secondary)
                     }
@@ -121,9 +191,9 @@ struct SettingsView: View {
     }
 
     private var refreshCard: some View {
-        SettingsCard(title: "自动刷新", symbol: "arrow.triangle.2.circlepath.circle.fill") {
+        SettingsCard(title: L("自动刷新"), symbol: "arrow.triangle.2.circlepath.circle.fill") {
             VStack(alignment: .leading, spacing: 18) {
-                Text("菜单栏、弹层和仪表盘会按这个频率同步更新。")
+                Text(L("菜单栏、弹层和仪表盘会按这个频率同步更新。"))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
 
@@ -140,8 +210,8 @@ struct SettingsView: View {
 
                 StatusLine(
                     symbol: appState.settings.refreshIntervalSeconds == 0 ? "hand.raised.fill" : "timer",
-                    title: "当前节奏",
-                    value: appState.settings.refreshIntervalSeconds == 0 ? "手动更新" : "每 \(TokenStepFormat.intervalLabel(appState.settings.refreshIntervalSeconds))",
+                    title: L("当前节奏"),
+                    value: appState.settings.refreshIntervalSeconds == 0 ? L("手动更新") : LFormat("每 %@", TokenStepFormat.intervalLabel(appState.settings.refreshIntervalSeconds)),
                     tint: .tokenGreen
                 )
 
@@ -150,10 +220,52 @@ struct SettingsView: View {
         }
     }
 
+    private var displayCard: some View {
+        SettingsCard(title: L("显示入口"), symbol: "macwindow.badge.plus") {
+            VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(L("显示位置"))
+                        .font(.headline.weight(.heavy))
+                        .foregroundStyle(Color.tokenInk)
+                    Text(L("刘海屏显示在刘海旁，其他屏幕使用菜单栏。"))
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 8) {
+                    ForEach(TokenIslandDisplayPlacement.allCases) { placement in
+                        DisplayPlacementButton(
+                            title: placement.shortTitle,
+                            selected: appState.settings.tokenIslandPlacement == placement
+                        ) {
+                            appState.setTokenIslandPlacement(placement)
+                        }
+                    }
+                }
+
+                StatusLine(
+                    symbol: appState.shouldShowTokenIsland ? "circle.dotted.circle.fill" : "menubar.rectangle",
+                    title: appState.tokenIslandStatus,
+                    value: appState.tokenIslandStatusDetail,
+                    tint: appState.shouldShowTokenIsland ? .tokenGreen : .gray
+                )
+
+                SettingsToggleRow(
+                    title: L("Codex 额度显示"),
+                    isOn: Binding(
+                        get: { appState.settings.showCodexQuota },
+                        set: { appState.setCodexQuotaVisible($0) }
+                    )
+                )
+            }
+        }
+    }
+
     private var themeCard: some View {
-        SettingsCard(title: "主题色", symbol: "paintpalette.fill") {
+        SettingsCard(title: L("主题色"), symbol: "paintpalette.fill") {
             VStack(alignment: .leading, spacing: 16) {
-                Text("菜单栏、圆环、活动墙和按钮会一起跟随主题变化。")
+                Text(L("菜单栏、圆环、活动墙和按钮会一起跟随主题变化。"))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -171,7 +283,7 @@ struct SettingsView: View {
 
                 StatusLine(
                     symbol: "sparkles",
-                    title: "当前主题",
+                    title: L("当前主题"),
                     value: appState.settings.theme.title,
                     tint: .tokenGreen
                 )
@@ -181,15 +293,44 @@ struct SettingsView: View {
         }
     }
 
+    private var languageCard: some View {
+        SettingsCard(title: L("语言"), symbol: "globe.asia.australia.fill") {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(L("选择 TokenStep 的显示语言"))
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(TokenStepLanguage.allCases) { language in
+                        LanguageOptionButton(
+                            language: language,
+                            selected: appState.settings.language == language
+                        ) {
+                            appState.setLanguage(language)
+                        }
+                    }
+                }
+
+                StatusLine(
+                    symbol: "character.bubble.fill",
+                    title: L("当前语言"),
+                    value: appState.settings.language.title,
+                    tint: .tokenGreen
+                )
+            }
+        }
+    }
+
     private var autostartCard: some View {
-        SettingsCard(title: "开机启动", symbol: "power.circle.fill") {
+        SettingsCard(title: L("开机启动"), symbol: "power.circle.fill") {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("登录后自动启动 TokenStep")
+                        Text(L("登录后自动启动 TokenStep"))
                             .font(.headline.weight(.heavy))
                             .foregroundStyle(Color.tokenInk)
-                        Text("像步数一样默默记录，避免漏掉每天的 Token 消耗。")
+                        Text(L("像步数一样默默记录，避免漏掉每天的 Token 消耗。"))
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -207,8 +348,8 @@ struct SettingsView: View {
 
                 StatusLine(
                     symbol: appState.autostartEnabled ? "checkmark.circle.fill" : "pause.circle.fill",
-                    title: appState.autostartEnabled ? "已开启" : "已关闭",
-                    value: appState.autostartEnabled ? "下次登录会自动运行" : "需要手动启动 App",
+                    title: appState.autostartEnabled ? L("已开启") : L("已关闭"),
+                    value: appState.autostartEnabled ? L("下次登录会自动运行") : L("需要手动启动 App"),
                     tint: appState.autostartEnabled ? .tokenGreen : .gray
                 )
             }
@@ -216,14 +357,14 @@ struct SettingsView: View {
     }
 
     private var updateCard: some View {
-        SettingsCard(title: "自动更新", symbol: "arrow.down.circle.fill") {
+        SettingsCard(title: L("自动更新"), symbol: "arrow.down.circle.fill") {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 14) {
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("自动检查 TokenStep 新版本")
+                        Text(L("自动检查 TokenStep 新版本"))
                             .font(.headline.weight(.heavy))
                             .foregroundStyle(Color.tokenInk)
-                        Text("有更新时先提醒你，下载前会确认。")
+                        Text(L("有更新时先提醒你，下载前会确认。"))
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -241,14 +382,14 @@ struct SettingsView: View {
 
                 VStack(spacing: 8) {
                     SettingsToggleRow(
-                        title: "下载前询问",
+                        title: L("下载前询问"),
                         isOn: Binding(
                             get: { appState.settings.askBeforeDownloadingUpdates },
                             set: { appState.setAskBeforeDownloadingUpdates($0) }
                         )
                     )
                     SettingsToggleRow(
-                        title: "仅安装已签名公证版本",
+                        title: L("仅安装已签名公证版本"),
                         isOn: Binding(
                             get: { appState.settings.requireVerifiedUpdates },
                             set: { appState.setRequireVerifiedUpdates($0) }
@@ -259,7 +400,7 @@ struct SettingsView: View {
                 HStack(spacing: 10) {
                     StatusLine(
                         symbol: appState.availableUpdate == nil ? "checkmark.circle.fill" : "arrow.down.circle.fill",
-                        title: appState.availableUpdate == nil ? "当前版本 \(UpdateService.currentVersion)" : "发现 \(appState.availableUpdate?.version ?? "")",
+                        title: appState.availableUpdate == nil ? LFormat("当前版本 %@", UpdateService.currentVersion) : LFormat("发现 %@", appState.availableUpdate?.version ?? ""),
                         value: updateCheckStatus,
                         tint: appState.availableUpdate == nil ? .tokenGreen : .tokenGreenDark
                     )
@@ -267,7 +408,7 @@ struct SettingsView: View {
                     Button {
                         appState.checkForUpdates(silent: false)
                     } label: {
-                        Text(appState.isCheckingForUpdates ? "检查中" : "检查更新")
+                        Text(appState.isCheckingForUpdates ? L("检查中") : L("检查更新"))
                             .font(.caption.weight(.heavy))
                             .frame(width: 76, height: 34)
                     }
@@ -279,7 +420,7 @@ struct SettingsView: View {
     }
 
     private var privacyCard: some View {
-        SettingsCard(title: "隐私状态", symbol: "checkmark.shield.fill") {
+        SettingsCard(title: L("隐私状态"), symbol: "checkmark.shield.fill") {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
                     Image(systemName: "lock.shield.fill")
@@ -289,10 +430,10 @@ struct SettingsView: View {
                         .background(Color.tokenMint.opacity(0.30), in: Circle())
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("本地隐私保护已开启")
+                        Text(L("本地隐私保护已开启"))
                             .font(.headline.weight(.heavy))
                             .foregroundStyle(Color.tokenInk)
-                        Text("代码与对话不会离开这台 Mac")
+                        Text(L("代码与对话不会离开这台 Mac"))
                             .font(.caption.weight(.heavy))
                             .foregroundStyle(Color.tokenGreenDark)
                     }
@@ -302,15 +443,15 @@ struct SettingsView: View {
                 .background(Color.tokenMint.opacity(0.18), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
 
                 VStack(spacing: 8) {
-                    PrivacyCheckRow(title: "只统计 token 数量")
-                    PrivacyCheckRow(title: "不读取代码与对话")
-                    PrivacyCheckRow(title: "不默认上传数据")
+                    PrivacyCheckRow(title: L("只统计 token 数量"))
+                    PrivacyCheckRow(title: L("不读取代码与对话"))
+                    PrivacyCheckRow(title: L("不默认上传数据"))
                 }
 
                 HStack(spacing: 8) {
-                    PrivacyMetaChip(title: "本机")
+                    PrivacyMetaChip(title: L("本机"))
                     PrivacyMetaChip(title: TokenStepFormat.generatedTime(appState.snapshot.generatedAt))
-                    PrivacyMetaChip(title: "\(appState.snapshot.sources.count) 个客户端")
+                    PrivacyMetaChip(title: LFormat("%d 个客户端", appState.snapshot.sources.count))
                 }
             }
         }
@@ -318,7 +459,7 @@ struct SettingsView: View {
 
     private var footer: some View {
         HStack {
-            Text("TokenStep · Local usage tracker")
+            Text(L("TokenStep · Local usage tracker"))
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
 
@@ -328,12 +469,15 @@ struct SettingsView: View {
                 appState.setGoal(TokenStepSettings.defaults.dailyGoalTokens)
                 appState.setRefreshInterval(TokenStepSettings.defaults.refreshIntervalSeconds)
                 appState.setTheme(TokenStepSettings.defaults.theme)
+                appState.setLanguage(TokenStepSettings.defaults.language)
                 appState.setAutoUpdateEnabled(TokenStepSettings.defaults.autoUpdateEnabled)
                 appState.setAskBeforeDownloadingUpdates(TokenStepSettings.defaults.askBeforeDownloadingUpdates)
                 appState.setRequireVerifiedUpdates(TokenStepSettings.defaults.requireVerifiedUpdates)
+                appState.setTokenIslandPlacement(TokenStepSettings.defaults.tokenIslandPlacement)
+                appState.setCodexQuotaVisible(TokenStepSettings.defaults.showCodexQuota)
                 appState.setAutostart(true)
             } label: {
-                Text("恢复默认")
+                Text(L("恢复默认"))
                     .font(.callout.weight(.bold))
                     .frame(width: 92, height: 36)
             }
@@ -343,7 +487,7 @@ struct SettingsView: View {
                 SettingsWindowPresenter.shared.close()
                 NSApp.keyWindow?.close()
             } label: {
-                Text("完成")
+                Text(L("完成"))
                     .font(.callout.weight(.heavy))
                     .frame(width: 82, height: 36)
             }
@@ -353,22 +497,22 @@ struct SettingsView: View {
 
     private var refreshOptions: [RefreshOption] {
         [
-            RefreshOption(seconds: 60, title: "1 分钟"),
-            RefreshOption(seconds: 300, title: "5 分钟"),
-            RefreshOption(seconds: 900, title: "15 分钟"),
-            RefreshOption(seconds: 0, title: "手动")
+            RefreshOption(seconds: 60, title: L("1 分钟")),
+            RefreshOption(seconds: 300, title: LFormat("%d 分钟", 5)),
+            RefreshOption(seconds: 900, title: LFormat("%d 分钟", 15)),
+            RefreshOption(seconds: 0, title: L("手动"))
         ]
     }
 
     private var updateCheckStatus: String {
         if appState.isCheckingForUpdates {
-            return "正在检查"
+            return L("正在检查")
         }
         if appState.availableUpdate != nil {
-            return "可更新"
+            return L("可更新")
         }
         guard let date = appState.lastUpdateCheckAt else {
-            return "尚未检查"
+            return L("尚未检查")
         }
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
@@ -380,6 +524,31 @@ private struct RefreshOption: Identifiable {
     var id: Int { seconds }
     var seconds: Int
     var title: String
+}
+
+private struct DisplayPlacementButton: View {
+    var title: String
+    var selected: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .heavy))
+                }
+                Text(title)
+                    .font(.caption.weight(.heavy))
+            }
+            .foregroundStyle(selected ? Color.white : Color.tokenInk.opacity(0.72))
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .background(selected ? Color.tokenGreen : Color.tokenTrack.opacity(0.42), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(selected ? Color.clear : Color.black.opacity(0.04)))
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 private struct SettingsCard<Content: View>: View {
@@ -412,6 +581,7 @@ private struct SettingsCard<Content: View>: View {
         }
         .padding(22)
         .frame(height: 238)
+        .frame(maxWidth: .infinity)
         .background(Color.tokenSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.black.opacity(0.06)))
         .shadow(color: Color.black.opacity(0.055), radius: 22, x: 0, y: 14)
@@ -485,7 +655,44 @@ private struct ThemeSwatchButton: View {
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
-        .help("切换到\(theme.title)主题")
+        .help(LFormat("切换到%@主题", theme.title))
+    }
+}
+
+private struct LanguageOptionButton: View {
+    var language: TokenStepLanguage
+    var selected: Bool
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(selected ? Color.tokenGreen : Color.secondary.opacity(0.58))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(language.title)
+                        .font(.caption.weight(.heavy))
+                        .foregroundStyle(Color.tokenInk.opacity(selected ? 0.92 : 0.74))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                    Text(language.subtitle)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 43)
+            .padding(.horizontal, 10)
+            .background(selected ? Color.tokenMint.opacity(0.24) : Color.tokenTrack.opacity(0.28), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(selected ? Color.tokenGreen.opacity(0.32) : Color.black.opacity(0.04)))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
 

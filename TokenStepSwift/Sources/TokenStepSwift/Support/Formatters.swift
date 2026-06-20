@@ -3,12 +3,28 @@ import SwiftUI
 
 enum TokenStepFormat {
     static func tokens(_ value: Int, compact: Bool = false) -> String {
+        if TokenStepLocalization.language == .en {
+            if value >= 1_000_000_000 {
+                return "\(trim(Double(value) / 1_000_000_000, digits: 2))B"
+            }
+            if value >= 1_000_000 {
+                let digits = compact || value >= 10_000_000 ? 0 : 1
+                return "\(trim(Double(value) / 1_000_000, digits: digits))M"
+            }
+            if value >= 1_000 {
+                let digits = compact || value >= 10_000 ? 0 : 1
+                return "\(trim(Double(value) / 1_000, digits: digits))K"
+            }
+            return "\(value)"
+        }
+        let hundredMillionUnit = TokenStepLocalization.language == .zhHant ? "億" : "亿"
+        let tenThousandUnit = TokenStepLocalization.language == .zhHant ? "萬" : "万"
         if value >= 100_000_000 {
-            return "\(trim(Double(value) / 100_000_000, digits: 2))亿"
+            return "\(trim(Double(value) / 100_000_000, digits: 2))\(hundredMillionUnit)"
         }
         if value >= 10_000 {
             let digits = compact || value >= 10_000_000 ? 0 : 1
-            return "\(trim(Double(value) / 10_000, digits: digits))万"
+            return "\(trim(Double(value) / 10_000, digits: digits))\(tenThousandUnit)"
         }
         return "\(value)"
     }
@@ -29,7 +45,7 @@ enum TokenStepFormat {
     }
 
     static func generatedTime(_ value: String?) -> String {
-        guard let value, !value.isEmpty else { return "等待同步" }
+        guard let value, !value.isEmpty else { return L("等待同步") }
         guard let date = isoDate(value) else {
             return value.replacingOccurrences(of: "T", with: " ").prefix(16).description
         }
@@ -43,9 +59,9 @@ enum TokenStepFormat {
 
     static func intervalLabel(_ seconds: Int) -> String {
         switch seconds {
-        case 0: return "手动"
-        case 60: return "1 分钟"
-        default: return "\(seconds / 60) 分钟"
+        case 0: return L("手动")
+        case 60: return L("1 分钟")
+        default: return LFormat("%d 分钟", seconds / 60)
         }
     }
 

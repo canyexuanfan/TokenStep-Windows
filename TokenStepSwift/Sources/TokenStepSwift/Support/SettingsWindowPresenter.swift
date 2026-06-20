@@ -27,7 +27,7 @@ final class SettingsWindowPresenter {
 
         let controller = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: controller)
-        window.title = "设置"
+        window.title = L("设置")
         window.identifier = NSUserInterfaceItemIdentifier("settings")
         window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
         window.titleVisibility = .hidden

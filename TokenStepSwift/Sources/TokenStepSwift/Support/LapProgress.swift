@@ -30,7 +30,7 @@ struct TokenStepLapProgress {
     }
 
     var lapTitle: String {
-        "第 \(currentLap) 圈"
+        LFormat("第 %d 圈", currentLap)
     }
 
     var lapPercentText: String {
@@ -38,19 +38,19 @@ struct TokenStepLapProgress {
     }
 
     var lapStatusText: String {
-        "\(lapTitle) · \(lapPercentText)"
+        LFormat("第 %d 圈 · %@", currentLap, lapPercentText)
     }
 
     var completedLapsText: String {
-        "已完成 \(completedLaps) 圈"
+        LFormat("已完成 %d 圈", completedLaps)
     }
 
     var completedTokensText: String {
-        "已完成 \(TokenStepFormat.tokens(completedLaps * safeGoal, compact: true))"
+        LFormat("已完成 %@", TokenStepFormat.tokens(completedLaps * safeGoal, compact: true))
     }
 
     var perLapGoalText: String {
-        "每圈目标 \(TokenStepFormat.tokens(safeGoal, compact: true))"
+        LFormat("每圈目标 %@", TokenStepFormat.tokens(safeGoal, compact: true))
     }
 
     static func color(for lap: Int) -> Color {

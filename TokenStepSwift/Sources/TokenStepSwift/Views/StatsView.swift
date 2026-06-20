@@ -6,16 +6,16 @@ struct StatsView: View {
     var body: some View {
         VStack(spacing: 22) {
             HStack(spacing: 18) {
-                StatHeroMetric(label: "累计 Token 消耗", value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), symbol: "figure.walk")
-                StatHeroMetric(label: "消耗金额", value: TokenStepFormat.money(appState.snapshot.totals.cost), symbol: "dollarsign.circle")
-                StatHeroMetric(label: "活跃天数", value: "\(appState.snapshot.totals.activeDays) 天", symbol: "flame")
+                StatHeroMetric(label: L("累计 Token 消耗"), value: TokenStepFormat.tokens(appState.snapshot.totals.tokens), symbol: "figure.walk")
+                StatHeroMetric(label: L("消耗金额"), value: TokenStepFormat.money(appState.snapshot.totals.cost), symbol: "dollarsign.circle")
+                StatHeroMetric(label: L("活跃天数"), value: localizedDays(appState.snapshot.totals.activeDays), symbol: "flame")
             }
 
             HStack(alignment: .top, spacing: 22) {
-                usageList(title: "按客户端", subtitle: "累计总量分布", rows: appState.snapshot.tools.map {
+                usageList(title: L("按客户端"), subtitle: L("累计总量分布"), rows: appState.snapshot.tools.map {
                     UsageStatRow(name: $0.tool, value: $0.tokens, percent: $0.percentValue, color: $0.displayColor)
                 })
-                usageList(title: "按模型", subtitle: "Top \(min(appState.snapshot.models.count, 10)) / \(appState.snapshot.models.count)", rows: appState.snapshot.models.prefix(10).map {
+                usageList(title: L("按模型"), subtitle: "Top \(min(appState.snapshot.models.count, 10)) / \(appState.snapshot.models.count)", rows: appState.snapshot.models.prefix(10).map {
                     UsageStatRow(name: $0.model, value: $0.tokens, percent: $0.percentValue, color: $0.displayColor)
                 })
             }
@@ -36,7 +36,7 @@ struct StatsView: View {
                 }
 
                 if rows.isEmpty {
-                    Text("等待下一次同步")
+                    Text(L("等待下一次同步"))
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
@@ -53,6 +53,10 @@ struct StatsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func localizedDays(_ count: Int) -> String {
+        TokenStepLocalization.language == .en ? "\(count)d" : "\(count) 天"
     }
 }
 

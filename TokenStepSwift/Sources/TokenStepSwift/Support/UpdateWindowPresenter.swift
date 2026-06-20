@@ -27,7 +27,7 @@ final class UpdateWindowPresenter {
 
         let controller = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: controller)
-        window.title = "TokenStep 更新"
+        window.title = L("TokenStep 更新")
         window.identifier = NSUserInterfaceItemIdentifier("update")
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titleVisibility = .hidden

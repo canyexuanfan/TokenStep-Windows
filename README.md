@@ -1,125 +1,170 @@
 # TokenStep
 
-> A Windows system-tray app that tracks local AI coding agent token usage like daily steps.
->
-> **[English](README.en.md)** | 中文
+**像记录步数一样，记录你每天的 AI Token 消耗。**
 
-把 AI token 用量变成「每日 AI 步数」的本地小工具。本仓库是原 macOS 版 **TokenStep**（作者 [Chaoqiang Huang / 黄叔](https://github.com/Backtthefuture)）的 **Windows 移植版**，基于 **Tauri 2 + Rust** 构建，驻留在 Windows 系统托盘（任务栏右下角）。
+AI 时代，每个人都在和 Agent 一起工作。
 
-它在本机读取 Codex / Claude Code 的 token 用量，并像运动圆环一样显示今天的 AI 使用进度——你可以把它理解成：
+但我们很少知道：今天到底用了多少 AI？有没有比昨天更进一步？
 
-> 给 AI Agent 时代准备的「步数 App」。
+TokenStep 是一个 macOS 菜单栏 App，用来本地统计你在 Codex、Claude Code 等 AI 编程工具里的 Token 消耗，并把它变成一个像 Apple 健身圆环一样的每日目标。
 
-> 🍎 如果你用的是 macOS，请前往[原仓库](https://github.com/Backtthefuture/TokenStep)获取原生菜单栏版本（源码也保留在本仓库的 [`TokenStepSwift/`](TokenStepSwift) 目录）。
+默认目标是：**每天 1 亿 Token**。
 
-## 它是做什么的？
+当你超过目标，圆环会进入下一圈。用得越多，颜色越深。
 
-TokenStep 只在本机统计 token 用量元数据，**不会上传你的代码、prompt 或对话正文**。
+它不是为了严肃比较，而是让你直观看到：今天你和 AI 一起走了多远。
 
-默认每日目标是 **1 亿 token**。它会显示：
+<img width="412" height="627" alt="image" src="https://github.com/user-attachments/assets/c4196b33-6a60-42a4-b66a-6a4d516b459a" />
+<img width="560" height="554" alt="image" src="https://github.com/user-attachments/assets/dbb7d00c-858e-4897-a04c-43ca45366d30" />
 
-- 今天用了多少 token、完成了目标的百分之几
-- 最近若干天的趋势
-- 历史记录（按天 / 按工具 / 按模型）
-- 粗略的「消耗金额」估算（本地计算，不等于真实账单）
 
-## 数据来源
+## 立即下载
 
-| 工具 | 来源（Windows） |
-|------|----------------|
-| **Codex** | `~/.codex/sessions/**/*.jsonl`、`~/.codex/archived_sessions/*.jsonl`（主）；`~/.codex/state_5.sqlite` 的 `threads` 表（回退） |
-| **Claude Code** | `~/.claude/projects/**/*.jsonl` |
+下载最新版 DMG，打开后把 `TokenStep.app` 拖进「应用程序」即可使用：
 
-统计口径：日志里若直接给了 `total_tokens` 就直接用；否则把 input / output / cache_creation / cache_read / reasoning 五项相加（缓存命中的 token 也会计入总数，因此总量可能偏高）。详见 [`windows/src-tauri/src/collector.rs`](windows/src-tauri/src/collector.rs)。
+[下载 TokenStep 最新版](https://github.com/Backtthefuture/TokenStep/releases/latest/download/TokenStep-0.1.21.dmg)
 
-## 下载安装
+也可以从 Release 页面查看所有版本：
 
-### Windows（本项目）
+[GitHub Releases](https://github.com/Backtthefuture/TokenStep/releases/latest)
 
-提供两种安装方式，功能完全一致，任选其一：
+TokenStep 已使用 Developer ID 签名并通过 Apple 公证。首次打开时，macOS 可能会出现标准确认弹窗，这是正常现象。
 
-**方式一：免安装版（推荐）**
+## TokenStep 适合谁？
 
-1. 前往 [Releases 页面](https://github.com/canyexuanfan/TokenStep-Windows/releases) 下载 `TokenStep.exe`（约 7 MB）。
-2. 双击即可运行，无需安装。想放哪就放哪（建议放固定目录，截图会存在同目录的 `share/` 下）。
-3. 程序驻留在系统托盘（任务栏右下角）；点击托盘图标打开仪表盘，右键打开菜单。
-4. 想卸载直接删 exe 即可。
+TokenStep 适合这些人：
 
-**方式二：安装版**
+- 每天使用 Codex / Claude Code 写代码的人
+- 用 AI Agent 做内容、开发、研究、自动化的人
+- 想知道自己每天到底消耗了多少 AI Token 的人
+- 把 AI 当成生产力基础设施，而不是偶尔试用工具的人
 
-1. 前往 [Releases 页面](https://github.com/canyexuanfan/TokenStep-Windows/releases) 下载 `TokenStep_x.x.x_x64-setup.exe`（约 3 MB）。
-2. 双击运行安装包（需要 WebView2 运行时，Win10/11 一般已预装，缺失时会自动下载）。
-3. 安装完成后会创建开始菜单快捷方式和卸载入口；TokenStep 出现在系统托盘。
+以前我们看步数，知道自己今天有没有动起来。
 
-> ⚠️ 两个版本均使用**自签名证书**签名，首次运行时 Windows SmartScreen 可能会弹出「未知发布者」警告。这是正常现象，点击「更多信息 → 仍要运行」即可。详见 [`windows/docs/SIGNING.md`](windows/docs/SIGNING.md)。
+现在我们看 Token 消耗，知道自己今天有没有真正用 AI 推进工作。
 
-### macOS（原版）
+## 它能做什么？
 
-请前往 [原作者仓库](https://github.com/Backtthefuture/TokenStep/releases/latest) 下载已签名公证的 DMG。
+- 菜单栏实时显示今日 Token 消耗和进度圆环。
+- 点击菜单栏打开轻量浮层。
+- 原生 macOS 仪表盘：今日、历史、统计、模型与工具、隐私。
+- 超过 1 亿后自动进入第 2 圈、第 3 圈。
+- 最近 30 天 Token 使用趋势。
+- 按客户端、按模型查看用量统计。
+- 粗略估算 Token 消耗金额。
+- 每日目标可设置，默认每天一个亿。
+- 自动刷新，默认 1 分钟。
+- 开机启动，可在设置里关闭。
+- 多种主题色，菜单栏、圆环、活动墙和按钮会一起变化。
+- 一键截图分享当前页面。
+- Codex 5 小时 / 7 天剩余额度可在设置中打开，默认关闭。
+- 自动检查更新，发现新版后可下载已签名公证的 DMG。
+- 本地数据存放在 `~/Library/Application Support/TokenStep`。
 
-## 功能
+## 当前支持
 
-- 系统托盘显示今日 token 数与**动态进度圆环**（绿弧按今日完成度填充，每次采集后更新）。
-- 点击托盘图标打开仪表盘：今日 / 历史 / 统计 / 隐私 / 设置。
-- **5 套主题配色**（青绿 / 海蓝 / 紫藤 / 琥珀 / 石墨），设置页一键切换，立即生效。
-- **分段圈数进度**：用量超过目标后开始新的一圈，像运动圆环一样。
-- **截图**：一键导出今日数据卡片 PNG，默认存到 `share/` 文件夹（设置可改位置）。
-- **CSV 导出**：历史页可导出按天明细。
-- **贡献墙**：历史页 GitHub 风格的活动热力图。
-- 每日目标可设置，默认每天 1 亿 token。
-- 自动刷新（默认 1 分钟）。
-- 支持 Codex 与 Claude Code。
-- **本地优先（local-first）**：所有数据只存在本机 `%APPDATA%\TokenStep\`，不联网上传内容。
+- Codex：优先读取 Codex 本地 SQLite token 汇总，必要时回退 JSONL。
+- Claude Code：读取 `~/.claude/projects/**/*.jsonl` 里的 usage 元数据。
 
-## 隐私说明
+更多 AI 编程工具支持会逐步加入。
 
-- 只读取本机 usage 元数据（日期、模型、客户端名称、token 数量）。
-- **默认不上传任何数据**，不读取 / 不上传代码、prompt、对话正文。
-- 「消耗金额」只是基于本地定价表的粗略估算，不等于真实账单。
+## 隐私
 
-完整说明见 [`docs/PRIVACY.md`](docs/PRIVACY.md)（macOS 版隐私模型，Windows 版同样遵循）。
+TokenStep 默认只做本地统计。
 
-## 本地构建（Windows）
+它只读取 Token 用量元数据，例如日期、模型、客户端名称和 Token 数量，用于生成趋势、圆环和统计图。
 
-**环境要求：** Windows 10/11 (x64)、Rust (stable, `x86_64-pc-windows-msvc`) + MSVC 构建工具、Tauri CLI。
+它不会上传你的代码、prompt、对话正文或项目文件。
 
-```bat
-cd windows\src-tauri
-cargo install tauri-cli --version "^2.0"
-cargo tauri dev
+「消耗金额」只是本地粗略估算，不等于真实账单。
+
+完整说明见 [docs/PRIVACY.md](docs/PRIVACY.md)。
+
+## 安装方式
+
+1. 下载 [TokenStep 最新版 DMG](https://github.com/Backtthefuture/TokenStep/releases/latest/download/TokenStep-0.1.21.dmg)。
+2. 打开 DMG。
+3. 把 `TokenStep.app` 拖到「应用程序」。
+4. 启动 TokenStep。
+5. 在 macOS 右上角菜单栏点击 TokenStep 图标。
+
+更详细的安装说明见 [docs/INSTALL.md](docs/INSTALL.md)。
+
+## 为什么做 TokenStep？
+
+因为 AI 编程工具正在变成新的「工作现场」。
+
+过去我们用日历看时间，用步数看运动，用记账软件看消费。
+
+但 AI 使用量一直是隐形的。
+
+TokenStep 想把这件事变得可见：
+
+**今天你不是用了多少工具，而是和 AI 一起走了多少步。**
+
+## 下载统计
+
+查看 GitHub Release 下载数：
+
+```bash
+python3 script/github_download_stats.py
 ```
 
-打包发布版安装包：
+统计方案见 [docs/ANALYTICS.md](docs/ANALYTICS.md)。
 
-```bat
-windows\scripts\build-release.bat
-```
+## 本地构建
 
-产物位于 `windows\src-tauri\target\release\bundle\nsis\TokenStep_x.x.x_x64-setup.exe`。
+要求：
 
-更详细的构建说明、签名、数据目录等见 **[`windows/README.md`](windows/README.md)**。
+- macOS 14+
+- Xcode Command Line Tools
 
-## 本地构建（macOS，原版）
+构建并运行：
 
 ```bash
 ./script/build_and_run.sh --verify
 ```
 
-详见 [原版说明](https://github.com/Backtthefuture/TokenStep) 与 [`docs/INSTALL.md`](docs/INSTALL.md)。
+只构建不启动：
 
-## 贡献
+```bash
+./script/build_swiftui_and_run.sh --no-launch
+```
 
-欢迎提 Issue 和 PR！请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。发现安全漏洞请按 [SECURITY.md](SECURITY.md) 的流程私下上报，**不要**直接开公开 Issue。
+生成的 App 位于：
 
-## 路线图
+```text
+TokenStepSwift/dist/TokenStep.app
+```
 
-Windows 版的待办与已知限制（更多 Agent 支持、桌面通知、数据导出、自动启动等）见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。
+## 发布打包
+
+Developer ID 签名：
+
+```bash
+TOKENSTEP_VERSION=0.1.21 \
+CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+./script/package_release.sh
+```
+
+签名 + Apple 公证：
+
+```bash
+TOKENSTEP_VERSION=0.1.21 \
+CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+TOKENSTEP_NOTARY_PROFILE="tokenstep-notary" \
+./script/package_release.sh --notarize
+```
+
+产物会生成到：
+
+```text
+release/TokenStep-<version>.zip
+release/TokenStep-<version>.dmg
+```
+
+维护者说明见 [docs/RELEASE.md](docs/RELEASE.md)。
 
 ## 开源协议
 
-MIT License。本仓库同时包含原作者的 macOS 实现（`TokenStepSwift/`）与本 Windows 移植（`windows/`）。详见 [LICENSE](LICENSE)。
-
-## 致谢
-
-- 原版 **TokenStep**（macOS）由 [**Chaoqiang Huang（黄叔）**](https://github.com/Backtthefuture) 开发，本 Windows 移植复用了其设计理念、定价表与 `usage.json` 数据格式。
-- Windows 移植（Tauri 2 + Rust）由 [**十七°**](https://github.com/canyexuanfan) 维护。
+MIT。见 [LICENSE](LICENSE)。

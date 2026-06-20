@@ -26,10 +26,10 @@ struct UpdateWindowView: View {
             TokenStepMark(size: 60)
 
             VStack(alignment: .leading, spacing: 7) {
-                Text("TokenStep \(update.version) 可用")
+                Text(LFormat("TokenStep %@ 可用", update.version))
                     .font(.system(size: 28, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                Text("安装完成后会自动重启到新版本")
+                Text(L("安装完成后会自动重启到新版本"))
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -41,7 +41,7 @@ struct UpdateWindowView: View {
     private var releaseNotes: some View {
         TokenCard {
             VStack(alignment: .leading, spacing: 13) {
-                Text("更新内容")
+                Text(L("更新内容"))
                     .font(.headline.weight(.heavy))
                     .foregroundStyle(Color.tokenInk)
 
@@ -71,10 +71,10 @@ struct UpdateWindowView: View {
                 .background(Color.tokenMint.opacity(0.28), in: Circle())
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("自动安装到 Applications")
+                Text(L("自动安装到 Applications"))
                     .font(.callout.weight(.heavy))
                     .foregroundStyle(Color.tokenInk)
-                Text("下载后会验证 DMG 中的 App，并替换旧版本")
+                Text(L("下载后会验证 DMG 中的 App，并替换旧版本"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
@@ -125,7 +125,7 @@ struct UpdateWindowView: View {
                 appState.skipAvailableUpdate()
                 UpdateWindowPresenter.shared.close()
             } label: {
-                Text("跳过此版本")
+                Text(L("跳过此版本"))
                     .font(.callout.weight(.bold))
                     .frame(width: 100, height: 38)
             }
@@ -137,7 +137,7 @@ struct UpdateWindowView: View {
             Button {
                 UpdateWindowPresenter.shared.close()
             } label: {
-                Text("稍后")
+                Text(L("稍后"))
                     .font(.callout.weight(.bold))
                     .frame(width: 76, height: 38)
             }
@@ -147,7 +147,7 @@ struct UpdateWindowView: View {
             Button {
                 appState.installAvailableUpdate()
             } label: {
-                Text(appState.isDownloadingUpdate ? "安装中" : "安装并重启")
+                Text(appState.isDownloadingUpdate ? L("安装中") : L("安装并重启"))
                     .font(.callout.weight(.heavy))
                     .frame(width: 126, height: 38)
             }
@@ -158,9 +158,9 @@ struct UpdateWindowView: View {
 
     private var defaultNotes: [String] {
         [
-            "优化 Codex 历史数据读取",
-            "降低后台刷新 CPU 占用",
-            "提升菜单栏同步稳定性"
+            L("优化 Codex 历史数据读取"),
+            L("降低后台刷新 CPU 占用"),
+            L("提升菜单栏同步稳定性")
         ]
     }
 }

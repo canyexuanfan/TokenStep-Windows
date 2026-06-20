@@ -20,9 +20,9 @@ enum ScreenshotExportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .renderFailed:
-            return "截图生成失败，请稍后再试。"
+            return L("截图生成失败，请稍后再试。")
         case .pngEncodingFailed:
-            return "PNG 文件生成失败，请稍后再试。"
+            return L("PNG 文件生成失败，请稍后再试。")
         }
     }
 }

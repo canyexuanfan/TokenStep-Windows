@@ -5,23 +5,23 @@ struct PrivacyView: View {
         VStack(spacing: 22) {
             TokenCard {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("本地优先")
+                    Text(L("本地优先"))
                         .font(.title3.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
-                    PrivacyRow(index: 1, title: "只统计 token 数量", description: "用于计算今日 Token 消耗、历史趋势和消耗金额。")
-                    PrivacyRow(index: 2, title: "不上传代码或对话", description: "所有数据文件都保留在这台 Mac 上。")
-                    PrivacyRow(index: 3, title: "消耗金额仅供参考", description: "按本地价格表粗略估算，不等于真实账单。")
+                    PrivacyRow(index: 1, title: L("只统计 token 数量"), description: L("用于计算今日 Token 消耗、历史趋势和消耗金额。"))
+                    PrivacyRow(index: 2, title: L("不上传代码或对话"), description: L("所有数据文件都保留在这台 Mac 上。"))
+                    PrivacyRow(index: 3, title: L("消耗金额仅供参考"), description: L("按本地价格表粗略估算，不等于真实账单。"))
                 }
             }
 
             TokenCard {
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("本地文件")
+                    Text(L("本地文件"))
                         .font(.title3.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
-                    FilePathRow(label: "用量数据", path: AppPaths.usageJSON.path)
-                    FilePathRow(label: "设置", path: AppPaths.settingsJSON.path)
-                    Text("后续如果接入排行榜，会单独做授权和确认，不会默认上传。")
+                    FilePathRow(label: L("用量数据"), path: AppPaths.usageJSON.path)
+                    FilePathRow(label: L("设置"), path: AppPaths.settingsJSON.path)
+                    Text(L("后续如果接入排行榜，会单独做授权和确认，不会默认上传。"))
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
