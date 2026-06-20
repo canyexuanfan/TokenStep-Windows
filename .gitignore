@@ -1,0 +1,31 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+logs/
+data/
+dashboard.html
+config/settings.json
+config/autostart-default-applied
+
+TokenStepSwift/.build/
+TokenStepSwift/dist/
+TokenUsageMenuApp/dist/
+release/
+
+# Windows build artifacts
+windows/src-tauri/target/
+windows/src-tauri/gen/schemas/
+# Stray device-name file accidentally created by Windows shell redirects
+nul
+# Built release artifacts — distribute via GitHub Releases, not in the repo
+/TokenStep.exe
+/TokenStep_*.exe
+/TokenStep*.dmg
+/TokenStep*.zip
+
+# Code signing secrets (self-signed cert + private key) — NEVER commit
+_secrets/
+*.pfx
+*.p12
+TokenStep-codesign.cer

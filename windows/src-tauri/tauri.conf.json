@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TokenStep",
+  "version": "0.1.0",
+  "identifier": "com.huangshu.TokenStep",
+  "build": {
+    "frontendDist": "../ui",
+    "devUrl": null
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "dashboard",
+        "title": "TokenStep",
+        "width": 1080,
+        "height": 740,
+        "minWidth": 880,
+        "minHeight": 600,
+        "resizable": true,
+        "visible": true,
+        "center": true,
+        "url": "dashboard/index.html",
+        "devtools": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "category": "Utility",
+    "publisher": "十七°",
+    "copyright": "© 2026 Chaoqiang Huang (original macOS TokenStep, MIT). Windows port by 十七°.",
+    "shortDescription": "Track AI token usage like daily steps",
+    "longDescription": "TokenStep turns AI token usage into a daily step ring. It reads local usage metadata from Codex and Claude Code, shows today's progress toward a token goal, and keeps history like an activity dashboard. Local-first; never uploads content.",
+    "resources": ["resources/*"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "languages": ["SimpChinese", "English"]
+      }
+    }
+  },
+  "plugins": {}
+}
