@@ -629,6 +629,10 @@ const I18N = {
 
 let currentLang = 'zhHans'; // zhHans = default (no translation needed)
 window.__tsLang = 'zhHans'; // also exposed as a plain property for app.js's t()
+// Expose the table on window too, because `const`/`let` top-level bindings
+// do NOT become window properties in the browser — so app.js's t() and
+// index.html's refreshHeaderI18n() must read window.I18N, not a closure var.
+window.I18N = I18N;
 // Cache the flat key list (longest first) so substring matching tries the
 // most specific key first and avoids partial double-replacement.
 let _keysByLen = null;
