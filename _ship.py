@@ -16,6 +16,5 @@ print('signed')
 
 shutil.copy2(EXE, ROOT_EXE)
 shutil.copy2(SETUP, ROOT_SETUP)
-shutil.copy2(EXE, r'F:\zcode\projects\tokenstep\TokenStep\TokenStep_v0.1.1.exe')
-print('done')
+print('exe: %.2f MB | setup: %.2f MB' % (os.path.getsize(ROOT_EXE)/1048576, os.path.getsize(ROOT_SETUP)/1048576))
 os.remove(__file__)
