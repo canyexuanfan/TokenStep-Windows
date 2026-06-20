@@ -133,6 +133,13 @@ pub struct TokenStepSettings {
     /// Directory where screenshots are saved by default (empty = exe dir).
     #[serde(rename = "screenshot_dir", default)]
     pub screenshot_dir: String,
+    /// UI language: zhHans (default) / en / zhHant.
+    #[serde(rename = "language", default = "default_lang")]
+    pub language: String,
+}
+
+fn default_lang() -> String {
+    "zhHans".to_string()
 }
 
 fn default_true() -> bool {
@@ -152,6 +159,7 @@ impl Default for TokenStepSettings {
             close_to_tray: true,
             theme: "green".to_string(),
             screenshot_dir: String::new(),
+            language: "zhHans".to_string(),
         }
     }
 }

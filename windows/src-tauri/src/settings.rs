@@ -54,5 +54,9 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         close_to_tray: s.close_to_tray,
         theme,
         screenshot_dir: s.screenshot_dir,
+        language: {
+            let valid = ["zhHans", "en", "zhHant"];
+            if valid.contains(&s.language.as_str()) { s.language.clone() } else { "zhHans".to_string() }
+        },
     }
 }

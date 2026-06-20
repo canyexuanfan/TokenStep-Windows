@@ -18,6 +18,7 @@
     };
   </script>
   <script src="../shared/app.js"></script>
+  <script src="../shared/i18n.js"></script>
   <script>
     // Startup: fetch data, then render. Any error is caught + logged.
     (async function () {
@@ -307,6 +308,12 @@
         var themeOpts = Object.keys(themes).map(function (k) {
           return '<option value="' + k + '"' + (k === currentTheme ? ' selected' : '') + '>' + themes[k].title + '（' + themes[k].sub + '）</option>';
         }).join('');
+        // Language selector.
+        var curLang = settings.language || 'zhHans';
+        var langOpts = '<option value="zhHans"' + (curLang === 'zhHans' ? ' selected' : '') + '>简体中文</option>' +
+          '<option value="en"' + (curLang === 'en' ? ' selected' : '') + '>English</option>' +
+          '<option value="zhHant"' + (curLang === 'zhHant' ? ' selected' : '') + '>繁體中文</option>';
+        html += '<div class="card"><div class="card-title">语言</div><div class="setting-row"><div><div class="setting-label">界面语言</div><div class="setting-hint">切换后立即生效</div></div><select id="langSelect">' + langOpts + '</select></div></div>';
         html += '<div class="card"><div class="card-title">主题配色</div><div class="setting-row"><div><div class="setting-label">界面主题</div><div class="setting-hint">切换整体配色方案，立即生效</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
         // Update check card.
         var updHint = latestUpdate && latestUpdate.has_update
@@ -314,7 +321,7 @@
           : (latestUpdate ? '<div style="margin-top:10px;color:var(--muted)">当前为最新版本 v' + latestUpdate.current_version + '</div>' : '<div style="margin-top:10px;color:var(--muted)">点击下方按钮从 GitHub 检查新版本</div>');
         html += '<div class="card"><div class="card-title">更新</div><div class="setting-row"><div><div class="setting-label">检查更新</div><div class="setting-hint">从 GitHub Releases 检查是否有新版本</div></div><button class="btn" id="checkUpdateBtn">立即检查</button></div>' + updHint + '</div>';
         html += '<div class="card"><div class="card-title">截图</div><div class="setting-row"><div><div class="setting-label">截图保存位置</div><div class="setting-hint" id="screenshotDirHint">' + (settings.screenshot_dir ? settings.screenshot_dir : '默认：程序所在目录') + '</div></div><button class="btn" id="pickScreenshotDirBtn">选择文件夹</button></div></div>';
-        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.0') + '</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
+        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.1') + '</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
         return html;
       }
 
@@ -347,6 +354,14 @@
           if (ts) ts.addEventListener('change', function () {
             window.TS.applyTheme(ts.value);
             invoke('set_theme', { theme: ts.value }).then(function (s) { settings = s; render(); });
+          });
+          var langSel = document.getElementById('langSelect');
+          if (langSel) langSel.addEventListener('change', function () {
+            invoke('set_language', { language: langSel.value }).then(function (s) {
+              settings = s;
+              if (typeof applyLanguage === 'function') applyLanguage(s.language);
+              render();
+            });
           });
           // Screenshot save-folder picker.
           var pickBtn = document.getElementById('pickScreenshotDirBtn');
@@ -395,6 +410,15 @@
         });
       }
 
+      // Re-apply language translations after every render (DOM was replaced).
+      var _origRender = render;
+      render = function () {
+        _origRender();
+        if (typeof applyLanguage === 'function' && settings.language && settings.language !== 'zhHans') {
+          applyLanguage(settings.language);
+        }
+      };
+
       function updateHeader() {
         document.getElementById('updated').textContent = '更新 ' + (snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : '等待同步');
       }
@@ -404,6 +428,10 @@
       listen('snapshot-updated', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
       // Pushed by the Rust startup check / tray menu check when a newer release exists.
       render();
+      // Apply saved language after first render (DOM-walk text replacement).
+      if (typeof applyLanguage === 'function') {
+        applyLanguage((initialSettings && initialSettings.language) || 'zhHans');
+      }
       updateHeader();
     }
   </script>
