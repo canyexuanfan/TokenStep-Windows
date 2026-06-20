@@ -7,6 +7,7 @@
 //!   - a background refresh timer driven by the user's refresh interval
 
 mod collector;
+mod codex_quota;
 mod models;
 mod paths;
 mod pricing;
@@ -70,6 +71,12 @@ fn set_refresh_interval(seconds: i64) -> Result<TokenStepSettings, String> {
 #[tauri::command]
 fn is_refreshing(state: tauri::State<'_, Arc<AppState>>) -> bool {
     *state.refreshing.lock()
+}
+
+/// Read the Codex rate-limit quota (5h + 7d windows) via the app-server.
+#[tauri::command]
+fn read_codex_quota() -> codex_quota::CodexQuotaSnapshot {
+    codex_quota::read()
 }
 
 #[tauri::command]
@@ -446,6 +453,7 @@ pub fn run() {
             check_for_update,
             open_release_page,
             is_refreshing,
+            read_codex_quota,
             refresh,
             check_for_update,
             open_release_page,

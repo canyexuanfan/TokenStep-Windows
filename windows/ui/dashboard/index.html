@@ -236,7 +236,46 @@
           '<div class="card">' + distributionInner('主力模型', snapshot.models.slice(0, 5)) + '</div>' +
         '</div>';
 
-        return hero + metricStrip + activityCard + distCards;
+        // ---- Codex quota card (lazy-loaded on render) ----
+        var quotaCard = '<div class="card" id="quotaCard"><div class="card-title">Codex 配额</div><div id="quotaContent" style="color:var(--muted);padding:10px 0">加载中…</div></div>';
+
+        return hero + metricStrip + quotaCard + activityCard + distCards;
+      }
+      function distributionInner(title, rows) {
+
+      function loadCodexQuota() {
+        var el = document.getElementById('quotaContent');
+        if (!el) return;
+        invoke('read_codex_quota').then(function (q) {
+          if (!el) return;
+          if (!q.available) {
+            el.innerHTML = '<span style="color:var(--muted)">' + (q.error || '暂未读取到 Codex 额度') + '</span>';
+            return;
+          }
+          var html = '<div style="display:flex;gap:24px;flex-wrap:wrap">';
+          if (q.five_hour_used_percent != null) {
+            var pct = Math.round(q.five_hour_used_percent);
+            var color = pct >= 80 ? '#ef4444' : pct >= 50 ? 'var(--green-dark)' : 'var(--green)';
+            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">5 小时窗口</div>';
+            html += '<div style="font-size:32px;font-weight:800;color:' + color + '">' + pct + '%</div>';
+            html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:999px"></div></div>';
+            if (q.five_hour_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">重置于 ' + q.five_hour_resets_at + '</div>';
+            html += '</div>';
+          }
+          if (q.seven_day_used_percent != null) {
+            var pct7 = Math.round(q.seven_day_used_percent);
+            var color7 = pct7 >= 80 ? '#ef4444' : pct7 >= 50 ? 'var(--green-dark)' : 'var(--green)';
+            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">7 天窗口</div>';
+            html += '<div style="font-size:32px;font-weight:800;color:' + color7 + '">' + pct7 + '%</div>';
+            html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + pct7 + '%;background:' + color7 + ';border-radius:999px"></div></div>';
+            if (q.seven_day_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">重置于 ' + q.seven_day_resets_at + '</div>';
+            html += '</div>';
+          }
+          html += '</div>';
+          el.innerHTML = html;
+        }).catch(function (e) {
+          if (el) el.innerHTML = '<span style="color:var(--muted)">读取失败: ' + (e && e.message ? e.message : e) + '</span>';
+        });
       }
       function distributionInner(title, rows) {
         var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">等待下一次同步</div>';
@@ -285,7 +324,10 @@
         document.getElementById('pageTitle').textContent = section.title;
         document.getElementById('pageSubtitle').textContent = section.sub;
         var view = document.getElementById('view');
-        if (current === 'today') view.innerHTML = viewToday();
+        if (current === 'today') {
+          view.innerHTML = viewToday();
+          loadCodexQuota();
+        }
         else if (current === 'history') view.innerHTML = viewHistory();
         else if (current === 'stats') view.innerHTML = viewStats();
         else if (current === 'privacy') view.innerHTML = viewPrivacy();
