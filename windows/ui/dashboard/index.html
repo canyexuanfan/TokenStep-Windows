@@ -493,32 +493,26 @@
         document.getElementById('updated').textContent = prefix + when;
       }
 
-      // Translate header elements that live OUTSIDE #view (so render() never
-      // rebuilds them): the sync-status text, button tooltips, and the update
-      // badge title. Called after every language switch + every render().
+      // Translate elements that live OUTSIDE #view (so render() never
+      // rebuilds them): the sidebar brand/privacy text, the sync-status text,
+      // button tooltips, and the update badge title. Called after every
+      // language switch + every render(). Also handles restoring the Chinese
+      // source text when switching back to zhHans.
       function refreshHeaderI18n() {
         var lang = window.__tsLang || 'zhHans';
-        if (lang === 'zhHans' || !window.I18N) {
-          // Reset to Chinese source values so switching back from EN/zhHant
-          // restores the original text.
-          var st = document.getElementById('syncText'); if (st && !st.dataset.syncing) st.textContent = '已同步';
-          var ub = document.getElementById('updateBtn'); if (ub) ub.title = '发现新版本';
-          var sb = document.getElementById('shotBtn'); if (sb) sb.title = '截图';
-          var rb = document.getElementById('refreshBtn'); if (rb) rb.title = '刷新';
-          updateHeader();
-          return;
-        }
-        var T = window.I18N[lang] || {};
+        var T = (lang !== 'zhHans' && window.I18N) ? (window.I18N[lang] || {}) : {};
+        var tr = function (zh) { return T[zh] || zh; };
+        // Sidebar (built once in init; never rebuilt by render).
+        var brand = document.querySelector('.brand-text p'); if (brand) brand.textContent = tr('每天一个亿');
+        var pbTitle = document.querySelector('.pb-title'); if (pbTitle) pbTitle.textContent = tr('本地统计');
+        var pbSub = document.querySelector('.pb-sub'); if (pbSub) pbSub.textContent = tr('不上传代码或对话');
+        // Sync status text (only translate the idle value; leave in-progress alone).
         var st = document.getElementById('syncText');
-        if (st) {
-          var cur = st.textContent;
-          // Only translate the idle "已同步"; leave "同步中…" (already keyed) to refresh.
-          if (T['已同步'] && cur === '已同步') st.textContent = T['已同步'];
-          else if (cur && T[cur]) st.textContent = T[cur];
-        }
-        var ub = document.getElementById('updateBtn'); if (ub) ub.title = T['发现新版本'] || '发现新版本';
-        var sb = document.getElementById('shotBtn'); if (sb) sb.title = T['截图'] || '截图';
-        var rb = document.getElementById('refreshBtn'); if (rb) rb.title = T['刷新'] || '刷新';
+        if (st && !st.dataset.syncing) st.textContent = tr('已同步');
+        // Button tooltips.
+        var ub = document.getElementById('updateBtn'); if (ub) ub.title = tr('发现新版本');
+        var sb = document.getElementById('shotBtn'); if (sb) sb.title = tr('截图');
+        var rb = document.getElementById('refreshBtn'); if (rb) rb.title = tr('刷新');
         updateHeader();
       }
 
