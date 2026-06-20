@@ -16,5 +16,5 @@ print('signed')
 
 shutil.copy2(EXE, ROOT_EXE)
 shutil.copy2(SETUP, ROOT_SETUP)
-print('exe: %.2f MB | setup: %.2f MB' % (os.path.getsize(ROOT_EXE)/1048576, os.path.getsize(ROOT_SETUP)/1048576))
+print('done')
 os.remove(__file__)
