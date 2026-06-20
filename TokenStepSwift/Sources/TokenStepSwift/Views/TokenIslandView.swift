@@ -12,7 +12,8 @@ struct TokenIslandWindowView: View {
             tokens: appState.today.totalTokens,
             lap: appState.todayLap,
             refreshing: appState.isRefreshing,
-            theme: appState.settings.theme
+            theme: appState.settings.theme,
+            language: appState.settings.language
         )
         .onHover { hovering in
             onHoverChanged(hovering)
@@ -20,7 +21,7 @@ struct TokenIslandWindowView: View {
         .onTapGesture {
             onTap()
         }
-        .id(appState.settings.theme.id)
+        .id(appState.appearanceID)
     }
 }
 
@@ -42,7 +43,8 @@ struct TokenIslandPopoverWindowView: View {
                 onHoverChanged(hovering)
             }
             .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .topLeading)))
-            .animation(.spring(response: 0.26, dampingFraction: 0.88), value: appState.settings.theme.id)
+            .id(appState.appearanceID)
+            .animation(.spring(response: 0.26, dampingFraction: 0.88), value: appState.appearanceID)
     }
 }
 
@@ -51,6 +53,7 @@ struct TokenIslandRingView: View {
     var lap: TokenStepLapProgress
     var refreshing: Bool
     var theme: TokenStepTheme
+    var language: TokenStepLanguage
 
     var body: some View {
         HStack(spacing: 5) {
@@ -67,9 +70,9 @@ struct TokenIslandRingView: View {
                 .interpolation(.high)
                 .frame(width: 15, height: 15)
                 .accessibilityLabel("\(lap.lapTitle) \(lap.lapPercentText)")
-                .id(theme.id)
+                .id("\(theme.id)-\(language.resolved.id)")
 
-            Text(TokenStepFormat.tokens(tokens, compact: true))
+            Text(TokenStepFormat.tokens(tokens, compact: true, language: language))
                 .font(.system(size: 13, weight: .heavy, design: .rounded))
                 .foregroundStyle(.white)
                 .monospacedDigit()
@@ -81,5 +84,6 @@ struct TokenIslandRingView: View {
         .frame(width: TokenIslandWindowPresenter.collapsedSize.width, height: TokenIslandWindowPresenter.collapsedSize.height)
         .background(Color.black)
         .clipShape(Capsule())
+        .id("\(theme.id)-\(language.resolved.id)")
     }
 }

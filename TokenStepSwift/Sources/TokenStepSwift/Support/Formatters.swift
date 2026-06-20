@@ -2,8 +2,9 @@ import Foundation
 import SwiftUI
 
 enum TokenStepFormat {
-    static func tokens(_ value: Int, compact: Bool = false) -> String {
-        if TokenStepLocalization.language == .en {
+    static func tokens(_ value: Int, compact: Bool = false, language explicitLanguage: TokenStepLanguage? = nil) -> String {
+        let language = explicitLanguage?.resolved ?? TokenStepLocalization.language
+        if language == .en {
             if value >= 1_000_000_000 {
                 return "\(trim(Double(value) / 1_000_000_000, digits: 2))B"
             }
@@ -17,8 +18,8 @@ enum TokenStepFormat {
             }
             return "\(value)"
         }
-        let hundredMillionUnit = TokenStepLocalization.language == .zhHant ? "億" : "亿"
-        let tenThousandUnit = TokenStepLocalization.language == .zhHant ? "萬" : "万"
+        let hundredMillionUnit = language == .zhHant ? "億" : "亿"
+        let tenThousandUnit = language == .zhHant ? "萬" : "万"
         if value >= 100_000_000 {
             return "\(trim(Double(value) / 100_000_000, digits: 2))\(hundredMillionUnit)"
         }

@@ -31,10 +31,12 @@ struct TokenStepApp: App {
                         tokens: appState.today.totalTokens,
                         lap: appState.todayLap,
                         refreshing: appState.isRefreshing,
-                        theme: appState.settings.theme
+                        theme: appState.settings.theme,
+                        language: appState.settings.language
                     )
                 }
             }
+            .id(appState.appearanceID)
             .onAppear {
                 TokenIslandWindowPresenter.shared.bind(appState: appState)
             }

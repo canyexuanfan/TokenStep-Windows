@@ -138,33 +138,29 @@ enum UpdateService {
     }
 
     private static func launchInstaller(for dmgURL: URL, version: String, requireVerified: Bool) throws {
-        let scriptURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("tokenstep-install-\(UUID().uuidString)")
-            .appendingPathExtension("sh")
+        let helperURL = try prepareTemporaryHelper()
         let logURL = AppPaths.logs.appendingPathComponent("update-install-\(Int(Date().timeIntervalSince1970)).log")
         let currentPID = ProcessInfo.processInfo.processIdentifier
-        let script = installerScript(
-            dmgPath: dmgURL.path,
-            version: version,
-            currentPID: currentPID,
-            logPath: logURL.path,
-            requireVerified: requireVerified,
-            scriptPath: scriptURL.path
-        )
         let launchLog = """
         TokenStep update launcher prepared at \(Date())
         Expected version: \(version)
         DMG: \(dmgURL.path)
-        Script: \(scriptURL.path)
+        Helper: \(helperURL.path)
 
         """
         try launchLog.write(to: logURL, atomically: true, encoding: .utf8)
-        try script.write(to: scriptURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = [scriptURL.path]
+        process.executableURL = helperURL
+        process.arguments = [
+            "install",
+            "--dmg", dmgURL.path,
+            "--version", version,
+            "--current-pid", "\(currentPID)",
+            "--require-verified", requireVerified ? "1" : "0",
+            "--log", logURL.path,
+            "--helper-path", helperURL.path
+        ]
         process.standardOutput = nil
         process.standardError = nil
         do {
@@ -173,6 +169,20 @@ enum UpdateService {
         } catch {
             throw UpdateError.installFailed
         }
+    }
+
+    private static func prepareTemporaryHelper() throws -> URL {
+        guard let helperURL = DataService.bundledHelperURL() else {
+            throw UpdateError.installFailed
+        }
+
+        try FileManager.default.createDirectory(at: AppPaths.updates, withIntermediateDirectories: true)
+        let destination = AppPaths.updates
+            .appendingPathComponent("TokenStepHelper-\(UUID().uuidString)")
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.copyItem(at: helperURL, to: destination)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
+        return destination
     }
 
     private static func exitCurrentAppAfterLaunchingInstaller() {

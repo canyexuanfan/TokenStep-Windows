@@ -238,7 +238,7 @@ struct TokenStepSettings: Codable {
 
     static let defaults = TokenStepSettings(
         dailyGoalTokens: 100_000_000,
-        refreshIntervalSeconds: 60,
+        refreshIntervalSeconds: 300,
         historyDays: 180,
         theme: .green,
         autoUpdateEnabled: true,
