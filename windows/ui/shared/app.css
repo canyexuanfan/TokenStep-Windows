@@ -613,6 +613,17 @@ td.total {
   padding: 18px 0;
   border-bottom: 1px solid var(--line);
 }
+/* Left side (label + hint) wraps when English text is longer than Chinese. */
+.setting-row > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Right side (select / input / toggle) keeps its natural width. */
+.setting-row > select,
+.setting-row > input,
+.setting-row > .switch {
+  flex-shrink: 0;
+}
 
 .setting-row:last-child {
   border-bottom: none;
@@ -640,6 +651,9 @@ input[type="number"] {
   background: var(--surface);
   color: var(--ink);
   outline: none;
+  /* English option text (e.g. long theme names) can overflow the row; cap the
+     width and let the dropdown still show full options when open. */
+  max-width: 220px;
 }
 
 select:focus,

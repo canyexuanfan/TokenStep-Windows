@@ -1,6 +1,16 @@
 /* TokenStep Windows — shared frontend helpers.
    Formatters ported from Formatters.swift; contribution color from Components.swift. */
 
+// ---- Translation helper (for canvas text + dynamic strings that the DOM
+// walker in applyLanguage can't reach). Reads the I18N table + current lang
+// that i18n.js exposes as globals. ----
+function t(zh) {
+  const lang = window.__tsLang || 'zhHans';
+  if (!lang || lang === 'zhHans' || !window.I18N) return zh;
+  const table = window.I18N[lang] || {};
+  return table[zh] || zh;
+}
+
 // ---- Tauri invoke (graceful fallback when running outside Tauri) ----
 async function invoke(cmd, args) {
   if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
@@ -201,7 +211,7 @@ function renderDataCard(canvas, data) {
   ctx.fillText("TokenStep", pad + 36, pad + 60);
   ctx.fillStyle = C.muted;
   ctx.font = "600 16px 'Segoe UI', sans-serif";
-  ctx.fillText("今日 AI 步数 · " + (today.date || ""), pad + 36, pad + 88);
+  ctx.fillText(t("今日 AI 步数 · ") + (today.date || ""), pad + 36, pad + 88);
 
   // Progress ring (drawn manually).
   const cx = pad + 110;
@@ -233,18 +243,18 @@ function renderDataCard(canvas, data) {
   ctx.fillText(lap.lapTitle, rx, cy - 10);
   ctx.fillStyle = C.muted;
   ctx.font = "600 16px 'Segoe UI', sans-serif";
-  ctx.fillText("已完成 " + lap.completedLaps + " 圈 · 本圈 " + formatPercent(lap.currentLapPercent), rx, cy + 20);
+  ctx.fillText(t("已完成 ") + lap.completedLaps + t(" 圈 · 本圈 ") + formatPercent(lap.currentLapPercent), rx, cy + 20);
   ctx.fillStyle = C.ink;
   ctx.font = "700 18px 'Segoe UI', sans-serif";
-  ctx.fillText("消耗金额 " + formatMoney(today.cost), rx, cy + 50);
+  ctx.fillText(t("消耗金额 ") + formatMoney(today.cost), rx, cy + 50);
   ctx.fillStyle = C.muted;
-  ctx.fillText("活跃 " + (data.active_days || 0) + " 天 · 累计 " + formatTokens(data.total_tokens || 0, true), rx, cy + 76);
+  ctx.fillText(t("活跃 ") + (data.active_days || 0) + t(" 天 · 累计 ") + formatTokens(data.total_tokens || 0, true), rx, cy + 76);
 
   // Footer.
   ctx.fillStyle = C.mutedFaint;
   ctx.font = "600 13px 'Segoe UI', sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("TokenStep · 十七° · 本地统计", W / 2, H - pad - 16);
+  ctx.fillText("TokenStep · " + t("十七°") + " · " + t("本地统计"), W / 2, H - pad - 16);
   return canvas;
 }
 
@@ -280,9 +290,9 @@ function contributionWallHTML(rows, goal, weeks = 53) {
   return (
     '<div class="wall">' + cols + "</div>" +
     '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px">' +
-    '<span class="pill"><span class="pill-label">活跃</span><span class="pill-value">' + activeCount + " 天</span></span>" +
-    '<span class="pill"><span class="pill-label">达标</span><span class="pill-value">' + goalCount + " 天</span></span>" +
-    '<span class="pill"><span class="pill-label">最高</span><span class="pill-value">' + formatTokens(maxTokens, true) + "</span></span>" +
+    '<span class="pill"><span class="pill-label">' + t("活跃") + '</span><span class="pill-value">' + activeCount + t(" 天") + "</span></span>" +
+    '<span class="pill"><span class="pill-label">' + t("达标") + '</span><span class="pill-value">' + goalCount + t(" 天") + "</span></span>" +
+    '<span class="pill"><span class="pill-label">' + t("最高") + '</span><span class="pill-value">' + formatTokens(maxTokens, true) + "</span></span>" +
     "</div>"
   );
 }

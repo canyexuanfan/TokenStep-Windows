@@ -297,7 +297,18 @@ const I18N = {
     "暂无活动数据": "No activity data",
     "条": "records",
     "TokenStep 是本地优先的工具，只读取用量元数据，不上传内容。": "TokenStep is local-first: it only reads usage metadata and never uploads content.",
-    "点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序": "When you click the × at the top-right: minimize to the tray to keep running, or quit the app."
+    "点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序": "When you click the × at the top-right: minimize to the tray to keep running, or quit the app.",
+    "今日 AI 步数 · ": "Today's AI steps · ",
+    "消耗金额 ": "Spending ",
+    "已完成 ": "Completed ",
+    " 圈 · 本圈 ": " laps · this lap ",
+    "活跃 ": "Active ",
+    " 天 · 累计 ": " days · total ",
+    "十七°": "Shiqi°",
+    "5 小时窗口": "5-hour window",
+    "7 天窗口": "7-day window",
+    "重置于 ": "Resets at ",
+    "暂未读取到 Codex 额度": "Codex quota not available"
   },
   "zhHant": {
     "简体中文": "簡體中文",
@@ -597,11 +608,23 @@ const I18N = {
     "暂无活动数据": "暫無活動資料",
     "条": "條",
     "TokenStep 是本地优先的工具，只读取用量元数据，不上传内容。": "TokenStep 是本地優先的工具，只讀取用量元資料，不上傳內容。",
-    "点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序": "點擊視窗右上角 × 時：最小化到系統匣保持背景執行，或直接結束程式"
+    "点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序": "點擊視窗右上角 × 時：最小化到系統匣保持背景執行，或直接結束程式。",
+    "今日 AI 步数 · ": "今日 AI 步數 · ",
+    "消耗金额 ": "消耗金額 ",
+    "已完成 ": "已完成 ",
+    " 圈 · 本圈 ": " 圈 · 本圈 ",
+    "活跃 ": "活躍 ",
+    " 天 · 累计 ": " 天 · 累計 ",
+    "十七°": "十七°",
+    "5 小时窗口": "5 小時視窗",
+    "7 天窗口": "7 天視窗",
+    "重置于 ": "重置於 ",
+    "暂未读取到 Codex 额度": "尚未讀取到 Codex 額度"
   }
 };
 
 let currentLang = 'zhHans'; // zhHans = default (no translation needed)
+window.__tsLang = 'zhHans'; // also exposed as a plain property for app.js's t()
 // Cache the flat key list (longest first) so substring matching tries the
 // most specific key first and avoids partial double-replacement.
 let _keysByLen = null;
@@ -616,6 +639,7 @@ function keysByLen(table) {
 
 function applyLanguage(lang) {
   currentLang = lang || 'zhHans';
+  window.__tsLang = currentLang;
   if (currentLang === 'zhHans') {
     // Switching back to Chinese: nothing to do because the source DOM is
     // always re-rendered from Chinese templates on each render().
