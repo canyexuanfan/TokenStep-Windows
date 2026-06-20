@@ -18,7 +18,8 @@
     };
   </script>
   <script src="../shared/app.js"></script>
-  <script src="../shared/i18n.js"></script>
+  <!-- i18n temporarily disabled to fix white screen -->
+  <!-- <script src="../shared/i18n.js"></script> -->
   <script>
     // Startup: fetch data, then render. Any error is caught + logged.
     (async function () {
@@ -243,6 +244,9 @@
         return hero + metricStrip + quotaCard + activityCard + distCards;
       }
       function distributionInner(title, rows) {
+        var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">等待下一次同步</div>';
+        return '<div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:17px">' + title + '</div>' + body;
+      }
 
       function loadCodexQuota() {
         var el = document.getElementById('quotaContent');
@@ -277,10 +281,6 @@
         }).catch(function (e) {
           if (el) el.innerHTML = '<span style="color:var(--muted)">读取失败: ' + (e && e.message ? e.message : e) + '</span>';
         });
-      }
-      function distributionInner(title, rows) {
-        var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">等待下一次同步</div>';
-        return '<div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:17px">' + title + '</div>' + body;
       }
       function viewStats() {
         return '<div class="dist-grid">' +
@@ -410,14 +410,7 @@
         });
       }
 
-      // Re-apply language translations after every render (DOM was replaced).
-      var _origRender = render;
-      render = function () {
-        _origRender();
-        if (typeof applyLanguage === 'function' && settings.language && settings.language !== 'zhHans') {
-          applyLanguage(settings.language);
-        }
-      };
+      // Language translation re-application after render (disabled until i18n is stable).
 
       function updateHeader() {
         document.getElementById('updated').textContent = '更新 ' + (snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : '等待同步');
