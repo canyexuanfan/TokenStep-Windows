@@ -308,7 +308,9 @@ const I18N = {
     "5 小时窗口": "5-hour window",
     "7 天窗口": "7-day window",
     "重置于 ": "Resets at ",
-    "暂未读取到 Codex 额度": "Codex quota not available"
+    "暂未读取到 Codex 额度": "Codex quota not available",
+    "更新 ": "Updated ",
+    "，点击安装": ", click to install"
   },
   "zhHant": {
     "简体中文": "簡體中文",
@@ -619,7 +621,9 @@ const I18N = {
     "5 小时窗口": "5 小時視窗",
     "7 天窗口": "7 天視窗",
     "重置于 ": "重置於 ",
-    "暂未读取到 Codex 额度": "尚未讀取到 Codex 額度"
+    "暂未读取到 Codex 额度": "尚未讀取到 Codex 額度",
+    "更新 ": "更新 ",
+    "，点击安装": "，點擊安裝"
   }
 };
 
