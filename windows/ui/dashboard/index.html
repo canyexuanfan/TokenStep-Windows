@@ -6,76 +6,9 @@
   <title>TokenStep</title>
   <link rel="icon" type="image/png" href="../shared/logo.png" />
   <link rel="stylesheet" href="../shared/app.css" />
-  <style>
-    /* Update dialog overlay — mirrors macOS UpdateWindowView. */
-    #updateModal { position: fixed; inset: 0; background: rgba(15,18,22,.42); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 9000; }
-    #updateModal.open { display: flex; }
-    .um-card { width: 520px; max-width: 92vw; max-height: 88vh; overflow: auto; background: var(--surface); border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.32); padding: 26px; }
-    .um-head { display: flex; gap: 14px; align-items: flex-start; }
-    .um-logo { width: 52px; height: 52px; border-radius: 14px; flex-shrink: 0; }
-    .um-ver { font-size: 24px; font-weight: 800; color: var(--ink); letter-spacing: -.01em; }
-    .um-sub { font-size: 13px; color: var(--muted); margin-top: 3px; font-weight: 600; }
-    .um-notes { margin-top: 18px; background: var(--canvas); border-radius: 14px; padding: 14px 16px; }
-    .um-notes-title { font-weight: 800; color: var(--ink); margin-bottom: 10px; font-size: 14px; }
-    .um-note { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; color: var(--ink); opacity: .82; font-weight: 600; margin-top: 8px; }
-    .um-note:first-of-type { margin-top: 0; }
-    .um-note .chk { color: var(--green); flex-shrink: 0; font-size: 13px; padding-top: 2px; }
-    .um-trust { display: flex; gap: 11px; align-items: center; margin-top: 16px; padding: 12px 14px; background: color-mix(in srgb,var(--green) 8%,transparent); border-radius: 14px; }
-    .um-trust .sh { width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb,var(--green) 22%,transparent); display: flex; align-items: center; justify-content: center; color: var(--green-dark); font-size: 16px; flex-shrink: 0; }
-    .um-trust .t1 { font-weight: 800; color: var(--ink); font-size: 13.5px; }
-    .um-trust .t2 { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 1px; }
-    .um-size { margin-left: auto; font-size: 11.5px; font-weight: 800; color: var(--ink); opacity: .6; background: var(--canvas); padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
-    .um-prog-wrap { margin-top: 16px; display: none; }
-    .um-prog-wrap.show { display: block; }
-    .um-prog-top { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; color: var(--muted); margin-bottom: 6px; }
-    .um-prog-track { height: 8px; background: var(--canvas); border-radius: 999px; overflow: hidden; }
-    .um-prog-fill { height: 100%; width: 0%; background: var(--green); border-radius: 999px; transition: width .18s ease; }
-    .um-foot { display: flex; gap: 9px; margin-top: 22px; align-items: center; }
-    .um-foot .spacer { flex: 1; }
-    .um-err { margin-top: 12px; padding: 10px 12px; background: #fee; color: #c33; border-radius: 10px; font-size: 13px; font-weight: 700; display: none; }
-    .um-err.show { display: block; }
-  </style>
 </head>
 <body>
   <div id="app"></div>
-  <!-- Update dialog (shown when a newer release is available). -->
-  <div id="updateModal">
-    <div class="um-card">
-      <div class="um-head">
-        <img class="um-logo" src="../shared/logo.png" alt="TokenStep" />
-        <div>
-          <div class="um-ver" id="umVersion">TokenStep 0.0.0</div>
-          <div class="um-sub" data-i18n="update.subtitle">安装完成后会自动重启到新版本</div>
-        </div>
-      </div>
-      <div class="um-notes">
-        <div class="um-notes-title" data-i18n="update.whatsNew">更新内容</div>
-        <div id="umNotes"></div>
-      </div>
-      <div class="um-trust">
-        <div class="sh">🛡</div>
-        <div>
-          <div class="t1" data-i18n="update.autoInstall">自动安装到原目录</div>
-          <div class="t2" data-i18n="update.autoInstallHint">下载后会静默替换旧版本</div>
-        </div>
-        <div class="um-size" id="umSize">—</div>
-      </div>
-      <div class="um-prog-wrap" id="umProgWrap">
-        <div class="um-prog-top">
-          <span id="umProgLabel" data-i18n="update.downloading">下载中…</span>
-          <span id="umProgPct">0%</span>
-        </div>
-        <div class="um-prog-track"><div class="um-prog-fill" id="umProgFill"></div></div>
-      </div>
-      <div class="um-err" id="umErr" data-i18n="update.downloadFailed">下载失败，请检查网络后重试。</div>
-      <div class="um-foot">
-        <button class="btn" id="umSkip" data-i18n="update.skip">跳过此版本</button>
-        <div class="spacer"></div>
-        <button class="btn" id="umLater" data-i18n="update.later">稍后</button>
-        <button class="btn" id="umInstall" style="background:var(--green);color:#fff;font-weight:800;padding:9px 18px" data-i18n="update.installRestart">安装并重启</button>
-      </div>
-    </div>
-  </div>
 
   <script>
     // Console error capture (hidden, for debugging via F12 devtools only).
@@ -491,6 +424,12 @@
       }
 
       // ── Update dialog ──────────────────────────────────────────────
+      // The modal is built dynamically (NOT in static HTML) so that <body>
+      // keeps only <div id="app"> as its child, exactly like the original
+      // layout. The modal is appended on first use and hidden otherwise.
+      var umReady = false;     // has the modal DOM been injected?
+      var umDownloading = false; // guards against double-click during install
+
       // Parse markdown-ish release notes into up to 4 bullet lines, mirroring
       // the macOS `AvailableUpdate.noteLines`. Strips `#`, `**`, leading dashes.
       function updateNoteLines(notes) {
@@ -502,16 +441,100 @@
         }).slice(0, 4);
       }
 
-      var umDownloading = false; // guards against double-click during install
+      // Lazily inject the modal <style> + DOM into <body>. Idempotent.
+      function ensureUpdateModal() {
+        if (umReady) return;
+        var css = '' +
+          '#updateModal{position:fixed;inset:0;background:rgba(15,18,22,.42);backdrop-filter:blur(2px);display:none;align-items:center;justify-content:center;z-index:9000}' +
+          '#updateModal.open{display:flex}' +
+          '.um-card{width:520px;max-width:92vw;max-height:88vh;overflow:auto;background:var(--surface);border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.32);padding:26px}' +
+          '.um-head{display:flex;gap:14px;align-items:flex-start}' +
+          '.um-logo{width:52px;height:52px;border-radius:14px;flex-shrink:0}' +
+          '.um-ver{font-size:24px;font-weight:800;color:var(--ink);letter-spacing:-.01em}' +
+          '.um-sub{font-size:13px;color:var(--muted);margin-top:3px;font-weight:600}' +
+          '.um-notes{margin-top:18px;background:var(--canvas);border-radius:14px;padding:14px 16px}' +
+          '.um-notes-title{font-weight:800;color:var(--ink);margin-bottom:10px;font-size:14px}' +
+          '.um-note{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;color:var(--ink);opacity:.82;font-weight:600;margin-top:8px}' +
+          '.um-note:first-of-type{margin-top:0}' +
+          '.um-note .chk{color:var(--green);flex-shrink:0;font-size:13px;padding-top:2px}' +
+          '.um-trust{display:flex;gap:11px;align-items:center;margin-top:16px;padding:12px 14px;background:color-mix(in srgb,var(--green) 8%,transparent);border-radius:14px}' +
+          '.um-trust .sh{width:32px;height:32px;border-radius:50%;background:color-mix(in srgb,var(--green) 22%,transparent);display:flex;align-items:center;justify-content:center;color:var(--green-dark);font-size:16px;flex-shrink:0}' +
+          '.um-trust .t1{font-weight:800;color:var(--ink);font-size:13.5px}' +
+          '.um-trust .t2{font-size:12px;color:var(--muted);font-weight:600;margin-top:1px}' +
+          '.um-size{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--ink);opacity:.6;background:var(--canvas);padding:4px 10px;border-radius:999px;white-space:nowrap}' +
+          '.um-prog-wrap{margin-top:16px;display:none}' +
+          '.um-prog-wrap.show{display:block}' +
+          '.um-prog-top{display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px}' +
+          '.um-prog-track{height:8px;background:var(--canvas);border-radius:999px;overflow:hidden}' +
+          '.um-prog-fill{height:100%;width:0%;background:var(--green);border-radius:999px;transition:width .18s ease}' +
+          '.um-foot{display:flex;gap:9px;margin-top:22px;align-items:center}' +
+          '.um-foot .spacer{flex:1}' +
+          '.um-err{margin-top:12px;padding:10px 12px;background:#fee;color:#c33;border-radius:10px;font-size:13px;font-weight:700;display:none}' +
+          '.um-err.show{display:block}';
+        var st = document.createElement('style');
+        st.textContent = css;
+        document.head.appendChild(st);
+
+        var wrap = document.createElement('div');
+        wrap.id = 'updateModal';
+        wrap.innerHTML =
+          '<div class="um-card">' +
+            '<div class="um-head">' +
+              '<img class="um-logo" src="../shared/logo.png" alt="TokenStep" />' +
+              '<div>' +
+                '<div class="um-ver" id="umVersion">TokenStep 0.0.0</div>' +
+                '<div class="um-sub">安装完成后会自动重启到新版本</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="um-notes">' +
+              '<div class="um-notes-title">更新内容</div>' +
+              '<div id="umNotes"></div>' +
+            '</div>' +
+            '<div class="um-trust">' +
+              '<div class="sh">🛡</div>' +
+              '<div>' +
+                '<div class="t1">自动安装到原目录</div>' +
+                '<div class="t2">下载后会静默替换旧版本</div>' +
+              '</div>' +
+              '<div class="um-size" id="umSize">—</div>' +
+            '</div>' +
+            '<div class="um-prog-wrap" id="umProgWrap">' +
+              '<div class="um-prog-top">' +
+                '<span id="umProgLabel">下载中…</span>' +
+                '<span id="umProgPct">0%</span>' +
+              '</div>' +
+              '<div class="um-prog-track"><div class="um-prog-fill" id="umProgFill"></div></div>' +
+            '</div>' +
+            '<div class="um-err" id="umErr">下载失败，请检查网络后重试。</div>' +
+            '<div class="um-foot">' +
+              '<button class="btn" id="umSkip">跳过此版本</button>' +
+              '<div class="spacer"></div>' +
+              '<button class="btn" id="umLater">稍后</button>' +
+              '<button class="btn" id="umInstall" style="background:var(--green);color:#fff;font-weight:800;padding:9px 18px">安装并重启</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(wrap);
+
+        // Wire buttons once, now that the DOM exists.
+        document.getElementById('umInstall').addEventListener('click', beginUpdateInstall);
+        document.getElementById('umLater').addEventListener('click', closeUpdateModal);
+        document.getElementById('umSkip').addEventListener('click', function () {
+          if (!latestUpdate || umDownloading) return;
+          invoke('skip_update_version', { version: latestUpdate.latest_version }).then(function () {
+            latestUpdate = null;
+            var btn = document.getElementById('updateBtn');
+            if (btn) btn.style.display = 'none';
+            closeUpdateModal();
+          });
+        });
+        umReady = true;
+      }
 
       function openUpdateModal() {
         if (!latestUpdate || !latestUpdate.has_update) return;
+        ensureUpdateModal();
         var m = document.getElementById('updateModal');
-        // Title is "TokenStep <ver>" + a localized "available" suffix span.
-        // We render the literal Chinese here; applyLanguage() re-translates it
-        // on the next render pass via the text-node walker.
         document.getElementById('umVersion').innerHTML = 'TokenStep ' + (latestUpdate.latest_version || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + ' 可用';
-        // Notes: prefer the first few parsed lines, else show generic ones.
         var lines = updateNoteLines(latestUpdate.release_notes);
         if (!lines.length) {
           lines = ['优化 Codex 历史数据读取', '降低后台刷新 CPU 占用', '提升菜单栏同步稳定性'];
@@ -519,38 +542,30 @@
         document.getElementById('umNotes').innerHTML = lines.map(function (n) {
           return '<div class="um-note"><span class="chk">✓</span><span>' + (n || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + '</span></div>';
         }).join('');
-        // Size pill (format bytes → MB).
         var sz = latestUpdate.asset_size;
         document.getElementById('umSize').textContent = sz ? (sz / 1048576).toFixed(1) + ' MB' : '—';
-        // Reset progress UI.
         document.getElementById('umProgWrap').classList.remove('show');
         document.getElementById('umErr').classList.remove('show');
         document.getElementById('umProgFill').style.width = '0%';
         document.getElementById('umProgPct').textContent = '0%';
         umDownloading = false;
-        // Install button label depends on whether an installer asset exists.
         var inst = document.getElementById('umInstall');
-        if (latestUpdate.asset_url) {
-          inst.textContent = '安装并重启';
-          inst.disabled = false;
-          inst.style.opacity = '1';
-        } else {
-          // No installable asset (portable-only release): offer manual download.
-          inst.textContent = '前往下载';
-          inst.disabled = false;
-          inst.style.opacity = '1';
-        }
+        inst.textContent = latestUpdate.asset_url ? '安装并重启' : '前往下载';
+        inst.disabled = false;
+        inst.style.opacity = '1';
+        document.getElementById('umSkip').disabled = false;
+        document.getElementById('umLater').disabled = false;
         m.classList.add('open');
       }
 
       function closeUpdateModal() {
         if (umDownloading) return; // don't allow closing mid-install
-        document.getElementById('updateModal').classList.remove('open');
+        var m = document.getElementById('updateModal');
+        if (m) m.classList.remove('open');
       }
 
       function beginUpdateInstall() {
         if (!latestUpdate) return;
-        // Portable-only release: fall back to opening the Releases page.
         if (!latestUpdate.asset_url) {
           if (latestUpdate.release_url) invoke('open_release_page', { url: latestUpdate.release_url });
           closeUpdateModal();
@@ -571,22 +586,7 @@
           asset_size: latestUpdate.asset_size || 0,
           version: latestUpdate.latest_version
         });
-        // Note: on success the process exits and we never return here.
-        // On failure, update-download-error re-enables the button.
       }
-
-      // Modal button wiring (bound once, not per-render, since the modal is static DOM).
-      document.getElementById('umInstall').addEventListener('click', beginUpdateInstall);
-      document.getElementById('umLater').addEventListener('click', closeUpdateModal);
-      document.getElementById('umSkip').addEventListener('click', function () {
-        if (!latestUpdate || umDownloading) return;
-        invoke('skip_update_version', { version: latestUpdate.latest_version }).then(function () {
-          latestUpdate = null;
-          var btn = document.getElementById('updateBtn');
-          if (btn) btn.style.display = 'none';
-          closeUpdateModal();
-        });
-      });
 
       // events
       listen('refresh-finished', function () { invoke('get_snapshot').then(function (s) { snapshot = s; render(); updateHeader(); }); });
@@ -603,6 +603,7 @@
       });
       // Download progress → fill the progress bar.
       listen('update-download-progress', function (e) {
+        if (!umReady) return;
         var p = e.payload || {};
         var pct = p.total > 0 ? Math.min(100, Math.round(p.percent)) : 0;
         document.getElementById('umProgFill').style.width = pct + '%';
@@ -610,6 +611,7 @@
       });
       // Download failed → show error, re-enable buttons so the user can retry.
       listen('update-download-error', function () {
+        if (!umReady) return;
         umDownloading = false;
         document.getElementById('umErr').classList.add('show');
         var inst = document.getElementById('umInstall');
