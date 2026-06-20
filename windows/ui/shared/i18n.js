@@ -223,7 +223,81 @@ const I18N = {
     "可用": "available",
     "Codex 额度显示": "Codex Quota Display",
     "显示 Codex 配额卡片": "Show Codex quota card",
-    "在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭": "Show 5-hour / 7-day remaining quota on the Today page (off by default)"
+    "在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭": "Show 5-hour / 7-day remaining quota on the Today page (off by default)",
+    "主题配色": "Theme",
+    "今天": "Today",
+    "今天和 AI 一起走了多远": "How far you went with AI today",
+    "今日步数": "Today's Steps",
+    "从 GitHub Releases 检查是否有新版本": "Check GitHub Releases for a newer version",
+    "作者": "Author",
+    "保存失败:": "Save failed:",
+    "关于": "About",
+    "关闭按钮行为": "Close-button behavior",
+    "分钟": "min",
+    "切换整体配色方案，立即生效": "Switch the color scheme, takes effect immediately",
+    "刷新中…": "Refreshing…",
+    "刷新失败:": "Refresh failed:",
+    "刷新间隔": "Refresh interval",
+    "前往下载": "Download",
+    "加载中…": "Loading…",
+    "十七": "Shiqi°",
+    "发现新版本": "New version available",
+    "发现新版本 v": "New version available v",
+    "合计": "Total",
+    "同步中…": "Syncing…",
+    "同步失败": "Sync failed",
+    "启动失败": "Startup failed",
+    "圈完成": "lap completed",
+    "基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。": "Windows port of the macOS TokenStep (original by Huang Shu), MIT license.",
+    "基本设置": "Basics",
+    "天窗口": "-day window",
+    "导出 CSV": "Export CSV",
+    "小时窗口": "-hour window",
+    "已保存到：": "Saved to:",
+    "已完成": "Completed",
+    "当前": "Current",
+    "当前为最新版本 v": "Already on the latest version v",
+    "成本": "Cost",
+    "截图保存位置": "Screenshot folder",
+    "截图保存失败": "Screenshot save failed",
+    "截图失败:": "Screenshot failed:",
+    "截图失败：找不到内容区域": "Screenshot failed: content area not found",
+    "按天明细": "Daily breakdown",
+    "按工具": "By tool",
+    "数据源": "Data sources",
+    "最小化到托盘": "Minimize to tray",
+    "检查失败，稍后重试": "Check failed, retry later",
+    "每圈": "per lap",
+    "每圈目标": "Goal per lap",
+    "活动墙": "Activity Wall",
+    "点击下方按钮从 GitHub 检查新版本": "Click below to check GitHub for a new version",
+    "点击安装": "Click to install",
+    "点击窗口右上角": "Click the × at the top-right",
+    "界面主题": "Theme",
+    "界面语言": "Language",
+    "百万": "million",
+    "目标、刷新间隔": "Goal, refresh interval",
+    "直接退出": "Quit",
+    "窗口行为": "Window behavior",
+    "立即安装": "Install Now",
+    "简体中文": "简体中文",
+    "繁體中文": "繁體中文",
+    "请按 F12 打开开发者工具查看详情，或重新启动。": "Press F12 for devtools details, or restart.",
+    "请改用系统截图）": "use a system screenshot instead)",
+    "读取失败:": "Load failed:",
+    "进行中": "In progress",
+    "选择文件夹": "Choose folder",
+    "配额": "Quota",
+    "重置于": "Reset to",
+    "隐私说明": "Privacy",
+    "额度显示": "Quota display",
+    "默认：程序所在目录": "Default: program folder",
+    "暂无": "None",
+    "暂无数据": "No data",
+    "暂无活动数据": "No activity data",
+    "条": "records",
+    "TokenStep 是本地优先的工具，只读取用量元数据，不上传内容。": "TokenStep is local-first: it only reads usage metadata and never uploads content.",
+    "点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序": "When you click the × at the top-right: minimize to the tray to keep running, or quit the app."
   },
   "zhHant": {
     "简体中文": "簡體中文",
@@ -449,25 +523,133 @@ const I18N = {
     "可用": "可用",
     "Codex 额度显示": "Codex 額度顯示",
     "显示 Codex 配额卡片": "顯示 Codex 配額卡片",
-    "在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭": "在「今日」頁面顯示 5 小時 / 7 天剩餘額度，預設關閉"
+    "在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭": "在「今日」頁面顯示 5 小時 / 7 天剩餘額度，預設關閉",
+    "主题配色": "主題配色",
+    "今天": "今天",
+    "今天和 AI 一起走了多远": "今天和 AI 一起走了多遠",
+    "今日步数": "今日步數",
+    "从 GitHub Releases 检查是否有新版本": "從 GitHub Releases 檢查是否有新版本",
+    "作者": "作者",
+    "保存失败:": "儲存失敗:",
+    "关于": "關於",
+    "关闭按钮行为": "關閉按鈕行為",
+    "分钟": "分鐘",
+    "切换整体配色方案，立即生效": "切換整體配色方案，立即生效",
+    "刷新中…": "重新整理中…",
+    "刷新失败:": "重新整理失敗:",
+    "刷新间隔": "重新整理間隔",
+    "前往下载": "前往下載",
+    "加载中…": "載入中…",
+    "十七": "十七",
+    "发现新版本": "發現新版本",
+    "发现新版本 v": "發現新版本 v",
+    "合计": "合計",
+    "同步中…": "同步中…",
+    "同步失败": "同步失敗",
+    "启动失败": "啟動失敗",
+    "圈完成": "圈完成",
+    "基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。": "基於 macOS 版 TokenStep 移植（原作者黃叔），MIT 授權條款。",
+    "基本设置": "基本設定",
+    "天窗口": "天視窗",
+    "导出 CSV": "匯出 CSV",
+    "小时窗口": "小時視窗",
+    "已保存到：": "已儲存到：",
+    "已完成": "已完成",
+    "当前": "目前",
+    "当前为最新版本 v": "目前為最新版本 v",
+    "成本": "成本",
+    "截图保存位置": "截圖儲存位置",
+    "截图保存失败": "截圖儲存失敗",
+    "截图失败:": "截圖失敗:",
+    "截图失败：找不到内容区域": "截圖失敗：找不到內容區域",
+    "按天明细": "按天明細",
+    "按工具": "按工具",
+    "数据源": "資料來源",
+    "最小化到托盘": "最小化到系統匣",
+    "检查失败，稍后重试": "檢查失敗，稍後重試",
+    "每圈": "每圈",
+    "每圈目标": "每圈目標",
+    "活动墙": "活動牆",
+    "点击下方按钮从 GitHub 检查新版本": "點擊下方按鈕從 GitHub 檢查新版本",
+    "点击安装": "點擊安裝",
+    "点击窗口右上角": "點擊視窗右上角",
+    "界面主题": "介面主題",
+    "界面语言": "介面語言",
+    "百万": "百萬",
+    "目标、刷新间隔": "目標、重新整理間隔",
+    "直接退出": "直接結束",
+    "窗口行为": "視窗行為",
+    "立即安装": "立即安裝",
+    "简体中文": "簡體中文",
+    "繁體中文": "繁體中文",
+    "请按 F12 打开开发者工具查看详情，或重新启动。": "請按 F12 開啟開發者工具查看詳情，或重新啟動。",
+    "请改用系统截图）": "請改用系統截圖）",
+    "读取失败:": "讀取失敗:",
+    "进行中": "進行中",
+    "选择文件夹": "選擇資料夾",
+    "配额": "配額",
+    "重置于": "重置為",
+    "隐私说明": "隱私說明",
+    "额度显示": "額度顯示",
+    "默认：程序所在目录": "預設：程式所在目錄",
+    "暂无": "暫無",
+    "暂无数据": "暫無資料",
+    "暂无活动数据": "暫無活動資料",
+    "条": "條",
+    "TokenStep 是本地优先的工具，只读取用量元数据，不上传内容。": "TokenStep 是本地優先的工具，只讀取用量元資料，不上傳內容。",
+    "点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序": "點擊視窗右上角 × 時：最小化到系統匣保持背景執行，或直接結束程式"
   }
 };
 
 let currentLang = 'zhHans'; // zhHans = default (no translation needed)
+// Cache the flat key list (longest first) so substring matching tries the
+// most specific key first and avoids partial double-replacement.
+let _keysByLen = null;
+let _keysByLenLang = '';
+function keysByLen(table) {
+  if (!_keysByLen || _keysByLenLang !== currentLang) {
+    _keysByLen = Object.keys(table).sort((a, b) => b.length - a.length);
+    _keysByLenLang = currentLang;
+  }
+  return _keysByLen;
+}
+
 function applyLanguage(lang) {
   currentLang = lang || 'zhHans';
-  if (currentLang === 'zhHans') return; // Chinese is the source language
+  if (currentLang === 'zhHans') {
+    // Switching back to Chinese: nothing to do because the source DOM is
+    // always re-rendered from Chinese templates on each render().
+    return;
+  }
   const table = I18N[currentLang] || {};
-  // Walk all text nodes and translate
+  const keys = keysByLen(table);
+  // Walk all text nodes and translate. We try an exact match first (fast path),
+  // then fall back to substring replacement for dynamically-concatenated
+  // strings like "发现新版本 v0.1.1" matching key "发现新版本 v".
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
   const nodes = [];
   let node;
   while (node = walker.nextNode()) nodes.push(node);
   for (const n of nodes) {
     const trimmed = n.nodeValue.trim();
-    if (!trimmed || trimmed.length < 1) continue;
+    if (!trimmed) continue;
+    // Exact match (covers static labels).
     if (table[trimmed]) {
       n.nodeValue = n.nodeValue.replace(trimmed, table[trimmed]);
+      continue;
     }
+    // Substring match (covers labels concatenated with a variable at render
+    // time, e.g. "当前为最新版本 v" + ver → "当前为最新版本 v0.1.1").
+    // Only apply each key once per node to avoid runaway replacement.
+    let val = n.nodeValue;
+    let changed = false;
+    for (const k of keys) {
+      if (k.length < 2) continue;
+      if (val.includes(k)) {
+        val = val.split(k).join(table[k]);
+        changed = true;
+      }
+    }
+    if (changed) n.nodeValue = val;
   }
 }
