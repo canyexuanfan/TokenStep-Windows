@@ -143,8 +143,27 @@ fn parse_response(line: &str) -> Option<CodexQuotaSnapshot> {
         .and_then(|m| m.get("codex"))
         .or(result.get("rateLimits"))?;
 
-    let five = snap.get("primary");
-    let seven = snap.get("secondary");
+    // Classify windows by duration (port of upstream `classifiedWindows`):
+    // 300 min = 5h, 10080 min = 7d. This is more robust than blindly taking
+    // primary/secondary, which assumes a fixed ordering that newer codex
+    // versions have been seen to change.
+    let primary = snap.get("primary").filter(|v| !v.is_null());
+    let secondary = snap.get("secondary").filter(|v| !v.is_null());
+    let mut five = None;
+    let mut seven = None;
+    for w in [primary, secondary].into_iter().flatten() {
+        match w.get("windowDurationMins").and_then(|v| v.as_i64()) {
+            Some(300) if five.is_none() => five = Some(w),
+            Some(10080) if seven.is_none() => seven = Some(w),
+            _ => continue,
+        }
+    }
+    // Fallback: if neither window advertised a known duration, fall back to
+    // the legacy primary/secondary mapping so we still show something.
+    if five.is_none() && seven.is_none() {
+        five = primary;
+        seven = secondary;
+    }
 
     Some(CodexQuotaSnapshot {
         available: true,

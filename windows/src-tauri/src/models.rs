@@ -63,6 +63,11 @@ pub struct UsageTotals {
 pub struct DailyUsage {
     pub date: String,
     pub tools: std::collections::BTreeMap<String, i64>,
+    /// Per-model token breakdown for this day (mirrors upstream
+    /// `DailyAccumulator.models`). Lets the Today view show today's model
+    /// split without recomputing from the global models table.
+    #[serde(default)]
+    pub models: std::collections::BTreeMap<String, i64>,
     #[serde(rename = "total_tokens")]
     pub total_tokens: i64,
     pub cost: f64,
@@ -141,6 +146,14 @@ pub struct TokenStepSettings {
     /// only appears when the user opts in.
     #[serde(rename = "show_codex_quota", default)]
     pub show_codex_quota: bool,
+    /// Whether the TokenRank leaderboard card is shown on the Today view.
+    /// Default off. Mirrors upstream `showTokenRank`.
+    #[serde(rename = "show_token_rank", default)]
+    pub show_token_rank: bool,
+    /// The user's scys.com TokenRank user id (digits only), used to locate
+    /// their own entry in the leaderboard. Empty when unset.
+    #[serde(rename = "token_rank_user_id", default, skip_serializing_if = "Option::is_none")]
+    pub token_rank_user_id: Option<String>,
     /// A version string the user chose to skip via the update dialog.
     /// When the latest release matches this, the update check reports
     /// `has_update: false` so the user isn't nagged about it again.
@@ -172,6 +185,8 @@ impl Default for TokenStepSettings {
             language: "zhHans".to_string(),
             skipped_update_version: None,
             show_codex_quota: false,
+            show_token_rank: false,
+            token_rank_user_id: None,
         }
     }
 }
