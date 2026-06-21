@@ -60,5 +60,11 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         },
         skipped_update_version: s.skipped_update_version.filter(|v| !v.trim().is_empty()),
         show_codex_quota: s.show_codex_quota,
+        show_token_rank: s.show_token_rank,
+        token_rank_user_id: s
+            .token_rank_user_id
+            .as_deref()
+            .map(|v| crate::token_rank::clean_user_id(v))
+            .filter(|v| !v.is_empty()),
     }
 }

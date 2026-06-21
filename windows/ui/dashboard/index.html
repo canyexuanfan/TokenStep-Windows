@@ -278,59 +278,123 @@
         '</div>';
 
         // ---- 30-day activity bars card ----
-        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 30 天') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.t('颜色越深，圈数越高') + '</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('今天') + ' ' + formatTokens(t.total_tokens, true) + '</span></div>' + activityBars(snapshot.daily.slice(-30), settings.daily_goal_tokens) + '</div>';
+        var last30 = snapshot.daily.slice(-30);
+        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 30 天') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.t('颜色越深，圈数越高') + '</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('今天') + ' ' + formatTokens(t.total_tokens, true) + '</span></div>' + window.TS.stackedActivityBarsHTML(last30, settings.daily_goal_tokens) + window.TS.tokenToolLegendHTML(last30) + '</div>';
 
-        // ---- Distribution cards: 按客户端 + 主力模型 (2-up) ----
+        // ---- Distribution cards: TODAY's client + model split (not all-time) ----
+        // Port of upstream d0af1c4: show today's breakdown, not the cumulative
+        // table (the cumulative breakdown stays on the Stats page).
+        var todayToolsArr = Object.keys(t.tools || {})
+          .map(function (k) { return { tool: k, tokens: t.tools[k] || 0, percent: t.total_tokens ? (100 * (t.tools[k] || 0) / t.total_tokens) : 0 }; })
+          .sort(function (a, b) { return b.tokens - a.tokens; })
+          .slice(0, 5);
+        var todayModelsArr = Object.keys(t.models || {})
+          .map(function (k) { return { model: k, tokens: t.models[k] || 0, percent: t.total_tokens ? (100 * (t.models[k] || 0) / t.total_tokens) : 0 }; })
+          .sort(function (a, b) { return b.tokens - a.tokens; })
+          .slice(0, 5);
         var distCards = '<div class="dist-grid">' +
-          '<div class="card">' + distributionInner(window.TS.t('按客户端'), snapshot.tools.slice(0, 5)) + '</div>' +
-          '<div class="card">' + distributionInner(window.TS.t('主力模型'), snapshot.models.slice(0, 5)) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('今日客户端'), todayToolsArr) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('今日模型'), todayModelsArr) + '</div>' +
         '</div>';
 
-        // ---- Codex quota card (only when the user opted in via Settings) ----
-        var quotaCard = settings.show_codex_quota
+        // ---- Quota cards: Codex + Claude (each only when opted in) ----
+        // The Codex card reuses #quotaContent; the Claude card uses
+        // #claudeQuotaContent. Both are filled async after render.
+        var codexQuotaCard = settings.show_codex_quota
           ? '<div class="card" id="quotaCard"><div class="card-title">' + window.TS.t('Codex 配额') + '</div><div id="quotaContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
           : '';
+        var claudeQuotaCard = settings.show_codex_quota
+          ? '<div class="card" id="claudeQuotaCard"><div class="card-title">' + window.TS.t('Claude Code 配额') + '</div><div id="claudeQuotaContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
+          : '';
 
-        return hero + metricStrip + quotaCard + activityCard + distCards;
+        // ---- TokenRank leaderboard card (only when opted in) ----
+        var tokenRankCard = settings.show_token_rank
+          ? '<div class="card" id="tokenRankCard"><div class="card-title">' + window.TS.t('Token 榜单') + '</div><div id="tokenRankContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
+          : '';
+
+        return hero + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + activityCard + distCards;
       }
       function distributionInner(title, rows) {
         var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
         return '<div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:17px">' + title + '</div>' + body;
       }
 
+      // Render a quota snapshot (Codex or Claude) into a container element.
+      // Shared because both quota types return the same CodexQuotaSnapshot shape.
+      function renderQuotaInto(elId, q) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        if (!q.available) {
+          el.innerHTML = '<span style="color:var(--muted)">' + (q.error || window.TS.t('暂未读取到额度')) + '</span>';
+          return;
+        }
+        var html = '<div style="display:flex;gap:24px;flex-wrap:wrap">';
+        if (q.five_hour_used_percent != null) {
+          html += window.TS.quotaWindowHTML(window.TS.t('5 小时窗口'), q.five_hour_used_percent, q.five_hour_resets_at, elId + '_5h');
+        }
+        if (q.seven_day_used_percent != null) {
+          html += window.TS.quotaWindowHTML(window.TS.t('7 天窗口'), q.seven_day_used_percent, q.seven_day_resets_at, elId + '_7d');
+        }
+        html += '</div>';
+        el.innerHTML = html;
+      }
+
       function loadCodexQuota() {
         var el = document.getElementById('quotaContent');
         if (!el) return;
         invoke('read_codex_quota').then(function (q) {
-          if (!el) return;
-          if (!q.available) {
-            el.innerHTML = '<span style="color:var(--muted)">' + (q.error || window.TS.t('暂未读取到 Codex 额度')) + '</span>';
+          renderQuotaInto('quotaContent', q);
+        }).catch(function (e) {
+          var n = document.getElementById('quotaContent');
+          if (n) n.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('读取失败:') + ' ' + (e && e.message ? e.message : e) + '</span>';
+        });
+      }
+
+      function loadClaudeQuota() {
+        var el = document.getElementById('claudeQuotaContent');
+        if (!el) return;
+        invoke('read_claude_quota').then(function (q) {
+          renderQuotaInto('claudeQuotaContent', q);
+        }).catch(function (e) {
+          var n = document.getElementById('claudeQuotaContent');
+          if (n) n.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('读取失败:') + ' ' + (e && e.message ? e.message : e) + '</span>';
+        });
+      }
+
+      function loadTokenRank() {
+        var el = document.getElementById('tokenRankContent');
+        if (!el) return;
+        invoke('read_token_rank').then(function (r) {
+          var n = document.getElementById('tokenRankContent');
+          if (!n) return;
+          if (!r.available) {
+            n.innerHTML = '<span style="color:var(--muted)">' + (r.error || window.TS.t('暂时无法读取榜单')) + '</span>';
             return;
           }
           var html = '<div style="display:flex;gap:24px;flex-wrap:wrap">';
-          if (q.five_hour_used_percent != null) {
-            var pct = Math.round(q.five_hour_used_percent);
-            var color = pct >= 80 ? '#ef4444' : pct >= 50 ? 'var(--green-dark)' : 'var(--green)';
-            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + window.TS.t('5 小时窗口') + '</div>';
-            html += '<div style="font-size:32px;font-weight:800;color:' + color + '">' + pct + '%</div>';
-            html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:999px"></div></div>';
-            if (q.five_hour_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + window.TS.t('重置于 ') + q.five_hour_resets_at + '</div>';
-            html += '</div>';
+          if (r.top) {
+            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + window.TS.t('榜首') + '</div>' +
+              '<div style="font-size:18px;font-weight:800;color:var(--ink)">' + escapeHtml(r.top.name) + '</div>' +
+              '<div style="font-size:13px;color:var(--muted);margin-top:4px">' + formatTokens(r.top.score) + '</div></div>';
           }
-          if (q.seven_day_used_percent != null) {
-            var pct7 = Math.round(q.seven_day_used_percent);
-            var color7 = pct7 >= 80 ? '#ef4444' : pct7 >= 50 ? 'var(--green-dark)' : 'var(--green)';
-            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + window.TS.t('7 天窗口') + '</div>';
-            html += '<div style="font-size:32px;font-weight:800;color:' + color7 + '">' + pct7 + '%</div>';
-            html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + pct7 + '%;background:' + color7 + ';border-radius:999px"></div></div>';
-            if (q.seven_day_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + window.TS.t('重置于 ') + q.seven_day_resets_at + '</div>';
-            html += '</div>';
+          if (r.mine) {
+            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + window.TS.t('我的排名') + '</div>' +
+              '<div style="font-size:32px;font-weight:800;color:var(--green-dark)">#' + r.mine.rank + '</div>' +
+              '<div style="font-size:13px;color:var(--muted);margin-top:4px">' + formatTokens(r.mine.score) + '</div></div>';
+          } else {
+            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + window.TS.t('我的排名') + '</div>' +
+              '<div style="font-size:13px;color:var(--muted)">' + window.TS.t('未上榜（设置里填写你的榜单 ID）') + '</div></div>';
           }
           html += '</div>';
-          el.innerHTML = html;
-        }).catch(function (e) {
-          if (el) el.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('读取失败:') + ' ' + (e && e.message ? e.message : e) + '</span>';
+          n.innerHTML = html;
+        }).catch(function () {
+          var n = document.getElementById('tokenRankContent');
+          if (n) n.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('暂时无法读取榜单') + '</span>';
         });
+      }
+
+      function escapeHtml(s) {
+        return String(s || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; });
       }
       function viewStats() {
         return '<div class="dist-grid">' +
@@ -368,13 +432,17 @@
         // Codex quota display toggle (mirrors upstream showCodexQuota, default off).
         var quotaChecked = settings.show_codex_quota ? ' checked' : '';
         html += '<div class="card"><div class="card-title">' + window.TS.t('Codex 额度显示') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('显示 Codex 配额卡片') + '</div><div class="setting-hint">' + window.TS.t('在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭') + '</div></div><label class="switch"><input type="checkbox" id="showQuotaToggle"' + quotaChecked + '/><span class="slider"></span></label></div></div>';
+        // TokenRank leaderboard settings (show toggle + user id).
+        var rankChecked = settings.show_token_rank ? ' checked' : '';
+        var rankUid = settings.token_rank_user_id || '';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('Token 榜单') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('显示 Token 榜单卡片') + '</div><div class="setting-hint">' + window.TS.t('在「今日」页面显示生财 Token 榜单的榜首和我的排名') + '</div></div><label class="switch"><input type="checkbox" id="showRankToggle"' + rankChecked + '/><span class="slider"></span></label></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('我的榜单 ID') + '</div><div class="setting-hint">' + window.TS.t('填写后可在榜单卡片看到自己的排名（在 scys.com/tokenrank 个人页获取）') + '</div></div><input type="text" id="rankUidInput" value="' + rankUid + '" placeholder="数字 ID" style="width:160px;padding:6px 10px;border:1px solid var(--track);border-radius:8px"/></div></div>';
         // Update check card.
         var updHint = latestUpdate && latestUpdate.has_update
           ? '<div style="margin-top:10px;padding:10px;background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:10px;font-weight:700;color:var(--green-dark)">🎉 ' + window.TS.tf('发现新版本 v%@', latestUpdate.latest_version) + ' · <a id="updDownloadLink" href="#" style="color:var(--green-dark);text-decoration:underline;cursor:pointer">' + window.TS.t('立即安装') + '</a></div>'
           : (latestUpdate ? '<div style="margin-top:10px;color:var(--muted)">' + window.TS.tf('当前为最新版本 v%@', latestUpdate.current_version) + '</div>' : '<div style="margin-top:10px;color:var(--muted)">' + window.TS.t('点击下方按钮从 GitHub 检查新版本') + '</div>');
         html += '<div class="card"><div class="card-title">' + window.TS.t('更新') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('检查更新') + '</div><div class="setting-hint">' + window.TS.t('从 GitHub Releases 检查是否有新版本') + '</div></div><button class="btn" id="checkUpdateBtn">' + window.TS.t('立即检查') + '</button></div>' + updHint + '</div>';
         html += '<div class="card"><div class="card-title">' + window.TS.t('截图') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('截图保存位置') + '</div><div class="setting-hint" id="screenshotDirHint">' + (settings.screenshot_dir ? settings.screenshot_dir : window.TS.t('默认：程序所在目录')) + '</div></div><button class="btn" id="pickScreenshotDirBtn">' + window.TS.t('选择文件夹') + '</button></div></div>';
-        html += '<div class="card"><div class="card-title">' + window.TS.t('关于') + '</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.3') + '</span></div><div class="card-row" style="justify-content:space-between"><b>' + window.TS.t('作者') + '</b><span style="color:var(--muted)">' + window.TS.t('十七°') + '</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">' + window.TS.t('基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。') + '</div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('关于') + '</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.2') + '</span></div><div class="card-row" style="justify-content:space-between"><b>' + window.TS.t('作者') + '</b><span style="color:var(--muted)">' + window.TS.t('十七°') + '</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">' + window.TS.t('基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。') + '</div></div>';
         return html;
       }
 
@@ -387,6 +455,8 @@
         if (current === 'today') {
           view.innerHTML = viewToday();
           loadCodexQuota();
+          loadClaudeQuota();
+          loadTokenRank();
         }
         else if (current === 'history') view.innerHTML = viewHistory();
         else if (current === 'stats') view.innerHTML = viewStats();
@@ -439,6 +509,15 @@
           var quotaToggle = document.getElementById('showQuotaToggle');
           if (quotaToggle) quotaToggle.addEventListener('change', function () {
             invoke('set_show_codex_quota', { enabled: quotaToggle.checked }).then(function (s) { settings = s; render(); });
+          });
+          // TokenRank leaderboard toggle + user id.
+          var rankToggle = document.getElementById('showRankToggle');
+          if (rankToggle) rankToggle.addEventListener('change', function () {
+            invoke('set_show_token_rank', { enabled: rankToggle.checked }).then(function (s) { settings = s; render(); });
+          });
+          var rankUidInput = document.getElementById('rankUidInput');
+          if (rankUidInput) rankUidInput.addEventListener('change', function () {
+            invoke('set_token_rank_user_id', { userId: rankUidInput.value }).then(function (s) { settings = s; });
           });
           // Update check button + download link.
           var checkUpdateBtn = document.getElementById('checkUpdateBtn');

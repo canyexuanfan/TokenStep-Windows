@@ -62,3 +62,31 @@ pub fn codex_jsonl_roots() -> Vec<PathBuf> {
 pub fn claude_projects_root() -> PathBuf {
     home_dir().join(".claude").join("projects")
 }
+
+/// `~/.cc-switch/cc-switch.db` — the CC Switch proxy request log (SQLite).
+/// CC Switch is a local proxy that routes Claude/Codex/Gemini traffic; its DB
+/// holds per-request token + cost rows we aggregate as a usage source.
+pub fn ccswitch_db_candidates() -> Vec<PathBuf> {
+    vec![home_dir().join(".cc-switch").join("cc-switch.db")]
+}
+
+/// `~/.claude/.credentials.json` — Claude Code OAuth credentials (written by
+/// the Claude Code CLI on `claude login`). Used to read the access token for
+/// the Claude usage-quota API. May be absent if the user never signed in.
+pub fn claude_credentials_json() -> PathBuf {
+    home_dir().join(".claude").join(".credentials.json")
+}
+
+/// `cache/claude-quota-cache.json` — 10-min cache for the Claude usage quota.
+pub fn claude_quota_cache_json() -> PathBuf {
+    app_support_root()
+        .join("cache")
+        .join("claude-quota-cache.json")
+}
+
+/// `cache/token-rank-cache.json` — 120s cache for the TokenRank leaderboard.
+pub fn token_rank_cache_json() -> PathBuf {
+    app_support_root()
+        .join("cache")
+        .join("token-rank-cache.json")
+}

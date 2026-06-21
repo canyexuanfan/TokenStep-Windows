@@ -7,11 +7,13 @@
 //!   - a background refresh timer driven by the user's refresh interval
 
 mod collector;
+mod claude_quota;
 mod codex_quota;
 mod models;
 mod paths;
 mod pricing;
 mod settings;
+mod token_rank;
 mod update;
 
 use models::{TokenStepSettings, UsageSnapshot};
@@ -111,6 +113,40 @@ fn set_language(app: tauri::AppHandle, language: String) -> Result<TokenStepSett
 fn set_show_codex_quota(enabled: bool) -> Result<TokenStepSettings, String> {
     let mut s = settings::load();
     s.show_codex_quota = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+/// Read the Claude Code usage quota (5h + 7d windows) via Anthropic's OAuth
+/// usage API. Requires the user to have signed in to Claude Code.
+#[tauri::command]
+fn read_claude_quota() -> codex_quota::CodexQuotaSnapshot {
+    claude_quota::read()
+}
+
+/// Read the TokenRank leaderboard (today's top users) and locate the user's
+/// own entry when a user id is configured.
+#[tauri::command]
+fn read_token_rank() -> token_rank::TokenRankSnapshot {
+    let s = settings::load();
+    let user_id = s.token_rank_user_id.unwrap_or_default();
+    token_rank::read(&user_id, "total", "today")
+}
+
+/// Toggle whether the TokenRank leaderboard card is shown on the Today view.
+#[tauri::command]
+fn set_show_token_rank(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.show_token_rank = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+/// Set the user's scys.com TokenRank user id (digits only).
+#[tauri::command]
+fn set_token_rank_user_id(user_id: String) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.token_rank_user_id = Some(token_rank::clean_user_id(&user_id));
     settings::save(&s).map_err(|e| e.to_string())?;
     Ok(settings::load())
 }
@@ -614,6 +650,10 @@ pub fn run() {
             reset_skipped_update,
             is_refreshing,
             read_codex_quota,
+            read_claude_quota,
+            read_token_rank,
+            set_show_token_rank,
+            set_token_rank_user_id,
             refresh,
         ])
         .run(tauri::generate_context!())

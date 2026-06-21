@@ -335,6 +335,140 @@ function contributionWallHTML(rows, goal, weeks = 53) {
   );
 }
 
+// ---- Tool color mapping (port of Components.swift tokenToolColor) ----
+// Drives the stacked activity bars + legend so each client gets a stable hue.
+function tokenToolColor(tool) {
+  switch (tool) {
+    case "Codex":
+      return "#2da44e"; // green
+    case "Claude Code":
+      return "rgb(214,107,61)"; // orange-red (0.84,0.42,0.24) brightened
+    case "Hermes":
+    case "Hermes Agent":
+      return "rgb(128,71,235)"; // violet
+    default:
+      // CC Switch variants → blue family so they're visually grouped.
+      if (tool.indexOf("CC Switch") >= 0) {
+        return tool.indexOf("Codex") >= 0
+          ? "#0ea5e9" // ocean blue (Codex via CC Switch)
+          : tool.indexOf("Gemini") >= 0
+            ? "#8b5cf6" // violet (Gemini via CC Switch)
+            : "#0891b2"; // teal (Claude Code / unknown via CC Switch)
+      }
+      return "rgba(31,41,55,0.44)"; // graphite fallback
+  }
+}
+
+// Preferred display order for tools (port of orderedToolEntries).
+function orderedToolEntries(tools) {
+  // tools: { name: tokens } map (or array of DailyUsage-shaped rows for the
+  // legend helper). Normalize to an array of {name, tokens} sorted by the
+  // preferred list first, then by token count.
+  const preferred = ["Codex", "Claude Code", "Hermes", "Hermes Agent"];
+  const entries = [];
+  for (const name of preferred) {
+    const v = Number(tools[name] || 0);
+    if (v > 0) entries.push({ name, tokens: v });
+  }
+  const rest = Object.keys(tools)
+    .filter((k) => preferred.indexOf(k) < 0 && Number(tools[k]) > 0)
+    .sort((a, b) => Number(tools[b]) - Number(tools[a]))
+    .map((k) => ({ name: k, tokens: Number(tools[k]) }));
+  return entries.concat(rest);
+}
+
+// ---- Stacked activity bars (port of StackedActivityBarsView) ----
+// Each day is one vertical bar, split into colored segments per tool.
+function stackedActivityBarsHTML(rows, goal) {
+  if (!rows || !rows.length) return '<div class="empty">' + t("暂无活动数据") + "</div>";
+  const maxTokens = Math.max.apply(
+    null,
+    [goal].concat(rows.map((d) => d.total_tokens)).concat([1])
+  );
+  return (
+    '<div class="activity" style="margin-top:14px">' +
+    rows
+      .map((d) => {
+        const totalHeight = Math.max(4, (d.total_tokens / maxTokens) * 100);
+        if (d.total_tokens <= 0) {
+          return '<div class="bar" style="height:4px;background:transparent"></div>';
+        }
+        const segments = orderedToolEntries(d.tools || {});
+        if (!segments.length) {
+          return (
+            '<div class="bar" style="height:' +
+            totalHeight +
+            "%;background:" +
+            contributionColor(d.total_tokens, goal) +
+            '"></div>'
+          );
+        }
+        // Stack segments bottom-up (preferred tool on top visually).
+        const segHtml = segments
+          .slice()
+          .reverse()
+          .map((s) => {
+            const h = Math.max(1, (totalHeight * s.tokens) / Math.max(d.total_tokens, 1));
+            return (
+              '<div style="width:100%;height:' +
+              h +
+              "%;background:" +
+              tokenToolColor(s.name) +
+              '"></div>'
+            );
+          })
+          .join("");
+        return '<div class="bar" style="height:' + totalHeight + "%;" + '" title="' + d.date + " " + formatTokens(d.total_tokens) + '">' + segHtml + "</div>";
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+// Legend listing the tools present across the given daily rows.
+function tokenToolLegendHTML(rows) {
+  const seen = new Set();
+  const names = [];
+  for (const d of rows) {
+    for (const e of orderedToolEntries(d.tools || {})) {
+      if (!seen.has(e.name)) {
+        seen.add(e.name);
+        names.push(e.name);
+        if (names.length >= 4) break;
+      }
+    }
+    if (names.length >= 4) break;
+  }
+  if (!names.length) names.push("Codex", "Claude Code");
+  return (
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px">' +
+    names
+      .map(
+        (n) =>
+          '<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);font-weight:600">' +
+          '<span style="width:9px;height:9px;border-radius:50%;background:' +
+          tokenToolColor(n) +
+          '"></span>' +
+          n +
+          "</span>"
+      )
+      .join("") +
+    "</div>"
+  );
+}
+
+// ---- Quota window card (shared by Codex + Claude quota) ----
+// Renders one 5h/7d utilization window. `prefix` disambiguates element ids.
+function quotaWindowHTML(label, pct, resetsAt, prefix) {
+  var color = pct >= 80 ? "#ef4444" : pct >= 50 ? "var(--green-dark)" : "var(--green)";
+  var html = '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + label + "</div>";
+  html += '<div style="font-size:32px;font-weight:800;color:' + color + '">' + Math.round(pct) + "%</div>";
+  html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + Math.min(100, Math.round(pct)) + "%;background:" + color + ';border-radius:999px"></div></div>';
+  if (resetsAt) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + t("重置于 ") + resetsAt + "</div>";
+  var _ = prefix;
+  return html + "</div>";
+}
+
 function downloadFile(filename, content, mime) {
   const blob = new Blob([content], { type: mime || "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -481,4 +615,9 @@ window.TS = {
   THEMES,
   applyTheme,
   contributionWallHTML,
+  tokenToolColor,
+  orderedToolEntries,
+  stackedActivityBarsHTML,
+  tokenToolLegendHTML,
+  quotaWindowHTML,
 };
