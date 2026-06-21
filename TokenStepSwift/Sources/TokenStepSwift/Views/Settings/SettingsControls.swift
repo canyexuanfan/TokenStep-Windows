@@ -34,33 +34,42 @@ struct DisplayPlacementButton: View {
 struct SettingsCard<Content: View>: View {
     var title: String
     var symbol: String
+    var height: CGFloat
     var content: Content
 
-    init(title: String, symbol: String, @ViewBuilder content: () -> Content) {
+    init(title: String, symbol: String, height: CGFloat = 260, @ViewBuilder content: () -> Content) {
         self.title = title
         self.symbol = symbol
+        self.height = height
         self.content = content()
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(Color.tokenGreenDark)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 30, height: 30)
                     .background(Color.tokenMint.opacity(0.22), in: Circle())
                 Text(title)
-                    .font(.title3.weight(.heavy))
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                 Spacer()
             }
+            .frame(height: 32, alignment: .center)
 
             content
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            Spacer(minLength: 0)
         }
-        .padding(22)
-        .frame(height: 238)
+        .padding(.horizontal, 22)
+        .padding(.top, 24)
+        .padding(.bottom, 22)
+        .frame(height: height)
         .frame(maxWidth: .infinity)
         .background(Color.tokenSurface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Color.black.opacity(0.06)))
@@ -125,11 +134,11 @@ struct ThemeSwatchButton: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 88)
-            .background(selected ? theme.palette.accentSoft.color.opacity(0.22) : Color.tokenTrack.opacity(0.24), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .frame(maxWidth: .infinity)
+                .frame(height: 80)
+                .background(selected ? theme.palette.accentSoft.color.opacity(0.22) : Color.tokenTrack.opacity(0.24), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(selected ? theme.palette.accent.color.opacity(0.46) : Color.black.opacity(0.045), lineWidth: selected ? 1.4 : 1)
             )
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -166,7 +175,7 @@ struct LanguageOptionButton: View {
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 43)
+            .frame(height: 40)
             .padding(.horizontal, 10)
             .background(selected ? Color.tokenMint.opacity(0.24) : Color.tokenTrack.opacity(0.28), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(selected ? Color.tokenGreen.opacity(0.32) : Color.black.opacity(0.04)))
@@ -186,8 +195,10 @@ struct PresetChip: View {
             Text(title)
                 .font(.caption.weight(.heavy))
                 .foregroundStyle(selected ? Color.white : Color.tokenInk.opacity(0.72))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+                .frame(maxWidth: .infinity)
+                .frame(height: 33)
                 .background(selected ? Color.tokenGreen : Color.tokenTrack.opacity(0.45), in: Capsule())
                 .overlay(Capsule().stroke(selected ? Color.clear : Color.black.opacity(0.045)))
         }

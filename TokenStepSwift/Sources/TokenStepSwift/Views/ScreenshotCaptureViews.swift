@@ -53,8 +53,6 @@ struct DashboardScreenshotView: View {
             TodayView()
         case .history:
             HistoryView(historyLimit: 30)
-        case .stats:
-            StatsView()
         case .privacy:
             PrivacyView()
         }

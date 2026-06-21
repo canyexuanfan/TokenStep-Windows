@@ -53,11 +53,30 @@ struct PopoverTodayRingCard: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                if let summary = todayToolSummary {
+                    Text(summary)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 1)
+                }
             }
         }
     }
 
     private func localizedDays(_ count: Int) -> String {
         TokenStepLocalization.language == .en ? "\(count)d" : "\(count) 天"
+    }
+
+    private var todayToolSummary: String? {
+        guard appState.today.totalTokens > 0 else { return nil }
+        let orderedTools = [("Codex", "Codex"), ("Claude Code", "Claude")]
+        let parts = orderedTools.map { tool, label in
+            "\(label) \(TokenStepFormat.tokens(appState.today.tools[tool] ?? 0, compact: true))"
+        }
+        return "\(L("今日")) \(parts.joined(separator: " · "))"
     }
 }

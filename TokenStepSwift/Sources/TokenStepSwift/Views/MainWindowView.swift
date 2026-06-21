@@ -3,7 +3,6 @@ import SwiftUI
 enum AppSection: String, CaseIterable, Identifiable {
     case today
     case history
-    case stats
     case privacy
 
     var id: String { rawValue }
@@ -12,7 +11,6 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .today: L("今日")
         case .history: L("历史")
-        case .stats: L("统计")
         case .privacy: L("隐私")
         }
     }
@@ -21,7 +19,6 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .today: L("今日消耗")
         case .history: L("历史活动")
-        case .stats: L("用量统计")
         case .privacy: L("隐私")
         }
     }
@@ -30,7 +27,6 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .today: L("今天的 Token 使用节奏")
         case .history: L("长期节奏和所有历史记录")
-        case .stats: L("按客户端和模型拆开看")
         case .privacy: L("只统计数量，不读取内容")
         }
     }
@@ -39,7 +35,6 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .today: "figure.walk.circle.fill"
         case .history: "square.grid.3x3.fill"
-        case .stats: "chart.bar.xaxis"
         case .privacy: "lock.shield.fill"
         }
     }
@@ -48,7 +43,6 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .today: "today"
         case .history: "history-30d"
-        case .stats: "stats"
         case .privacy: "privacy"
         }
     }
@@ -238,8 +232,6 @@ struct MainWindowView: View {
             TodayView()
         case .history:
             HistoryView()
-        case .stats:
-            StatsView()
         case .privacy:
             PrivacyView()
         }

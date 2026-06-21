@@ -6,39 +6,8 @@ struct TodayView: View {
     var body: some View {
         VStack(spacing: 22) {
             hero
+            todayBreakdownStrip
             metricStrip
-            TokenCard {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(L("最近 30 天"))
-                                .font(.title3.weight(.heavy))
-                                .foregroundStyle(Color.tokenInk)
-                            Text(L("颜色越深，圈数越高"))
-                                .font(.callout.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text(LFormat("今天 %@", TokenStepFormat.tokens(appState.today.totalTokens, compact: true)))
-                            .font(.callout.weight(.bold))
-                            .foregroundStyle(Color.tokenGreenDark)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(Color.tokenMint.opacity(0.28), in: Capsule())
-                    }
-                    ActivityBarsView(rows: appState.snapshot.daily, goal: appState.settings.dailyGoalTokens)
-                        .frame(height: 96)
-                }
-            }
-
-            HStack(alignment: .top, spacing: 22) {
-                distributionCard(title: L("按客户端"), rows: appState.snapshot.tools.prefix(5).map {
-                    UsageDistributionRow(name: $0.tool, value: $0.tokens, percent: $0.percentValue, color: $0.displayColor)
-                })
-                distributionCard(title: L("主力模型"), rows: appState.snapshot.models.prefix(5).map {
-                    UsageDistributionRow(name: $0.model, value: $0.tokens, percent: $0.percentValue, color: $0.displayColor)
-                })
-            }
         }
     }
 
@@ -102,34 +71,61 @@ struct TodayView: View {
         }
     }
 
-    private func distributionCard(title: String, rows: [UsageDistributionRow]) -> some View {
-        TokenCard {
-            VStack(alignment: .leading, spacing: 17) {
-                Text(title)
-                    .font(.title3.weight(.heavy))
-                    .foregroundStyle(Color.tokenInk)
-                if rows.isEmpty {
-                    Text(L("等待下一次同步"))
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
-                } else {
-                    ForEach(rows) { row in
-                        UsageProgressRow(
-                            name: row.name,
-                            value: "\(TokenStepFormat.tokens(row.value, compact: true)) · \(TokenStepFormat.percent(row.percent))",
-                            percent: row.percent,
-                            color: row.color
-                        )
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var todayBreakdownStrip: some View {
+        HStack(alignment: .top, spacing: 22) {
+            TodayBreakdownCard(title: L("今日客户端"), rows: todayToolRows, maxRows: 3)
+            TodayBreakdownCard(title: L("今日模型"), rows: todayModelRows, maxRows: 4)
         }
     }
 
     private func localizedDays(_ count: Int) -> String {
         TokenStepLocalization.language == .en ? "\(count)d" : "\(count) 天"
+    }
+
+    private var todayToolRows: [TodayBreakdownRow] {
+        let total = appState.today.totalTokens
+        guard total > 0 else { return [] }
+        let primaryTools = ["Codex", "Claude Code"]
+        let primaryRows = primaryTools.map { name in
+            TodayBreakdownRow(
+                name: name,
+                tokens: appState.today.tools[name] ?? 0,
+                percent: Double(appState.today.tools[name] ?? 0) * 100 / Double(total),
+                color: tokenToolColor(name)
+            )
+        }
+        let extraRows = appState.today.tools
+            .filter { !primaryTools.contains($0.key) && $0.value > 0 }
+            .sorted { $0.value > $1.value }
+            .map { name, tokens in
+                TodayBreakdownRow(
+                    name: name,
+                    tokens: tokens,
+                    percent: Double(tokens) * 100 / Double(total),
+                    color: tokenToolColor(name)
+                )
+            }
+        return primaryRows + extraRows
+    }
+
+    private var todayModelRows: [TodayBreakdownRow] {
+        breakdownRows(from: appState.today.models) { _ in nil }
+    }
+
+    private func breakdownRows(from values: [String: Int], color: (String) -> Color?) -> [TodayBreakdownRow] {
+        let total = appState.today.totalTokens
+        guard total > 0 else { return [] }
+        return values
+            .filter { $0.value > 0 }
+            .sorted { $0.value > $1.value }
+            .map { name, tokens in
+                TodayBreakdownRow(
+                    name: name,
+                    tokens: tokens,
+                    percent: Double(tokens) * 100 / Double(total),
+                    color: color(name)
+                )
+            }
     }
 }
 
@@ -156,14 +152,6 @@ private struct CompactMetricCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
-}
-
-private struct UsageDistributionRow: Identifiable {
-    var id: String { name }
-    var name: String
-    var value: Int
-    var percent: Double
-    var color: Color
 }
 
 private struct LapProgressChips: View {

@@ -39,7 +39,7 @@ struct SettingsLanguageCard: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        SettingsCard(title: L("语言"), symbol: "globe.asia.australia.fill") {
+        SettingsCard(title: L("语言"), symbol: "globe.asia.australia.fill", height: 268) {
             VStack(alignment: .leading, spacing: 14) {
                 Text(L("选择 TokenStep 的显示语言"))
                     .font(.callout.weight(.semibold))
