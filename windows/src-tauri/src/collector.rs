@@ -519,8 +519,12 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
         );
     }
 
-    // The aggregate query mirrors upstream exactly (coalesce model fallbacks,
-    // filter to successful proxy rows with tokens).
+    // NOTE: upstream uses `where coalesce(data_source,'proxy')='proxy'`, but
+    // real-world CC Switch DBs store `data_source` as 'codex_session' /
+    // 'opencode_session' / 'session_log' — NONE equal 'proxy', so that filter
+    // drops every row and the source silently reports zero. We drop the
+    // data_source clause entirely (success-status + tokens>0 is enough) so the
+    // actual proxy activity is aggregated.
     let sql = "select \
         created_at, app_type, \
         coalesce(nullif(pricing_model, ''), nullif(model, ''), nullif(request_model, ''), 'unknown') as display_model, \
@@ -530,9 +534,8 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
         coalesce(cache_creation_tokens, 0) as cache_creation_tokens, \
         cast(coalesce(nullif(total_cost_usd, ''), '0') as real) as total_cost_usd \
         from proxy_request_logs \
-        where coalesce(data_source, 'proxy') = 'proxy' \
-          and status_code >= 200 and status_code < 300 \
-          and (coalesce(input_tokens, 0) + coalesce(output_tokens, 0) \
+        where status_code >= 200 and status_code < 300 \
+        and (coalesce(input_tokens, 0) + coalesce(output_tokens, 0) \
                + coalesce(cache_read_tokens, 0) + coalesce(cache_creation_tokens, 0)) > 0 \
         order by created_at, request_id";
 
