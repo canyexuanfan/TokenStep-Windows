@@ -312,27 +312,7 @@
           ? '<div class="card" id="tokenRankCard"><div class="card-title">' + window.TS.t('Token 榜单') + '</div><div id="tokenRankContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
           : '';
 
-        // ---- CC Switch reference card (shown only when proxy data exists) ----
-        // This is a CROSS-CHECK panel: it mirrors what CC Switch's own UI
-        // reports. It is deliberately NOT added to the main totals above,
-        // because the same traffic is already captured by the native
-        // Codex/Claude logs when routed through the proxy — adding it would
-        // double-count.
-        var cc = snapshot.ccswitch;
-        var ccswitchCard = (cc && cc.available)
-          ? (function () {
-              var rows = cc.by_app.map(function (b) {
-                return '<div class="card-row" style="justify-content:space-between"><div><b>' + escapeHtml(b.app_type) + '</b></div><div style="color:var(--muted)">' + formatTokens(b.tokens, true) + ' · ' + window.TS.formatMoney(b.cost) + ' · ' + b.requests + ' ' + window.TS.t('次请求') + '</div></div>';
-              }).join('');
-              return '<div class="card" style="border:1px dashed var(--track)"><div class="card-title">' + window.TS.t('CC Switch 代理（对照）') + '</div>' +
-                '<div style="display:flex;gap:24px;margin-bottom:14px"><div><div style="font-size:14px;color:var(--muted);font-weight:600">' + window.TS.t('代理总量') + '</div><div style="font-size:28px;font-weight:800;color:var(--ink)">' + formatTokens(cc.total_tokens, true) + '</div></div><div><div style="font-size:14px;color:var(--muted);font-weight:600">' + window.TS.t('代理成本') + '</div><div style="font-size:28px;font-weight:800;color:var(--ink)">' + window.TS.formatMoney(cc.total_cost) + '</div></div></div>' +
-                rows +
-                '<div style="margin-top:12px;padding:10px;background:var(--canvas);border-radius:8px;font-size:13px;color:var(--muted)">' + window.TS.t('此为 CC Switch 代理日志独立统计，不叠加到上方主数字（避免与原生日志重复计数）。可用作对照检查。') + '</div>' +
-                '</div>';
-            })()
-          : '';
-
-        return hero + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + ccswitchCard + activityCard + distCards;
+        return hero + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + activityCard + distCards;
       }
       function distributionInner(title, rows) {
         var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';

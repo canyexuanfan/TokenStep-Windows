@@ -10,8 +10,8 @@
 //! on Windows.
 
 use crate::models::{
-    CCSwitchAppBreakdown, CCSwitchSummary, DailyUsage, ModelUsage, SourceInfo,
-    TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
+    DailyUsage, ModelUsage, SourceInfo, TokenUsageCounts, ToolUsage, UsageSnapshot,
+    UsageTotals,
 };
 use crate::paths;
 use crate::pricing;
@@ -42,14 +42,9 @@ struct UsageRecord {
 }
 
 /// Public entry point: collect from all sources, aggregate, return a snapshot.
-///
-/// IMPORTANT — CC Switch is a REFERENCE source, NOT folded into the main
-/// totals: when a user routes Codex/Claude traffic through the CC Switch
-/// proxy, the same requests are logged by BOTH the native clients
-/// (~/.codex, ~/.claude JSONL) and the proxy (~/.cc-switch/cc-switch.db).
-/// Adding them together would double-count. Precise de-duplication is not
-/// feasible (the three sources use different record IDs / granularities /
-/// timestamps), so we surface CC Switch separately as a cross-check panel.
+/// Mirrors upstream macOS `UsageCollector.collect()`: Codex + Claude Code +
+/// CC Switch records are summed (the sources are treated as additive — this
+/// matches the upstream behavior exactly).
 pub fn collect() -> UsageSnapshot {
     let pricing_data = pricing::load();
 
@@ -57,90 +52,33 @@ pub fn collect() -> UsageSnapshot {
     let (claude_records, mut claude_source) = collect_claude_code();
     let (ccswitch_records, mut ccswitch_source) = collect_ccswitch();
 
-    // Main records: native Codex + Claude Code ONLY (CC Switch is kept out).
     let mut records: Vec<UsageRecord> = codex_records;
     records.extend(claude_records.iter().cloned());
+    records.extend(ccswitch_records.iter().cloned());
 
-    // Recount precisely per tool for the native sources.
+    // Stamp per-source record counts (recount precisely per tool, since the
+    // CC Switch source name differs from its record `tool` strings — e.g.
+    // "Claude Code via CC Switch" — we count by source prefix instead).
     let mut counts: HashMap<String, i64> = HashMap::new();
     for r in &records {
         *counts.entry(r.tool.clone()).or_insert(0) += 1;
     }
     codex_source.records = counts.get("Codex").copied();
     claude_source.records = counts.get("Claude Code").copied();
-
-    // Build the standalone CC Switch reference summary (not in `records`).
-    let ccswitch_summary = summarize_ccswitch(&ccswitch_records, &mut ccswitch_source);
+    // CC Switch groups several tool names ("X via CC Switch"); sum them.
+    let ccswitch_count: i64 = counts
+        .iter()
+        .filter(|(k, _)| k.ends_with("via CC Switch") || k.ends_with("via CC Switch (experimental)"))
+        .map(|(_, v)| *v)
+        .sum();
+    ccswitch_source.records = Some(ccswitch_count);
 
     let mut sources = BTreeMap::new();
     sources.insert("Codex".to_string(), codex_source);
     sources.insert("Claude Code".to_string(), claude_source);
     sources.insert("CC Switch Proxy".to_string(), ccswitch_source);
 
-    let mut snap = aggregate(records, &pricing_data, sources);
-    snap.ccswitch = ccswitch_summary;
-    snap
-}
-
-/// Fold CC Switch records into a standalone summary (by app_type), WITHOUT
-/// touching the main aggregation. Also stamps the source record count.
-fn summarize_ccswitch(records: &[UsageRecord], source: &mut SourceInfo) -> Option<CCSwitchSummary> {
-    if records.is_empty() {
-        return None;
-    }
-    source.records = Some(records.len() as i64);
-
-    // Bucket by the original app_type. The record's `tool` field is the mapped
-    // display name ("Claude Code via CC Switch" etc.); derive the app_type
-    // back from it for the breakdown.
-    use std::collections::BTreeMap as Map;
-    let mut buckets: Map<String, (i64, i64, f64)> = BTreeMap::new(); // app -> (reqs, tokens, cost)
-    let mut total_tokens: i64 = 0;
-    let mut total_cost: f64 = 0.0;
-    for r in records {
-        let app_type = ccswitch_app_type_from_tool(&r.tool);
-        let (reqs, tokens, cost) = buckets.entry(app_type).or_insert((0, 0, 0.0));
-        *reqs += 1;
-        *tokens += r.usage.total_tokens;
-        *cost += r.cost_usd.unwrap_or(0.0);
-        total_tokens += r.usage.total_tokens;
-        total_cost += r.cost_usd.unwrap_or(0.0);
-    }
-
-    let mut by_app: Vec<_> = buckets
-        .into_iter()
-        .map(|(app, (reqs, tokens, cost))| CCSwitchAppBreakdown {
-            app_type: app,
-            requests: reqs,
-            tokens,
-            cost: round(cost, 4),
-        })
-        .collect();
-    by_app.sort_by(|a, b| b.tokens.cmp(&a.tokens));
-
-    Some(CCSwitchSummary {
-        available: true,
-        total_tokens,
-        total_cost: round(total_cost, 4),
-        by_app,
-    })
-}
-
-/// Inverse of cc_switch_tool_name: recover the raw app_type ("codex"/"claude"/...)
-/// from the display tool string.
-fn ccswitch_app_type_from_tool(tool: &str) -> String {
-    let lower = tool.to_lowercase();
-    if lower.starts_with("codex") {
-        "codex".to_string()
-    } else if lower.starts_with("claude") {
-        "claude".to_string()
-    } else if lower.starts_with("gemini") {
-        "gemini".to_string()
-    } else if let Some(idx) = lower.find(" via cc switch") {
-        tool[..idx].to_string()
-    } else {
-        "other".to_string()
-    }
+    aggregate(records, &pricing_data, sources)
 }
 
 // ---------------------------------------------------------------------------
@@ -814,7 +752,6 @@ fn aggregate(
         tools: tool_rows,
         models: model_rows,
         sources,
-        ccswitch: None, // populated by collect() after aggregate() returns
     }
 }
 

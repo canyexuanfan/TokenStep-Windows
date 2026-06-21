@@ -29,3 +29,4 @@ _secrets/
 *.pfx
 *.p12
 TokenStep-codesign.cer
+node_modules/
