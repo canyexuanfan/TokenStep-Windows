@@ -303,8 +303,7 @@ enum UsageCollector {
             "cache_creation_tokens",
             "total_cost_usd",
             "status_code",
-            "created_at",
-            "data_source"
+            "created_at"
         ]
         guard requiredColumns.isSubset(of: availableColumns) else {
             return CollectorResult(
@@ -324,8 +323,7 @@ enum UsageCollector {
             coalesce(cache_creation_tokens, 0) as cache_creation_tokens,
             cast(coalesce(nullif(total_cost_usd, ''), '0') as real) as total_cost_usd
         from proxy_request_logs
-        where coalesce(data_source, 'proxy') = 'proxy'
-            and status_code >= 200
+        where status_code >= 200
             and status_code < 300
             and (
                 coalesce(input_tokens, 0)
@@ -372,7 +370,7 @@ enum UsageCollector {
         return CollectorResult(
             records: records,
             source: SourceInfo(
-                status: records.isEmpty ? "missing_proxy_rows" : "ok",
+                status: records.isEmpty ? "missing_valid_rows" : "ok",
                 files: 1,
                 records: records.count
             )
