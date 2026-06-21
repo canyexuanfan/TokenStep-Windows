@@ -30,9 +30,9 @@
         console.error('TokenStep init failed:', e);
         document.getElementById('app').innerHTML =
           '<div style="padding:60px;text-align:center;color:var(--muted)">' +
-          '<h2 style="color:var(--ink)">启动失败</h2>' +
+          '<h2 style="color:var(--ink)">' + window.TS.t('启动失败') + '</h2>' +
           '<p>' + (e && e.message ? e.message : String(e)) + '</p>' +
-          '<p style="margin-top:16px">请按 F12 打开开发者工具查看详情，或重新启动。</p></div>';
+          '<p style="margin-top:16px">' + window.TS.t('请按 F12 打开开发者工具查看详情，或重新启动。') + '</p></div>';
       }
     })();
 
@@ -85,7 +85,7 @@
         var btn = document.getElementById('updateBtn');
         if (btn && u.has_update) {
           btn.style.display = '';
-          btn.title = '发现新版本 v' + u.latest_version + '，点击安装';
+          btn.title = window.TS.tf('发现新版本 v%@，点击安装', u.latest_version);
           // Auto-pop the update dialog on startup when a new version exists,
           // matching the macOS behavior (UpdateWindowPresenter).
           openUpdateModal();
@@ -117,8 +117,8 @@
           };
           if (elapsed < 800) setTimeout(finish, 800 - elapsed); else finish();
         }).catch(function (e) {
-          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">刷新失败: ' + (e && e.message ? e.message : e) + '</div>';
-          if (txt) txt.textContent = '同步失败';
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('刷新失败:') + ' ' + (e && e.message ? e.message : e) + '</div>';
+          if (txt) txt.textContent = window.TS.t('同步失败');
           if (dot) dot.classList.remove('busy');
           self.disabled = false;
           self.classList.remove('refreshing');
@@ -134,13 +134,13 @@
         for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
         window.TS.invoke('save_screenshot', { data: Array.from(arr) }).then(function (path) {
           if (path) {
-            if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">' + (label || '截图') + '已保存到：<br>' + path + '</div>';
+            if (eb) eb.innerHTML = '<div style="padding:8px;background:#e6f7e6;border-radius:8px">' + (label || window.TS.t('截图')) + window.TS.t('已保存到：') + '<br>' + path + '</div>';
           } else {
-            if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee;border-radius:8px">截图保存失败</div>';
+            if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee;border-radius:8px">' + window.TS.t('截图保存失败') + '</div>';
           }
           setTimeout(function () { if (eb) eb.innerHTML = ''; }, 4000);
         }).catch(function (e) {
-          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">保存失败: ' + (e && e.message ? e.message : e) + '</div>';
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('保存失败:') + ' ' + (e && e.message ? e.message : e) + '</div>';
         });
       }
 
@@ -193,16 +193,16 @@
           } else {
             // Other pages (settings/history/stats/privacy): snapshot the live DOM.
             var view = document.getElementById('view');
-            if (!view) { if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">截图失败：找不到内容区域</div>'; return; }
+            if (!view) { if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('截图失败：找不到内容区域') + '</div>'; return; }
             domToCanvas(view).then(function (canvas) {
               saveCanvasPng(canvas, eb);
             }).catch(function (e) {
-              if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">截图失败: ' + (e && e.message ? e.message : e) + '（请改用系统截图）</div>';
+              if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('截图失败:') + ' ' + (e && e.message ? e.message : e) + '（' + window.TS.t('请改用系统截图）') + '</div>';
               setTimeout(function () { if (eb) eb.innerHTML = ''; }, 4000);
             });
           }
         } catch (e) {
-          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">截图失败: ' + (e && e.message ? e.message : e) + '</div>';
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('截图失败:') + ' ' + (e && e.message ? e.message : e) + '</div>';
         }
       });
 
@@ -218,7 +218,7 @@
       }
 
       function activityBars(rows, goal) {
-        if (!rows.length) return '<div class="empty">暂无活动数据</div>';
+        if (!rows.length) return '<div class="empty">' + window.TS.t('暂无活动数据') + '</div>';
         var maxTokens = Math.max.apply(null, [goal].concat(rows.map(function (d) { return d.total_tokens; })).concat([1]));
         return '<div class="activity" style="margin-top:14px">' + rows.map(function (d) {
           var h = Math.max(4, (d.total_tokens / maxTokens) * 100);
@@ -226,7 +226,7 @@
         }).join('') + '</div>';
       }
       function usageRows(rows, nameFn) {
-        if (!rows.length) return '<div class="empty">暂无数据</div>';
+        if (!rows.length) return '<div class="empty">' + window.TS.t('暂无数据') + '</div>';
         var max = Math.max.apply(null, [1].concat(rows.map(function (r) { return r.tokens; })));
         return rows.map(function (r) {
           var width = Math.max(1, (r.tokens / max) * 100);
@@ -251,50 +251,50 @@
           else visible = [lap.completedLaps - 1];
           for (var i = 0; i < visible.length; i++) {
             var n = visible[i];
-            lapChips += '<div class="lap-chip"><div class="lc-title">✓ ' + n + '圈完成</div><div class="lc-detail">' + formatTokens(n * settings.daily_goal_tokens, true) + '</div></div>';
+            lapChips += '<div class="lap-chip"><div class="lc-title">✓ ' + window.TS.tf('%d圈完成', n) + '</div><div class="lc-detail">' + formatTokens(n * settings.daily_goal_tokens, true) + '</div></div>';
           }
-          lapChips += '<div class="lap-chip active" style="color:' + lap.color + '"><div class="lc-title">↻ ' + lap.lapTitle + '进行中</div><div class="lc-detail">' + formatPercent(lap.currentLapPercent) + '</div></div>';
+          lapChips += '<div class="lap-chip active" style="color:' + lap.color + '"><div class="lc-title">↻ ' + window.TS.tf('%@进行中', lap.lapTitle) + '</div><div class="lc-detail">' + formatPercent(lap.currentLapPercent) + '</div></div>';
         }
         var hero = '<div class="card"><div style="display:flex;align-items:center;gap:34px;flex-wrap:wrap">' +
           '<div class="ring-wrap" style="width:204px;height:204px;flex-shrink:0">' + ringSvg(lap.currentLapProgress, 204, 20) +
-            '<div class="ring-center" style="width:160px"><div class="ring-value" style="font-size:42px">' + formatTokens(t.total_tokens) + '</div><div class="ring-goal">/ ' + formatTokens(settings.daily_goal_tokens, true) + ' 每圈</div></div>' +
+            '<div class="ring-center" style="width:160px"><div class="ring-value" style="font-size:42px">' + formatTokens(t.total_tokens) + '</div><div class="ring-goal">/ ' + formatTokens(settings.daily_goal_tokens, true) + ' ' + window.TS.t('每圈') + '</div></div>' +
           '</div>' +
           '<div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:18px">' +
             '<div style="display:flex;flex-direction:column;gap:8px">' +
               '<div style="font-size:35px;font-weight:800;color:' + lap.color + '">' + lap.lapTitle + ' · ' + formatPercent(lap.currentLapPercent) + '</div>' +
-              '<div style="font-size:20px;font-weight:700;color:var(--muted)">已完成 ' + formatTokens(lap.completedLaps * settings.daily_goal_tokens, true) + '</div>' +
-              '<div style="font-size:20px;font-weight:700;color:var(--muted)">每圈目标 ' + formatTokens(settings.daily_goal_tokens, true) + '</div>' +
+              '<div style="font-size:20px;font-weight:700;color:var(--muted)">' + window.TS.t('已完成 ') + formatTokens(lap.completedLaps * settings.daily_goal_tokens, true) + '</div>' +
+              '<div style="font-size:20px;font-weight:700;color:var(--muted)">' + window.TS.t('每圈目标 ') + formatTokens(settings.daily_goal_tokens, true) + '</div>' +
             '</div>' +
-            (lapChips ? '<div><div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:10px">圈数进度</div><div class="lap-chips">' + lapChips + '</div></div>' : '') +
-            '<div style="display:flex;gap:10px;flex-wrap:wrap"><span class="pill"><span class="pill-label">消耗金额</span><span class="pill-value">' + formatMoney(t.cost) + '</span></span><span class="pill"><span class="pill-label">本月均值</span><span class="pill-value">' + formatTokens(monthAvg, true) + '</span></span></div>' +
+            (lapChips ? '<div><div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:10px">' + window.TS.t('圈数进度') + '</div><div class="lap-chips">' + lapChips + '</div></div>' : '') +
+            '<div style="display:flex;gap:10px;flex-wrap:wrap"><span class="pill"><span class="pill-label">' + window.TS.t('消耗金额') + '</span><span class="pill-value">' + formatMoney(t.cost) + '</span></span><span class="pill"><span class="pill-label">' + window.TS.t('本月均值') + '</span><span class="pill-value">' + formatTokens(monthAvg, true) + '</span></span></div>' +
           '</div>' +
         '</div></div>';
 
         // ---- Metric strip: 3 compact cards (累计/活跃/达标) ----
         var metricStrip = '<div class="metric-strip">' +
-          '<div class="metric-mini"><div class="mm-label">累计 Token 消耗</div><div class="mm-value">' + formatTokens(snapshot.totals.tokens, true) + '</div><div class="mm-detail">所有本机记录</div></div>' +
-          '<div class="metric-mini"><div class="mm-label">活跃天数</div><div class="mm-value">' + snapshot.totals.active_days + ' 天</div><div class="mm-detail">有 AI 使用的日期</div></div>' +
-          '<div class="metric-mini"><div class="mm-label">达标天数</div><div class="mm-value">' + goalDays + ' 天</div><div class="mm-detail">达到每日目标</div></div>' +
+          '<div class="metric-mini"><div class="mm-label">' + window.TS.t('累计 Token 消耗') + '</div><div class="mm-value">' + formatTokens(snapshot.totals.tokens, true) + '</div><div class="mm-detail">' + window.TS.t('所有本机记录') + '</div></div>' +
+          '<div class="metric-mini"><div class="mm-label">' + window.TS.t('活跃天数') + '</div><div class="mm-value">' + snapshot.totals.active_days + ' ' + window.TS.t('天') + '</div><div class="mm-detail">' + window.TS.t('有 AI 使用的日期') + '</div></div>' +
+          '<div class="metric-mini"><div class="mm-label">' + window.TS.t('达标天数') + '</div><div class="mm-value">' + goalDays + ' ' + window.TS.t('天') + '</div><div class="mm-detail">' + window.TS.t('达到每日目标') + '</div></div>' +
         '</div>';
 
         // ---- 30-day activity bars card ----
-        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">最近 30 天</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">颜色越深，圈数越高</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">今天 ' + formatTokens(t.total_tokens, true) + '</span></div>' + activityBars(snapshot.daily.slice(-30), settings.daily_goal_tokens) + '</div>';
+        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 30 天') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.t('颜色越深，圈数越高') + '</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('今天') + ' ' + formatTokens(t.total_tokens, true) + '</span></div>' + activityBars(snapshot.daily.slice(-30), settings.daily_goal_tokens) + '</div>';
 
         // ---- Distribution cards: 按客户端 + 主力模型 (2-up) ----
         var distCards = '<div class="dist-grid">' +
-          '<div class="card">' + distributionInner('按客户端', snapshot.tools.slice(0, 5)) + '</div>' +
-          '<div class="card">' + distributionInner('主力模型', snapshot.models.slice(0, 5)) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('按客户端'), snapshot.tools.slice(0, 5)) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('主力模型'), snapshot.models.slice(0, 5)) + '</div>' +
         '</div>';
 
         // ---- Codex quota card (only when the user opted in via Settings) ----
         var quotaCard = settings.show_codex_quota
-          ? '<div class="card" id="quotaCard"><div class="card-title">Codex 配额</div><div id="quotaContent" style="color:var(--muted);padding:10px 0">加载中…</div></div>'
+          ? '<div class="card" id="quotaCard"><div class="card-title">' + window.TS.t('Codex 配额') + '</div><div id="quotaContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
           : '';
 
         return hero + metricStrip + quotaCard + activityCard + distCards;
       }
       function distributionInner(title, rows) {
-        var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">等待下一次同步</div>';
+        var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
         return '<div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:17px">' + title + '</div>' + body;
       }
 
@@ -304,85 +304,85 @@
         invoke('read_codex_quota').then(function (q) {
           if (!el) return;
           if (!q.available) {
-            el.innerHTML = '<span style="color:var(--muted)">' + (q.error || '暂未读取到 Codex 额度') + '</span>';
+            el.innerHTML = '<span style="color:var(--muted)">' + (q.error || window.TS.t('暂未读取到 Codex 额度')) + '</span>';
             return;
           }
           var html = '<div style="display:flex;gap:24px;flex-wrap:wrap">';
           if (q.five_hour_used_percent != null) {
             var pct = Math.round(q.five_hour_used_percent);
             var color = pct >= 80 ? '#ef4444' : pct >= 50 ? 'var(--green-dark)' : 'var(--green)';
-            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">5 小时窗口</div>';
+            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + window.TS.t('5 小时窗口') + '</div>';
             html += '<div style="font-size:32px;font-weight:800;color:' + color + '">' + pct + '%</div>';
             html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:' + color + ';border-radius:999px"></div></div>';
-            if (q.five_hour_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">重置于 ' + q.five_hour_resets_at + '</div>';
+            if (q.five_hour_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + window.TS.t('重置于 ') + q.five_hour_resets_at + '</div>';
             html += '</div>';
           }
           if (q.seven_day_used_percent != null) {
             var pct7 = Math.round(q.seven_day_used_percent);
             var color7 = pct7 >= 80 ? '#ef4444' : pct7 >= 50 ? 'var(--green-dark)' : 'var(--green)';
-            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">7 天窗口</div>';
+            html += '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + window.TS.t('7 天窗口') + '</div>';
             html += '<div style="font-size:32px;font-weight:800;color:' + color7 + '">' + pct7 + '%</div>';
             html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + pct7 + '%;background:' + color7 + ';border-radius:999px"></div></div>';
-            if (q.seven_day_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">重置于 ' + q.seven_day_resets_at + '</div>';
+            if (q.seven_day_resets_at) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + window.TS.t('重置于 ') + q.seven_day_resets_at + '</div>';
             html += '</div>';
           }
           html += '</div>';
           el.innerHTML = html;
         }).catch(function (e) {
-          if (el) el.innerHTML = '<span style="color:var(--muted)">读取失败: ' + (e && e.message ? e.message : e) + '</span>';
+          if (el) el.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('读取失败:') + ' ' + (e && e.message ? e.message : e) + '</span>';
         });
       }
       function viewStats() {
         return '<div class="dist-grid">' +
-          '<div class="card">' + distributionInner('按工具', snapshot.tools) + '</div>' +
-          '<div class="card">' + distributionInner('按模型', snapshot.models.slice(0, 12)) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('按工具'), snapshot.tools) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('按模型'), snapshot.models.slice(0, 12)) + '</div>' +
         '</div>';
       }
       function viewHistory() {
         var rows = snapshot.daily.slice().reverse().slice(0, 180);
         var wallHTML = window.TS.contributionWallHTML(snapshot.daily, settings.daily_goal_tokens);
-        return '<div class="card"><div class="card-title">活动墙</div>' + wallHTML + '</div><div class="card"><div class="card-row" style="justify-content:space-between"><div class="card-title" style="margin:0">按天明细</div><button class="btn" id="exportCsvBtn">导出 CSV</button></div><div class="table-wrap"><table><thead><tr><th>日期</th><th>Codex</th><th>Claude Code</th><th>合计</th><th>成本</th></tr></thead><tbody>' + rows.map(function (d) { return '<tr><td>' + d.date + '</td><td>' + (d.tools['Codex'] ? formatTokens(d.tools['Codex']) : '—') + '</td><td>' + (d.tools['Claude Code'] ? formatTokens(d.tools['Claude Code']) : '—') + '</td><td class="total">' + formatTokens(d.total_tokens) + '</td><td>' + formatMoney(d.cost) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+        return '<div class="card"><div class="card-title">' + window.TS.t('活动墙') + '</div>' + wallHTML + '</div><div class="card"><div class="card-row" style="justify-content:space-between"><div class="card-title" style="margin:0">' + window.TS.t('按天明细') + '</div><button class="btn" id="exportCsvBtn">' + window.TS.t('导出 CSV') + '</button></div><div class="table-wrap"><table><thead><tr><th>' + window.TS.t('日期') + '</th><th>Codex</th><th>Claude Code</th><th>' + window.TS.t('合计') + '</th><th>' + window.TS.t('成本') + '</th></tr></thead><tbody>' + rows.map(function (d) { return '<tr><td>' + d.date + '</td><td>' + (d.tools['Codex'] ? formatTokens(d.tools['Codex']) : '—') + '</td><td>' + (d.tools['Claude Code'] ? formatTokens(d.tools['Claude Code']) : '—') + '</td><td class="total">' + formatTokens(d.total_tokens) + '</td><td>' + formatMoney(d.cost) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
       }
       function viewPrivacy() {
         var srcs = Object.keys(snapshot.sources || {});
-        return '<div class="card"><div class="card-title">隐私说明</div><p style="font-size:16px;line-height:1.7;color:var(--muted-strong)">TokenStep 是本地优先的工具，只读取用量元数据，不上传内容。</p></div><div class="card"><div class="card-title">数据源</div>' + (srcs.length ? srcs.map(function (n) { var m = snapshot.sources[n]; return '<div class="card-row" style="justify-content:space-between"><div><b>' + n + '</b></div><div style="color:var(--muted)">' + (m.status || '?') + ' · ' + (m.records || 0) + ' 条</div></div>'; }).join('') : '暂无') + '</div>';
+        return '<div class="card"><div class="card-title">' + window.TS.t('隐私说明') + '</div><p style="font-size:16px;line-height:1.7;color:var(--muted-strong)">' + window.TS.t('TokenStep 是本地优先的工具，只读取用量元数据，不上传内容。') + '</p></div><div class="card"><div class="card-title">' + window.TS.t('数据源') + '</div>' + (srcs.length ? srcs.map(function (n) { var m = snapshot.sources[n]; return '<div class="card-row" style="justify-content:space-between"><div><b>' + n + '</b></div><div style="color:var(--muted)">' + (m.status || '?') + ' · ' + (m.records || 0) + ' ' + window.TS.t('条') + '</div></div>'; }).join('') : window.TS.t('暂无')) + '</div>';
       }
       function viewSettings() {
         var gm = Math.round(settings.daily_goal_tokens / 1000000);
         var ctt = settings.close_to_tray !== false; // default true
-        var html = '<div class="card"><div class="card-title">基本设置</div><div class="setting-row"><div><div class="setting-label">每日目标</div><div class="setting-hint">当前 ' + formatTokens(settings.daily_goal_tokens) + '</div></div><div><input type="number" id="goalInput" value="' + gm + '" min="1" style="width:120px"/><span style="font-weight:700;color:var(--muted);margin-left:8px">百万</span></div></div><div class="setting-row"><div><div class="setting-label">刷新间隔</div><div class="setting-hint">当前 ' + formatInterval(settings.refresh_interval_seconds) + '</div></div><select id="intervalSelect"><option value="60">1 分钟</option><option value="300">5 分钟</option><option value="900">15 分钟</option><option value="0">手动</option></select></div></div>';
-        html += '<div class="card"><div class="card-title">窗口行为</div><div class="setting-row"><div><div class="setting-label">关闭按钮行为</div><div class="setting-hint">点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序</div></div><select id="closeBehaviorSelect"><option value="tray">最小化到托盘</option><option value="quit">直接退出</option></select></div></div>';
+        var html = '<div class="card"><div class="card-title">' + window.TS.t('基本设置') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('每日目标') + '</div><div class="setting-hint">' + window.TS.t('当前 ') + formatTokens(settings.daily_goal_tokens) + '</div></div><div><input type="number" id="goalInput" value="' + gm + '" min="1" style="width:120px"/><span style="font-weight:700;color:var(--muted);margin-left:8px">' + window.TS.t('百万') + '</span></div></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('刷新间隔') + '</div><div class="setting-hint">' + window.TS.t('当前 ') + formatInterval(settings.refresh_interval_seconds) + '</div></div><select id="intervalSelect"><option value="60">' + window.TS.t('1 分钟') + '</option><option value="300">5 ' + window.TS.t('分钟') + '</option><option value="900">15 ' + window.TS.t('分钟') + '</option><option value="0">' + window.TS.t('手动') + '</option></select></div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('窗口行为') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('关闭按钮行为') + '</div><div class="setting-hint">' + window.TS.t('点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序') + '</div></div><select id="closeBehaviorSelect"><option value="tray">' + window.TS.t('最小化到托盘') + '</option><option value="quit">' + window.TS.t('直接退出') + '</option></select></div></div>';
         // Theme picker: list all 5 themes with their titles.
         var themes = window.TS.THEMES;
         var currentTheme = settings.theme || 'green';
         var themeOpts = Object.keys(themes).map(function (k) {
-          return '<option value="' + k + '"' + (k === currentTheme ? ' selected' : '') + '>' + themes[k].title + '（' + themes[k].sub + '）</option>';
+          return '<option value="' + k + '"' + (k === currentTheme ? ' selected' : '') + '>' + window.TS.t(themes[k].title) + '（' + window.TS.t(themes[k].sub) + '）</option>';
         }).join('');
         // Language selector.
         var curLang = settings.language || 'zhHans';
-        var langOpts = '<option value="zhHans"' + (curLang === 'zhHans' ? ' selected' : '') + '>简体中文</option>' +
+        var langOpts = '<option value="zhHans"' + (curLang === 'zhHans' ? ' selected' : '') + '>' + window.TS.t('简体中文') + '</option>' +
           '<option value="en"' + (curLang === 'en' ? ' selected' : '') + '>English</option>' +
-          '<option value="zhHant"' + (curLang === 'zhHant' ? ' selected' : '') + '>繁體中文</option>';
-        html += '<div class="card"><div class="card-title">语言</div><div class="setting-row"><div><div class="setting-label">界面语言</div><div class="setting-hint">切换后立即生效</div></div><select id="langSelect">' + langOpts + '</select></div></div>';
-        html += '<div class="card"><div class="card-title">主题配色</div><div class="setting-row"><div><div class="setting-label">界面主题</div><div class="setting-hint">切换整体配色方案，立即生效</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
+          '<option value="zhHant"' + (curLang === 'zhHant' ? ' selected' : '') + '>' + window.TS.t('繁體中文') + '</option>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('语言') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('界面语言') + '</div><div class="setting-hint">' + window.TS.t('切换后立即生效') + '</div></div><select id="langSelect">' + langOpts + '</select></div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('主题配色') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('界面主题') + '</div><div class="setting-hint">' + window.TS.t('切换整体配色方案，立即生效') + '</div></div><select id="themeSelect">' + themeOpts + '</select></div></div>';
         // Codex quota display toggle (mirrors upstream showCodexQuota, default off).
         var quotaChecked = settings.show_codex_quota ? ' checked' : '';
-        html += '<div class="card"><div class="card-title">Codex 额度显示</div><div class="setting-row"><div><div class="setting-label">显示 Codex 配额卡片</div><div class="setting-hint">在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭</div></div><label class="switch"><input type="checkbox" id="showQuotaToggle"' + quotaChecked + '/><span class="slider"></span></label></div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('Codex 额度显示') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('显示 Codex 配额卡片') + '</div><div class="setting-hint">' + window.TS.t('在「今日」页面显示 5 小时 / 7 天剩余额度，默认关闭') + '</div></div><label class="switch"><input type="checkbox" id="showQuotaToggle"' + quotaChecked + '/><span class="slider"></span></label></div></div>';
         // Update check card.
         var updHint = latestUpdate && latestUpdate.has_update
-          ? '<div style="margin-top:10px;padding:10px;background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:10px;font-weight:700;color:var(--green-dark)">🎉 发现新版本 v' + latestUpdate.latest_version + ' · <a id="updDownloadLink" href="#" style="color:var(--green-dark);text-decoration:underline;cursor:pointer">立即安装</a></div>'
-          : (latestUpdate ? '<div style="margin-top:10px;color:var(--muted)">当前为最新版本 v' + latestUpdate.current_version + '</div>' : '<div style="margin-top:10px;color:var(--muted)">点击下方按钮从 GitHub 检查新版本</div>');
-        html += '<div class="card"><div class="card-title">更新</div><div class="setting-row"><div><div class="setting-label">检查更新</div><div class="setting-hint">从 GitHub Releases 检查是否有新版本</div></div><button class="btn" id="checkUpdateBtn">立即检查</button></div>' + updHint + '</div>';
-        html += '<div class="card"><div class="card-title">截图</div><div class="setting-row"><div><div class="setting-label">截图保存位置</div><div class="setting-hint" id="screenshotDirHint">' + (settings.screenshot_dir ? settings.screenshot_dir : '默认：程序所在目录') + '</div></div><button class="btn" id="pickScreenshotDirBtn">选择文件夹</button></div></div>';
-        html += '<div class="card"><div class="card-title">关于</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.1') + '</span></div><div class="card-row" style="justify-content:space-between"><b>作者</b><span style="color:var(--muted)">十七°</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。</div></div>';
+          ? '<div style="margin-top:10px;padding:10px;background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:10px;font-weight:700;color:var(--green-dark)">🎉 ' + window.TS.tf('发现新版本 v%@', latestUpdate.latest_version) + ' · <a id="updDownloadLink" href="#" style="color:var(--green-dark);text-decoration:underline;cursor:pointer">' + window.TS.t('立即安装') + '</a></div>'
+          : (latestUpdate ? '<div style="margin-top:10px;color:var(--muted)">' + window.TS.tf('当前为最新版本 v%@', latestUpdate.current_version) + '</div>' : '<div style="margin-top:10px;color:var(--muted)">' + window.TS.t('点击下方按钮从 GitHub 检查新版本') + '</div>');
+        html += '<div class="card"><div class="card-title">' + window.TS.t('更新') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('检查更新') + '</div><div class="setting-hint">' + window.TS.t('从 GitHub Releases 检查是否有新版本') + '</div></div><button class="btn" id="checkUpdateBtn">' + window.TS.t('立即检查') + '</button></div>' + updHint + '</div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('截图') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('截图保存位置') + '</div><div class="setting-hint" id="screenshotDirHint">' + (settings.screenshot_dir ? settings.screenshot_dir : window.TS.t('默认：程序所在目录')) + '</div></div><button class="btn" id="pickScreenshotDirBtn">' + window.TS.t('选择文件夹') + '</button></div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('关于') + '</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.3') + '</span></div><div class="card-row" style="justify-content:space-between"><b>' + window.TS.t('作者') + '</b><span style="color:var(--muted)">' + window.TS.t('十七°') + '</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">' + window.TS.t('基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。') + '</div></div>';
         return html;
       }
 
       function render() {
         document.querySelectorAll('.nav-item').forEach(function (el) { el.classList.toggle('active', el.dataset.id === current); });
         var section = SECTIONS.filter(function (s) { return s.id === current; })[0];
-        document.getElementById('pageTitle').textContent = section.title;
-        document.getElementById('pageSubtitle').textContent = section.sub;
+        document.getElementById('pageTitle').textContent = window.TS.t(section.title);
+        document.getElementById('pageSubtitle').textContent = window.TS.t(section.sub);
         var view = document.getElementById('view');
         if (current === 'today') {
           view.innerHTML = viewToday();
@@ -444,20 +444,20 @@
           var checkUpdateBtn = document.getElementById('checkUpdateBtn');
           if (checkUpdateBtn) checkUpdateBtn.addEventListener('click', function () {
             checkUpdateBtn.disabled = true;
-            checkUpdateBtn.textContent = '检查中…';
+            checkUpdateBtn.textContent = window.TS.t('检查中…');
             invoke('check_for_update').then(function (u) {
               latestUpdate = u;
               var hdr = document.getElementById('updateBtn');
               if (hdr) hdr.style.display = u.has_update ? '' : 'none';
-              if (hdr && u.has_update) hdr.title = '发现新版本 v' + u.latest_version + '，点击安装';
+              if (hdr && u.has_update) hdr.title = window.TS.tf('发现新版本 v%@，点击安装', u.latest_version);
               render();
               var btn2 = document.getElementById('checkUpdateBtn');
-              if (btn2) { btn2.disabled = false; btn2.textContent = '立即检查'; }
+              if (btn2) { btn2.disabled = false; btn2.textContent = window.TS.t('立即检查'); }
               // If a new version was found, open the update dialog immediately.
               if (u.has_update) openUpdateModal();
             }).catch(function () {
               var btn2 = document.getElementById('checkUpdateBtn');
-              if (btn2) { btn2.disabled = false; btn2.textContent = '检查失败，稍后重试'; }
+              if (btn2) { btn2.disabled = false; btn2.textContent = window.TS.t('检查失败，稍后重试'); }
             });
           });
           var dlLink = document.getElementById('updDownloadLink');
@@ -475,12 +475,14 @@
       }
 
       // Re-apply language translations after every render (DOM was replaced).
+      // CRITICAL: sync __tsLang BEFORE _origRender() runs, because the view
+      // builders (viewToday/viewHistory/...) call formatTokens/t()/tf() while
+      // generating the DOM — those read window.__tsLang at generation time.
+      // Setting it after would leave the first render using a stale language.
       var _origRender = render;
       render = function () {
-        _origRender();
-        // Always sync the active language so refreshHeaderI18n/t() see the
-        // current setting even when applyLanguage is skipped (zhHans case).
         window.__tsLang = settings.language || 'zhHans';
+        _origRender();
         if (typeof applyLanguage === 'function' && settings.language && settings.language !== 'zhHans') {
           applyLanguage(settings.language);
         }
@@ -491,8 +493,8 @@
       function updateHeader() {
         // Build the "updated at" string in Chinese, then translate via t() so
         // the prefix ("更新 "/"Updated ") follows the current language.
-        var prefix = (window.__tsLang && window.__tsLang !== 'zhHans' && window.I18N) ? (window.I18N[window.__tsLang] || {})['更新 '] || '更新 ' : '更新 ';
-        var when = snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : ((window.__tsLang && window.__tsLang !== 'zhHans' && window.I18N) ? (window.I18N[window.__tsLang] || {})['等待同步'] || '等待同步' : '等待同步');
+        var prefix = window.TS.t('更新 ');
+        var when = snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : window.TS.t('等待同步');
         document.getElementById('updated').textContent = prefix + when;
       }
 
@@ -590,34 +592,34 @@
               '<img class="um-logo" src="../shared/logo.png" alt="TokenStep" />' +
               '<div>' +
                 '<div class="um-ver" id="umVersion">TokenStep 0.0.0</div>' +
-                '<div class="um-sub">安装完成后会自动重启到新版本</div>' +
+                '<div class="um-sub">' + window.TS.t('安装完成后会自动重启到新版本') + '</div>' +
               '</div>' +
             '</div>' +
             '<div class="um-notes">' +
-              '<div class="um-notes-title">更新内容</div>' +
+              '<div class="um-notes-title">' + window.TS.t('更新内容') + '</div>' +
               '<div id="umNotes"></div>' +
             '</div>' +
             '<div class="um-trust">' +
               '<div class="sh">🛡</div>' +
               '<div>' +
-                '<div class="t1">自动安装到原目录</div>' +
-                '<div class="t2">下载后会静默替换旧版本</div>' +
+                '<div class="t1">' + window.TS.t('自动安装到原目录') + '</div>' +
+                '<div class="t2">' + window.TS.t('下载后会静默替换旧版本') + '</div>' +
               '</div>' +
               '<div class="um-size" id="umSize">—</div>' +
             '</div>' +
             '<div class="um-prog-wrap" id="umProgWrap">' +
               '<div class="um-prog-top">' +
-                '<span id="umProgLabel">下载中…</span>' +
+                '<span id="umProgLabel">' + window.TS.t('下载中…') + '</span>' +
                 '<span id="umProgPct">0%</span>' +
               '</div>' +
               '<div class="um-prog-track"><div class="um-prog-fill" id="umProgFill"></div></div>' +
             '</div>' +
-            '<div class="um-err" id="umErr">下载失败，请检查网络后重试。</div>' +
+            '<div class="um-err" id="umErr">' + window.TS.t('下载失败，请检查网络后重试。') + '</div>' +
             '<div class="um-foot">' +
-              '<button class="btn" id="umSkip">跳过此版本</button>' +
+              '<button class="btn" id="umSkip">' + window.TS.t('跳过此版本') + '</button>' +
               '<div class="spacer"></div>' +
-              '<button class="btn" id="umLater">稍后</button>' +
-              '<button class="btn" id="umInstall" style="background:var(--green);color:#fff;font-weight:800;padding:9px 18px">安装并重启</button>' +
+              '<button class="btn" id="umLater">' + window.TS.t('稍后') + '</button>' +
+              '<button class="btn" id="umInstall" style="background:var(--green);color:#fff;font-weight:800;padding:9px 18px">' + window.TS.t('安装并重启') + '</button>' +
             '</div>' +
           '</div>';
         document.body.appendChild(wrap);
@@ -641,10 +643,21 @@
         if (!latestUpdate || !latestUpdate.has_update) return;
         ensureUpdateModal();
         var m = document.getElementById('updateModal');
-        document.getElementById('umVersion').innerHTML = 'TokenStep ' + (latestUpdate.latest_version || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + ' 可用';
+        // Refresh the modal's STATIC text on every open so it follows the
+        // current language (ensureUpdateModal builds the DOM only once, so a
+        // language switch after first open would otherwise leave stale text).
+        var umSub = document.querySelector('#updateModal .um-sub'); if (umSub) umSub.textContent = window.TS.t('安装完成后会自动重启到新版本');
+        var umNt = document.querySelector('#updateModal .um-notes-title'); if (umNt) umNt.textContent = window.TS.t('更新内容');
+        var umT1 = document.querySelector('#updateModal .um-trust .t1'); if (umT1) umT1.textContent = window.TS.t('自动安装到原目录');
+        var umT2 = document.querySelector('#updateModal .um-trust .t2'); if (umT2) umT2.textContent = window.TS.t('下载后会静默替换旧版本');
+        var umPl = document.getElementById('umProgLabel'); if (umPl) umPl.textContent = window.TS.t('下载中…');
+        var umErr = document.getElementById('umErr'); if (umErr) umErr.textContent = window.TS.t('下载失败，请检查网络后重试。');
+        var umSkip = document.getElementById('umSkip'); if (umSkip) umSkip.textContent = window.TS.t('跳过此版本');
+        var umLater = document.getElementById('umLater'); if (umLater) umLater.textContent = window.TS.t('稍后');
+        document.getElementById('umVersion').innerHTML = window.TS.tf('TokenStep %@ 可用', (latestUpdate.latest_version || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }));
         var lines = updateNoteLines(latestUpdate.release_notes);
         if (!lines.length) {
-          lines = ['优化 Codex 历史数据读取', '降低后台刷新 CPU 占用', '提升菜单栏同步稳定性'];
+          lines = [window.TS.t('优化 Codex 历史数据读取'), window.TS.t('降低后台刷新 CPU 占用'), window.TS.t('提升菜单栏同步稳定性')];
         }
         document.getElementById('umNotes').innerHTML = lines.map(function (n) {
           return '<div class="um-note"><span class="chk">✓</span><span>' + (n || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }) + '</span></div>';
@@ -657,7 +670,7 @@
         document.getElementById('umProgPct').textContent = '0%';
         umDownloading = false;
         var inst = document.getElementById('umInstall');
-        inst.textContent = latestUpdate.asset_url ? '安装并重启' : '前往下载';
+        inst.textContent = latestUpdate.asset_url ? window.TS.t('安装并重启') : window.TS.t('前往下载');
         inst.disabled = false;
         inst.style.opacity = '1';
         document.getElementById('umSkip').disabled = false;
@@ -704,7 +717,7 @@
         var btn = document.getElementById('updateBtn');
         if (btn && latestUpdate && latestUpdate.has_update) {
           btn.style.display = '';
-          btn.title = '发现新版本 v' + latestUpdate.latest_version + '，点击安装';
+          btn.title = window.TS.tf('发现新版本 v%@，点击安装', latestUpdate.latest_version);
           openUpdateModal();
         }
       });
