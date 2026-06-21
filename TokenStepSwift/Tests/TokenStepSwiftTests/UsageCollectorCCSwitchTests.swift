@@ -3,7 +3,7 @@ import XCTest
 @testable import TokenStepSwift
 
 final class UsageCollectorCCSwitchTests: XCTestCase {
-    func testProxyRowsAggregateIntoDailyToolsAndModels() throws {
+    func testSuccessfulRowsAggregateRegardlessOfDataSource() throws {
         let database = try makeFixtureDatabase(rowsSQL: """
         insert into proxy_request_logs (
             request_id, provider_id, app_type, model,
@@ -11,48 +11,51 @@ final class UsageCollectorCCSwitchTests: XCTestCase {
             total_cost_usd, status_code, created_at, data_source, request_model, pricing_model
         ) values
             ('proxy-1', 'provider-a', 'claude', 'claude-raw', 100, 20, 30, 5, '0.12', 200, 1717200000, 'proxy', 'claude-request', 'claude-priced'),
-            ('proxy-2', 'provider-b', 'codex', 'gpt-5.4', 10, 3, 0, 0, '0.34', 201, 1717203600, 'proxy', 'gpt-5-request', ''),
-            ('session-import', 'provider-c', 'claude', 'ignored-model', 9000, 9000, 0, 0, '9.99', 200, 1717207200, 'session_log', 'ignored', 'ignored'),
+            ('proxy-2', 'provider-b', 'codex', 'gpt-5.4', 10, 3, 0, 0, '0.34', 201, 1717203600, 'opencode_session', 'gpt-5-request', ''),
+            ('session-import', 'provider-c', 'claude', 'claude-session-raw', 21, 19, 0, 0, '0.10', 200, 1717207200, 'session_log', 'claude-session-request', 'claude-session-priced'),
             ('failed-proxy', 'provider-d', 'gemini', 'ignored-gemini', 1000, 1000, 0, 0, '8.88', 500, 1717207200, 'proxy', 'ignored', 'ignored'),
-            ('zero-proxy', 'provider-e', 'codex', 'ignored-zero', 0, 0, 0, 0, '7.77', 200, 1717207200, 'proxy', 'ignored', 'ignored');
+            ('zero-proxy', 'provider-e', 'codex', 'ignored-zero', 0, 0, 0, 0, '7.77', 200, 1717207200, 'codex_session', 'ignored', 'ignored');
         """)
 
         let snapshot = UsageCollector.collectCCSwitchProxyUsageSnapshot(databaseURL: database)
 
         XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.status, "ok")
-        XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.records, 2)
-        XCTAssertEqual(snapshot.totals.tokens, 168)
-        XCTAssertEqual(snapshot.totals.cost, 0.46)
+        XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.records, 3)
+        XCTAssertEqual(snapshot.totals.tokens, 208)
+        XCTAssertEqual(snapshot.totals.cost, 0.56)
 
         XCTAssertEqual(snapshot.daily.count, 1)
         XCTAssertEqual(snapshot.daily.first?.date, "2024-06-01")
-        XCTAssertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 155)
+        XCTAssertEqual(snapshot.daily.first?.tools["Claude Code via CC Switch"], 195)
         XCTAssertEqual(snapshot.daily.first?.tools["Codex via CC Switch"], 13)
         XCTAssertEqual(snapshot.daily.first?.models["claude-priced"], 155)
+        XCTAssertEqual(snapshot.daily.first?.models["claude-session-priced"], 40)
         XCTAssertEqual(snapshot.daily.first?.models["gpt-5.4"], 13)
 
         let tools = Dictionary(uniqueKeysWithValues: snapshot.tools.map { ($0.tool, $0.tokens) })
-        XCTAssertEqual(tools["Claude Code via CC Switch"], 155)
+        XCTAssertEqual(tools["Claude Code via CC Switch"], 195)
         XCTAssertEqual(tools["Codex via CC Switch"], 13)
 
         let models = Dictionary(uniqueKeysWithValues: snapshot.models.map { ("\($0.tool ?? "")|\($0.model)", $0.tokens) })
         XCTAssertEqual(models["Claude Code via CC Switch|claude-priced"], 155)
+        XCTAssertEqual(models["Claude Code via CC Switch|claude-session-priced"], 40)
         XCTAssertEqual(models["Codex via CC Switch|gpt-5.4"], 13)
     }
 
-    func testValidDatabaseWithoutProxyRowsReportsMissingProxyRows() throws {
+    func testValidDatabaseWithoutSuccessfulTokenRowsReportsMissingValidRows() throws {
         let database = try makeFixtureDatabase(rowsSQL: """
         insert into proxy_request_logs (
             request_id, provider_id, app_type, model,
             input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
             total_cost_usd, status_code, created_at, data_source, request_model, pricing_model
         ) values
-            ('session-import', 'provider-c', 'claude', 'ignored-model', 9000, 9000, 0, 0, '9.99', 200, 1717207200, 'codex_session', 'ignored', 'ignored');
+            ('failed-session', 'provider-c', 'claude', 'ignored-model', 9000, 9000, 0, 0, '9.99', 500, 1717207200, 'codex_session', 'ignored', 'ignored'),
+            ('zero-session', 'provider-b', 'codex', 'ignored-zero', 0, 0, 0, 0, '0.00', 200, 1717203600, 'opencode_session', 'ignored', 'ignored');
         """)
 
         let snapshot = UsageCollector.collectCCSwitchProxyUsageSnapshot(databaseURL: database)
 
-        XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.status, "missing_proxy_rows")
+        XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.status, "missing_valid_rows")
         XCTAssertEqual(snapshot.sources["CC Switch Proxy"]?.records, 0)
         XCTAssertEqual(snapshot.totals.tokens, 0)
         XCTAssertTrue(snapshot.daily.isEmpty)
