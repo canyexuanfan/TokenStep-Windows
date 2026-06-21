@@ -63,6 +63,13 @@ pub fn claude_projects_root() -> PathBuf {
     home_dir().join(".claude").join("projects")
 }
 
+/// `~/.cc-switch/cc-switch.db` — the CC Switch proxy request log (SQLite).
+/// CC Switch is a local proxy that routes Claude/Codex/Gemini traffic; its DB
+/// holds per-request token + cost rows we aggregate as a usage source.
+pub fn ccswitch_db_candidates() -> Vec<PathBuf> {
+    vec![home_dir().join(".cc-switch").join("cc-switch.db")]
+}
+
 /// `~/.claude/.credentials.json` — Claude Code OAuth credentials (written by
 /// the Claude Code CLI on `claude login`). Used to read the access token for
 /// the Claude usage-quota API. May be absent if the user never signed in.

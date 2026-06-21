@@ -42,26 +42,41 @@ struct UsageRecord {
 }
 
 /// Public entry point: collect from all sources, aggregate, return a snapshot.
+/// Mirrors upstream macOS `UsageCollector.collect()`: Codex + Claude Code +
+/// CC Switch records are summed (the sources are treated as additive — this
+/// matches the upstream behavior exactly).
 pub fn collect() -> UsageSnapshot {
     let pricing_data = pricing::load();
 
     let (codex_records, mut codex_source) = collect_codex();
     let (claude_records, mut claude_source) = collect_claude_code();
+    let (ccswitch_records, mut ccswitch_source) = collect_ccswitch();
 
     let mut records: Vec<UsageRecord> = codex_records;
     records.extend(claude_records.iter().cloned());
+    records.extend(ccswitch_records.iter().cloned());
 
-    // Stamp per-source record counts.
+    // Stamp per-source record counts (recount precisely per tool, since the
+    // CC Switch source name differs from its record `tool` strings — e.g.
+    // "Claude Code via CC Switch" — we count by source prefix instead).
     let mut counts: HashMap<String, i64> = HashMap::new();
     for r in &records {
         *counts.entry(r.tool.clone()).or_insert(0) += 1;
     }
     codex_source.records = counts.get("Codex").copied();
     claude_source.records = counts.get("Claude Code").copied();
+    // CC Switch groups several tool names ("X via CC Switch"); sum them.
+    let ccswitch_count: i64 = counts
+        .iter()
+        .filter(|(k, _)| k.ends_with("via CC Switch") || k.ends_with("via CC Switch (experimental)"))
+        .map(|(_, v)| *v)
+        .sum();
+    ccswitch_source.records = Some(ccswitch_count);
 
     let mut sources = BTreeMap::new();
     sources.insert("Codex".to_string(), codex_source);
     sources.insert("Claude Code".to_string(), claude_source);
+    sources.insert("CC Switch Proxy".to_string(), ccswitch_source);
 
     aggregate(records, &pricing_data, sources)
 }
@@ -276,6 +291,63 @@ fn collect_codex_jsonl(
 // Claude Code
 // ---------------------------------------------------------------------------
 
+/// Build the dedupe key for a Claude Code assistant row (port of upstream
+/// v0.1.32 `claudeResponseKey`). Prefers the message's response id, then the
+/// request id, then the transcript row's uuid, falling back to the file+line.
+fn claude_response_key(
+    obj: &serde_json::Value,
+    message: &serde_json::Value,
+    path_key: &str,
+    line_no: usize,
+) -> String {
+    for value in [
+        message.get("id").and_then(|v| v.as_str()),
+        obj.get("requestId").and_then(|v| v.as_str()),
+        obj.get("request_id").and_then(|v| v.as_str()),
+    ] {
+        if let Some(s) = value {
+            let t = s.trim();
+            if !t.is_empty() {
+                return format!("response:{}", t);
+            }
+        }
+    }
+    if let Some(uuid) = obj.get("uuid").and_then(|v| v.as_str()) {
+        let t = uuid.trim();
+        if !t.is_empty() {
+            return format!("uuid:{}", t);
+        }
+    }
+    format!("line:{}:{}", path_key, line_no)
+}
+
+/// One candidate row for a Claude Code response, used to pick the preferred
+/// row when the same response appears multiple times (port of upstream
+/// v0.1.32 `ClaudeUsageCandidate`).
+struct ClaudeCandidate {
+    day: String,
+    timestamp: String,
+    model: String,
+    usage: TokenUsageCounts,
+    has_stop_reason: bool,
+    line_no: usize,
+}
+
+impl ClaudeCandidate {
+    /// Whether this candidate should replace the existing one for the same
+    /// response key. Prefers a row with a stop_reason; ties broken by newer
+    /// timestamp, then later line number.
+    fn is_preferred_over(&self, other: &ClaudeCandidate) -> bool {
+        if self.has_stop_reason != other.has_stop_reason {
+            return self.has_stop_reason;
+        }
+        if self.timestamp != other.timestamp {
+            return self.timestamp > other.timestamp;
+        }
+        self.line_no > other.line_no
+    }
+}
+
 fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
     let root = paths::claude_projects_root();
     let mut all_paths = jsonl_files_under(&root);
@@ -284,7 +356,6 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
     let mut cache = load_cache();
     let mut live_paths: BTreeSet<String> = BTreeSet::new();
     let mut records: Vec<UsageRecord> = Vec::new();
-    let mut seen: BTreeSet<String> = BTreeSet::new();
 
     for path in &all_paths {
         let key = path.to_string_lossy().to_string();
@@ -295,7 +366,15 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
             continue;
         }
 
-        let mut file_records: Vec<UsageRecord> = Vec::new();
+        // Per-file response map: dedupe Claude Code assistant rows by their
+        // response identity (port of upstream v0.1.32 ce44b6f). A single
+        // assistant response can appear multiple times in a transcript (e.g.
+        // with and without a stop_reason, or re-emitted on resume); the older
+        // uuid-only dedupe kept the FIRST one, which could be the partial
+        // pre-stop row. We now keep the preferred candidate: prefer a row
+        // WITH stop_reason, then the newer timestamp, then the later line.
+        let file_records: Vec<UsageRecord>;
+        let mut responses: BTreeMap<String, ClaudeCandidate> = BTreeMap::new();
         // Stream line-by-line (memory optimization, port of macOS 170f655).
         let Ok(file) = fs::File::open(path) else { continue };
         let reader = std::io::BufReader::new(file);
@@ -324,28 +403,43 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
             let Some(day) = day_string_from_iso(timestamp) else {
                 continue;
             };
-            let unique = obj
-                .get("uuid")
+            let response_key = claude_response_key(&obj, message, &key, line_no);
+            let has_stop_reason = message
+                .get("stop_reason")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| format!("{key}:{line_no}"));
-            if !seen.insert(unique) {
-                continue;
-            }
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false);
             let model = model_key(
                 message
                     .get("model")
                     .and_then(|v| v.as_str())
                     .unwrap_or(""),
             );
-            file_records.push(UsageRecord {
-                date: day,
-                tool: "Claude Code".to_string(),
+            let candidate = ClaudeCandidate {
+                day,
+                timestamp: timestamp.to_string(),
                 model,
-                usage,
-                cost_usd: None,
-            });
+                usage: usage.clone(),
+                has_stop_reason,
+                line_no,
+            };
+            if let Some(existing) = responses.get(&response_key) {
+                if !candidate.is_preferred_over(existing) {
+                    continue;
+                }
+            }
+            responses.insert(response_key, candidate);
         }
+        file_records = responses
+            .values()
+            .map(|c| UsageRecord {
+                date: c.day.clone(),
+                tool: "Claude Code".to_string(),
+                model: c.model.clone(),
+                usage: c.usage.clone(),
+                cost_usd: None,
+            })
+            .collect();
 
         records.extend(file_records.clone());
         update_cache(&mut cache, &key, "Claude Code", path, &file_records);
@@ -361,6 +455,184 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
             status: Some(status.to_string()),
             files: Some(all_paths.len() as i64),
             records: None,
+        },
+    )
+}
+
+// ---------------------------------------------------------------------------
+// CC Switch proxy (SQLite) — port of upstream `collectCCSwitchProxyUsage`.
+// ---------------------------------------------------------------------------
+
+fn cc_switch_tool_name(app_type: &str) -> String {
+    let normalized = app_type.trim().to_lowercase();
+    match normalized.as_str() {
+        "claude" => "Claude Code via CC Switch".to_string(),
+        "codex" => "Codex via CC Switch".to_string(),
+        "gemini" => "Gemini via CC Switch".to_string(),
+        _ => {
+            let raw = app_type.trim();
+            let label = if raw.is_empty() { "unknown" } else { raw };
+            format!("{} via CC Switch (experimental)", label)
+        }
+    }
+}
+
+fn cc_switch_epoch_day(v: &rusqlite::types::Value) -> Option<String> {
+    use rusqlite::types::Value;
+    let raw: f64 = match v {
+        Value::Integer(i) => *i as f64,
+        Value::Real(r) => *r,
+        Value::Text(s) => s.parse().ok()?,
+        Value::Null => return None,
+        Value::Blob(b) => String::from_utf8_lossy(b).parse().ok()?,
+    };
+    let secs: i64 = if raw > 1e12 { (raw / 1000.0) as i64 } else { raw as i64 };
+    let tz = local_tz();
+    let dt = tz.timestamp_opt(secs, 0).single()?;
+    Some(dt.format("%Y-%m-%d").to_string())
+}
+
+fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
+    let missing = |status: &str| {
+        (
+            Vec::new(),
+            SourceInfo {
+                status: Some(status.to_string()),
+                files: Some(0),
+                records: Some(0),
+            },
+        )
+    };
+
+    let db_path = match paths::ccswitch_db_candidates().into_iter().find(|p| p.exists()) {
+        Some(p) => p,
+        None => return missing("missing_db"),
+    };
+
+    let conn = match rusqlite::Connection::open_with_flags(
+        &db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(c) => c,
+        Err(_) => {
+            return (
+                Vec::new(),
+                SourceInfo {
+                    status: Some("unreadable_db".to_string()),
+                    files: Some(1),
+                    records: Some(0),
+                },
+            )
+        }
+    };
+
+    // data_source is intentionally NOT required (older DBs lack it; upstream
+    // v0.1.32 treats it as optional).
+    let required: BTreeSet<&str> = [
+        "request_id", "app_type", "provider_id", "model", "request_model",
+        "pricing_model", "input_tokens", "output_tokens", "cache_read_tokens",
+        "cache_creation_tokens", "total_cost_usd", "status_code", "created_at",
+    ]
+    .into_iter()
+    .collect();
+
+    let available: BTreeSet<String> = match conn.prepare("pragma table_info(proxy_request_logs)") {
+        Ok(mut s) => match s.query_map([], |row| row.get::<_, String>(1)) {
+            Ok(rows) => rows.flatten().collect(),
+            Err(_) => return missing("schema_unreadable"),
+        },
+        Err(_) => return missing("schema_unreadable"),
+    };
+    if available.is_empty() {
+        return missing("missing_table");
+    }
+    if !required.iter().all(|r| available.contains(*r)) {
+        return missing("schema_mismatch");
+    }
+
+    // data_source filter: only apply when the column exists, treat empty as
+    // 'proxy' (matches upstream v0.1.32).
+    let data_source_filter = if available.contains("data_source") {
+        "and coalesce(nullif(data_source, ''), 'proxy') = 'proxy'"
+    } else {
+        ""
+    };
+    let sql = format!(
+        "select created_at, app_type, \
+        coalesce(nullif(pricing_model, ''), nullif(model, ''), nullif(request_model, ''), 'unknown') as display_model, \
+        coalesce(input_tokens, 0) as input_tokens, \
+        coalesce(output_tokens, 0) as output_tokens, \
+        coalesce(cache_read_tokens, 0) as cache_read_tokens, \
+        coalesce(cache_creation_tokens, 0) as cache_creation_tokens, \
+        cast(coalesce(nullif(total_cost_usd, ''), '0') as real) as total_cost_usd \
+        from proxy_request_logs \
+        where status_code >= 200 and status_code < 300 {} \
+        and (coalesce(input_tokens, 0) + coalesce(output_tokens, 0) \
+             + coalesce(cache_read_tokens, 0) + coalesce(cache_creation_tokens, 0)) > 0 \
+        order by created_at, request_id",
+        data_source_filter
+    );
+
+    let row_data: Vec<(
+        rusqlite::types::Value, rusqlite::types::Value, rusqlite::types::Value,
+        rusqlite::types::Value, rusqlite::types::Value, rusqlite::types::Value,
+        rusqlite::types::Value, rusqlite::types::Value,
+    )> = match conn.prepare(&sql) {
+        Ok(mut s) => match s.query_map([], |row| {
+            Ok((
+                row.get::<_, rusqlite::types::Value>(0)?,
+                row.get::<_, rusqlite::types::Value>(1)?,
+                row.get::<_, rusqlite::types::Value>(2)?,
+                row.get::<_, rusqlite::types::Value>(3)?,
+                row.get::<_, rusqlite::types::Value>(4)?,
+                row.get::<_, rusqlite::types::Value>(5)?,
+                row.get::<_, rusqlite::types::Value>(6)?,
+                row.get::<_, rusqlite::types::Value>(7)?,
+            ))
+        }) {
+            Ok(rows) => rows.flatten().collect(),
+            Err(_) => return missing("query_failed"),
+        },
+        Err(_) => return missing("query_failed"),
+    };
+
+    let mut records = Vec::new();
+    for (created_at, app_type, display_model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, total_cost_usd) in row_data {
+        let day = match cc_switch_epoch_day(&created_at) { Some(d) => d, None => continue };
+        let input = sqlite_value_as_f64(&input_tokens) as i64;
+        let output = sqlite_value_as_f64(&output_tokens) as i64;
+        let cache_read = sqlite_value_as_f64(&cache_read_tokens) as i64;
+        let cache_creation = sqlite_value_as_f64(&cache_creation_tokens) as i64;
+        let total = input + output + cache_read + cache_creation;
+        if total <= 0 { continue; }
+        let cost_usd = {
+            let raw = sqlite_value_as_f64(&total_cost_usd);
+            if raw.is_finite() && raw > 0.0 { Some(raw) } else { None }
+        };
+        records.push(UsageRecord {
+            date: day,
+            tool: cc_switch_tool_name(&sqlite_value_as_string(&app_type)),
+            model: model_key(&sqlite_value_as_string(&display_model)),
+            usage: TokenUsageCounts {
+                input_tokens: input,
+                output_tokens: output,
+                cache_read_input_tokens: cache_read,
+                cache_creation_input_tokens: cache_creation,
+                reasoning_output_tokens: 0,
+                total_tokens: total,
+            },
+            cost_usd,
+        });
+    }
+
+    let status = if records.is_empty() { "missing_proxy_rows" } else { "ok" };
+    let count = records.len();
+    (
+        records,
+        SourceInfo {
+            status: Some(status.to_string()),
+            files: Some(1),
+            records: Some(count as i64),
         },
     )
 }
@@ -682,7 +954,7 @@ struct CollectorCache {
 impl Default for CollectorCache {
     fn default() -> Self {
         CollectorCache {
-            version: 2,
+            version: 3,
             files: BTreeMap::new(),
         }
     }
@@ -694,7 +966,7 @@ fn load_cache() -> CollectorCache {
     };
     match serde_json::from_str::<CollectorCache>(&text) {
         // Bump on schema change; old caches are rebuilt from source.
-        Ok(c) if c.version == 2 => c,
+        Ok(c) if c.version == 3 => c,
         _ => CollectorCache::default(),
     }
 }
