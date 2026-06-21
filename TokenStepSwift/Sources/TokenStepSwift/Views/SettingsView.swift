@@ -62,12 +62,16 @@ struct SettingsView: View {
                 SettingsDisplayCard()
             }
             HStack(alignment: .top, spacing: 18) {
+                SettingsTokenRankCard()
                 SettingsRefreshCard()
-                SettingsUpdateCard()
             }
             HStack(alignment: .top, spacing: 18) {
+                SettingsUpdateCard()
                 SettingsAutostartCard()
+            }
+            HStack(alignment: .top, spacing: 18) {
                 SettingsPrivacyCard()
+                Spacer(minLength: 0)
             }
         }
     }
@@ -139,9 +143,14 @@ struct SettingsView: View {
 
     private var footer: some View {
         HStack {
-            Text(L("TokenStep · Local usage tracker"))
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(L("TokenStep · Local usage tracker"))
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                Text(LFormat("当前版本 %@", UpdateService.currentVersion))
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary.opacity(0.82))
+            }
 
             Spacer()
 
@@ -155,6 +164,8 @@ struct SettingsView: View {
                 appState.setRequireVerifiedUpdates(TokenStepSettings.defaults.requireVerifiedUpdates)
                 appState.setTokenIslandPlacement(TokenStepSettings.defaults.tokenIslandPlacement)
                 appState.setCodexQuotaVisible(TokenStepSettings.defaults.showCodexQuota)
+                appState.setTokenRankVisible(TokenStepSettings.defaults.showTokenRank)
+                appState.setTokenRankUserID(TokenStepSettings.defaults.tokenRankUserID)
                 appState.setAutostart(true)
             } label: {
                 Text(L("恢复默认"))

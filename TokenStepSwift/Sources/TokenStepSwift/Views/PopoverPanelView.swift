@@ -6,7 +6,7 @@ struct PopoverPanelView: View {
     @Environment(\.isScreenshotRendering) private var isScreenshotRendering
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             header
             if let error = appState.lastError {
                 ErrorBanner(message: error) {
@@ -17,28 +17,29 @@ struct PopoverPanelView: View {
             if appState.settings.showCodexQuota {
                 PopoverQuotaCard()
             }
-            trendCard
+            if appState.settings.showTokenRank {
+                PopoverTokenRankCard()
+            }
             if let update = appState.availableUpdate {
                 UpdateNoticeCard(update: update)
             }
             PopoverFooterView()
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 20)
         .frame(width: 412)
         .background(TokenStepBackdrop())
         .id(appState.appearanceID)
     }
 
     private var header: some View {
-        HStack(spacing: 13) {
-            TokenStepMark(size: 42)
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 12) {
+            TokenStepMark(size: 40)
+            VStack(alignment: .leading, spacing: 0) {
                 Text("TokenStep")
                     .font(.system(size: 24, weight: .heavy, design: .rounded))
                     .foregroundStyle(Color.tokenInk)
-                Text(L("每日 Token 消耗追踪"))
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.secondary)
             }
             Spacer()
             HStack(spacing: 6) {
@@ -55,32 +56,57 @@ struct PopoverPanelView: View {
             .overlay(Capsule().stroke(Color.black.opacity(0.055)))
 
             if !isScreenshotRendering {
-                ScreenshotMenuButton(
-                    copyTitle: L("复制浮层截图"),
-                    saveTitle: L("保存浮层 PNG"),
-                    help: L("截取浮层"),
-                    copyAction: copyPopoverScreenshot,
-                    saveAction: savePopoverScreenshot
+                PopoverCaptureMenuButton(
+                    shareTodayAction: { copyShareCard(.today) },
+                    shareYesterdayAction: { copyShareCard(.yesterday) },
+                    downloadTodayAction: { downloadShareCard(.today) },
+                    downloadYesterdayAction: { downloadShareCard(.yesterday) },
+                    copyPopoverAction: copyPopoverScreenshot,
+                    savePopoverAction: savePopoverScreenshot
                 )
             }
         }
     }
 
-    private var trendCard: some View {
-        TokenCard {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(L("最近 30 天"))
-                        .font(.headline.weight(.heavy))
-                        .foregroundStyle(Color.tokenInk)
-                    Spacer()
-                    Text(L("细线是每日目标"))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                ActivityBarsView(rows: appState.snapshot.daily, goal: appState.settings.dailyGoalTokens)
-                    .frame(height: 66)
-            }
+    private func copyShareCard(_ mode: ShareCardMode) {
+        guard let day = shareDay(for: mode) else {
+            appState.lastError = mode == .yesterday ? L("还没有昨日数据") : L("等待下一次同步")
+            return
+        }
+
+        do {
+            try ScreenshotExporter.copy(
+                ShareDailyCardView(
+                    mode: mode,
+                    day: day,
+                    previousDay: previousDay(before: day)
+                )
+                .environmentObject(appState)
+                .environment(\.isScreenshotRendering, true)
+            )
+        } catch {
+            appState.lastError = error.localizedDescription
+        }
+    }
+
+    private func downloadShareCard(_ mode: ShareCardMode) {
+        guard let day = shareDay(for: mode) else {
+            appState.lastError = mode == .yesterday ? L("还没有昨日数据") : L("等待下一次同步")
+            return
+        }
+
+        do {
+            try ScreenshotExporter.saveJPGToDownloads(
+                ShareDailyCardView(
+                    mode: mode,
+                    day: day,
+                    previousDay: previousDay(before: day)
+                )
+                .environmentObject(appState)
+                .environment(\.isScreenshotRendering, true)
+            )
+        } catch {
+            appState.lastError = error.localizedDescription
         }
     }
 
@@ -109,6 +135,92 @@ struct PopoverPanelView: View {
         }
     }
 
+    private func shareDay(for mode: ShareCardMode) -> DailyUsage? {
+        switch mode {
+        case .today:
+            return appState.today.totalTokens > 0 ? appState.today : nil
+        case .yesterday:
+            let calendar = Calendar(identifier: .gregorian)
+            guard let yesterday = calendar.date(byAdding: .day, value: -1, to: Date()) else {
+                return nil
+            }
+            let key = DateFormatter.tokenStepDay.string(from: yesterday)
+            return appState.snapshot.daily.first(where: { $0.date == key && $0.totalTokens > 0 })
+        }
+    }
+
+    private func previousDay(before day: DailyUsage) -> DailyUsage? {
+        let rows = appState.snapshot.daily.sorted { $0.date < $1.date }
+        guard let index = rows.firstIndex(where: { $0.date == day.date }), index > rows.startIndex else {
+            return nil
+        }
+        return rows[rows.index(before: index)]
+    }
+
+}
+
+private struct PopoverCaptureMenuButton: View {
+    var shareTodayAction: () -> Void
+    var shareYesterdayAction: () -> Void
+    var downloadTodayAction: () -> Void
+    var downloadYesterdayAction: () -> Void
+    var copyPopoverAction: () -> Void
+    var savePopoverAction: () -> Void
+
+    var body: some View {
+        Menu {
+            Button {
+                shareTodayAction()
+            } label: {
+                Label(L("分享今日卡片"), systemImage: "sun.max.fill")
+            }
+
+            Button {
+                shareYesterdayAction()
+            } label: {
+                Label(L("分享昨日成绩"), systemImage: "calendar.badge.clock")
+            }
+
+            Button {
+                downloadTodayAction()
+            } label: {
+                Label(L("下载今日卡片"), systemImage: "arrow.down.circle.fill")
+            }
+
+            Button {
+                downloadYesterdayAction()
+            } label: {
+                Label(L("下载昨日成绩"), systemImage: "arrow.down.doc.fill")
+            }
+
+            Divider()
+
+            Button {
+                copyPopoverAction()
+            } label: {
+                Label(L("复制浮层截图"), systemImage: "doc.on.clipboard")
+            }
+
+            Button {
+                savePopoverAction()
+            } label: {
+                Label(L("保存浮层 PNG"), systemImage: "square.and.arrow.down")
+            }
+        } label: {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(Color.tokenInk.opacity(0.76))
+                .frame(width: 34, height: 34)
+                .background(Color.tokenSurface, in: Circle())
+                .overlay(Circle().stroke(Color.black.opacity(0.07)))
+                .shadow(color: Color.black.opacity(0.055), radius: 9, x: 0, y: 5)
+                .contentShape(Circle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .help(L("截图与分享"))
+        .accessibilityLabel(L("截图与分享"))
+    }
 }
 
 private struct UpdateNoticeCard: View {

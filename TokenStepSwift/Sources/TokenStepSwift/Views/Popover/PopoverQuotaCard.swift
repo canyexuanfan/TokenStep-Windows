@@ -8,9 +8,9 @@ struct PopoverQuotaCard: View {
             VStack(alignment: .leading, spacing: 13) {
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(Self.codexBlue)
+                        .fill(Color.tokenGreen)
                         .frame(width: 8, height: 8)
-                    Text(L("Codex 剩余额度"))
+                    Text(L("Agent 剩余额度"))
                         .font(.callout.weight(.heavy))
                         .foregroundStyle(Color.tokenInk)
                     Spacer()
@@ -22,26 +22,34 @@ struct PopoverQuotaCard: View {
                         Text(quotaFetchedText(fetchedAt))
                             .font(.caption2.weight(.bold))
                             .foregroundStyle(.secondary)
+                    } else if let fetchedAt = appState.claudeQuota.fetchedAt {
+                        Text(quotaFetchedText(fetchedAt))
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(.secondary)
                     }
                 }
 
-                if appState.codexQuota.isAvailable {
-                    VStack(spacing: 10) {
-                        quotaRow(appState.codexQuota.fiveHour, fallbackTitle: L("5 小时"))
-                        quotaRow(appState.codexQuota.sevenDay, fallbackTitle: L("7 天"))
+                if appState.hasAnyQuota {
+                    VStack(spacing: 12) {
+                        if appState.codexQuota.isAvailable {
+                            quotaSection(title: "Codex", quota: appState.codexQuota)
+                        }
+                        if appState.claudeQuota.isAvailable {
+                            quotaSection(title: "Claude Code", quota: appState.claudeQuota)
+                        }
                     }
                 } else {
                     HStack(spacing: 10) {
                         Image(systemName: "terminal")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Self.codexBlue)
+                            .foregroundStyle(Color.tokenGreen)
                             .frame(width: 28, height: 28)
-                            .background(Self.codexBlue.opacity(0.10), in: Circle())
+                            .background(Color.tokenMint.opacity(0.22), in: Circle())
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(L("暂未读取到 Codex 额度"))
+                            Text(L("暂未读取到 Agent 额度"))
                                 .font(.caption.weight(.heavy))
                                 .foregroundStyle(Color.tokenInk.opacity(0.76))
-                            Text(L("打开并登录 Codex 后会自动显示额度。"))
+                            Text(L("打开并登录 Codex / Claude Code 后会自动显示。"))
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
@@ -51,6 +59,18 @@ struct PopoverQuotaCard: View {
             }
         }
         .padding(.vertical, -2)
+    }
+
+    private func quotaSection(title: String, quota: CodexQuotaSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.heavy))
+                .foregroundStyle(Color.tokenInk.opacity(0.76))
+            VStack(spacing: 8) {
+                quotaRow(quota.fiveHour, fallbackTitle: L("5 小时"))
+                quotaRow(quota.sevenDay, fallbackTitle: L("7 天"))
+            }
+        }
     }
 
     private func quotaRow(_ window: CodexQuotaWindow?, fallbackTitle: String) -> some View {
@@ -73,10 +93,10 @@ struct PopoverQuotaCard: View {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .fill(Self.codexBlue.opacity(0.10))
+                            .fill(Color.tokenGreen.opacity(0.10))
                         if let window {
                             Capsule()
-                                .fill(Self.codexBlue)
+                                .fill(Color.tokenGreen)
                                 .frame(width: max(5, proxy.size.width * window.remainingPercent / 100))
                         }
                     }
@@ -111,6 +131,4 @@ struct PopoverQuotaCard: View {
         }
         return LFormat("%d 分钟前", max(1, seconds / 60))
     }
-
-    private static let codexBlue = Color(red: 39 / 255, green: 111 / 255, blue: 246 / 255)
 }
