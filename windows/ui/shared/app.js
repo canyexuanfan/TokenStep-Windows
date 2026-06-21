@@ -1,14 +1,33 @@
 /* TokenStep Windows — shared frontend helpers.
    Formatters ported from Formatters.swift; contribution color from Components.swift. */
 
-// ---- Translation helper (for canvas text + dynamic strings that the DOM
-// walker in applyLanguage can't reach). Reads the I18N table + current lang
-// that i18n.js exposes as globals. ----
+// ---- Translation helpers (source-of-truth translation: every user-facing
+// string passes through these at the moment it is generated, instead of
+// relying on the post-render DOM walker in applyLanguage — which misses any
+// text written to the DOM AFTER it runs (async quota cards, dynamic titles,
+// the update modal, variable-concatenated templates). Reads the I18N table +
+// current lang that i18n.js exposes as globals. ----
 function t(zh) {
   const lang = window.__tsLang || 'zhHans';
   if (!lang || lang === 'zhHans' || !window.I18N) return zh;
   const table = window.I18N[lang] || {};
   return table[zh] || zh;
+}
+// printf-style translation for templates with variables. The Chinese key uses
+// %d (integer) / %@ (anything) placeholders; the translated value keeps the
+// same placeholders and we substitute in order.
+//   tf('第 %d 圈', 3)        → en 'Lap %d' → 'Lap 3'
+//   tf('TokenStep %@ 可用', '0.1.3') → en 'TokenStep %@ Available' → 'TokenStep 0.1.3 Available'
+function tf(zh) {
+  var lang = window.__tsLang || 'zhHans';
+  var s = zh;
+  if (lang && lang !== 'zhHans' && window.I18N) {
+    var table = window.I18N[lang] || {};
+    s = table[zh] || zh;
+  }
+  var args = Array.prototype.slice.call(arguments, 1);
+  var i = 0;
+  return s.replace(/%[ds@]/g, function () { return String(args[i++]); });
 }
 
 // ---- Tauri invoke (graceful fallback when running outside Tauri) ----
@@ -40,10 +59,29 @@ function trimTrailing(value, digits) {
 
 function formatTokens(value, compact = false) {
   value = Number(value || 0);
-  if (value >= 100000000) return trimTrailing(value / 100000000, 2) + "亿";
+  const lang = window.__tsLang || 'zhHans';
+  // Unit scales + glyphs differ by language:
+  //   en     → K/M/B  (10^3/10^6/10^9)
+  //   zhHans → 万/亿  (10^4/10^8)
+  //   zhHant → 萬/億  (10^4/10^8, traditional glyphs)
+  if (lang === 'en') {
+    if (value >= 1000000000) return trimTrailing(value / 1000000000, 2) + "B";
+    if (value >= 1000000) {
+      const digits = compact || value >= 10000000 ? 1 : 2;
+      return trimTrailing(value / 1000000, digits) + "M";
+    }
+    if (value >= 1000) {
+      const digits = compact || value >= 100000 ? 0 : 1;
+      return trimTrailing(value / 1000, digits) + "K";
+    }
+    return String(Math.round(value));
+  }
+  const wan = lang === 'zhHant' ? "萬" : "万";
+  const yi = lang === 'zhHant' ? "億" : "亿";
+  if (value >= 100000000) return trimTrailing(value / 100000000, 2) + yi;
   if (value >= 10000) {
     const digits = compact || value >= 10000000 ? 0 : 1;
-    return trimTrailing(value / 10000, digits) + "万";
+    return trimTrailing(value / 10000, digits) + wan;
   }
   return String(Math.round(value));
 }
@@ -67,15 +105,15 @@ function formatPercent(value) {
 }
 
 function formatGeneratedTime(value) {
-  if (!value) return "等待同步";
+  if (!value) return t("等待同步");
   return value.replace("T", " ").slice(0, 16);
 }
 
 function formatInterval(seconds) {
   seconds = Number(seconds || 0);
-  if (seconds === 0) return "手动";
-  if (seconds === 60) return "1 分钟";
-  return seconds / 60 + " 分钟";
+  if (seconds === 0) return t("手动");
+  if (seconds === 60) return t("1 分钟");
+  return t("%d 分钟").replace("%d", seconds / 60);
 }
 
 // ---- Contribution color (port of Components.swift contributionColor / activityColor) ----
@@ -160,7 +198,7 @@ function lapProgress(tokens, goal) {
     currentLapProgress,
     currentLapPercent: currentLapProgress * 100,
     color: lapColors[Math.min(currentLap, lapColors.length) - 1] || lapColors[lapColors.length - 1],
-    lapTitle: "第 " + currentLap + " 圈",
+    lapTitle: tf("第 %d 圈", currentLap),
   };
 }
 
@@ -426,6 +464,7 @@ window.TS = {
   invoke,
   listen,
   t,
+  tf,
   formatTokens,
   formatMoney,
   formatPercent,
