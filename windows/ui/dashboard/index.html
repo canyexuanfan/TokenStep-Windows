@@ -509,6 +509,17 @@
         var brand = document.querySelector('.brand-text p'); if (brand) brand.textContent = tr('每天一个亿');
         var pbTitle = document.querySelector('.pb-title'); if (pbTitle) pbTitle.textContent = tr('本地统计');
         var pbSub = document.querySelector('.pb-sub'); if (pbSub) pbSub.textContent = tr('不上传代码或对话');
+        // Nav items (also built once in init). Translate each item's title +
+        // subtitle from the SECTIONS source strings, in order.
+        var navItems = document.querySelectorAll('.nav-item');
+        if (navItems.length && typeof SECTIONS !== 'undefined') {
+          navItems.forEach(function (el, i) {
+            var sec = SECTIONS[i];
+            if (!sec) return;
+            var t = el.querySelector('.nav-title'); if (t) t.textContent = tr(sec.sidebar);
+            var s = el.querySelector('.nav-sub'); if (s) s.textContent = tr(sec.sub);
+          });
+        }
         // Sync status text (only translate the idle value; leave in-progress alone).
         var st = document.getElementById('syncText');
         if (st && !st.dataset.syncing) st.textContent = tr('已同步');
