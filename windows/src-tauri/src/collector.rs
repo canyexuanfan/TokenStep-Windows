@@ -42,41 +42,26 @@ struct UsageRecord {
 }
 
 /// Public entry point: collect from all sources, aggregate, return a snapshot.
-/// Mirrors upstream macOS `UsageCollector.collect()`: Codex + Claude Code +
-/// CC Switch records are summed (the sources are treated as additive — this
-/// matches the upstream behavior exactly).
 pub fn collect() -> UsageSnapshot {
     let pricing_data = pricing::load();
 
     let (codex_records, mut codex_source) = collect_codex();
     let (claude_records, mut claude_source) = collect_claude_code();
-    let (ccswitch_records, mut ccswitch_source) = collect_ccswitch();
 
     let mut records: Vec<UsageRecord> = codex_records;
     records.extend(claude_records.iter().cloned());
-    records.extend(ccswitch_records.iter().cloned());
 
-    // Stamp per-source record counts (recount precisely per tool, since the
-    // CC Switch source name differs from its record `tool` strings — e.g.
-    // "Claude Code via CC Switch" — we count by source prefix instead).
+    // Stamp per-source record counts.
     let mut counts: HashMap<String, i64> = HashMap::new();
     for r in &records {
         *counts.entry(r.tool.clone()).or_insert(0) += 1;
     }
     codex_source.records = counts.get("Codex").copied();
     claude_source.records = counts.get("Claude Code").copied();
-    // CC Switch groups several tool names ("X via CC Switch"); sum them.
-    let ccswitch_count: i64 = counts
-        .iter()
-        .filter(|(k, _)| k.ends_with("via CC Switch") || k.ends_with("via CC Switch (experimental)"))
-        .map(|(_, v)| *v)
-        .sum();
-    ccswitch_source.records = Some(ccswitch_count);
 
     let mut sources = BTreeMap::new();
     sources.insert("Codex".to_string(), codex_source);
     sources.insert("Claude Code".to_string(), claude_source);
-    sources.insert("CC Switch Proxy".to_string(), ccswitch_source);
 
     aggregate(records, &pricing_data, sources)
 }
@@ -380,280 +365,6 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
     )
 }
 
-// ---------------------------------------------------------------------------
-// CC Switch proxy (SQLite) — port of upstream `collectCCSwitchProxyUsage`.
-// CC Switch is a local proxy routing Claude/Codex/Gemini traffic; its DB
-// stores per-request token + cost rows we aggregate as a usage source.
-// ---------------------------------------------------------------------------
-
-/// Map a CC Switch `app_type` to the tool name shown in the UI, mirroring
-/// upstream `ccSwitchToolName`.
-fn cc_switch_tool_name(app_type: &str) -> String {
-    let normalized = app_type.trim().to_lowercase();
-    match normalized.as_str() {
-        "claude" => "Claude Code via CC Switch".to_string(),
-        "codex" => "Codex via CC Switch".to_string(),
-        "gemini" => "Gemini via CC Switch".to_string(),
-        _ => {
-            let raw = app_type.trim();
-            let label = if raw.is_empty() { "unknown" } else { raw };
-            format!("{} via CC Switch (experimental)", label)
-        }
-    }
-}
-
-/// Bucket a CC Switch `created_at` (epoch seconds OR milliseconds) into a
-/// local day string. Mirrors upstream's epoch-millis compatibility.
-fn cc_switch_epoch_day(v: &rusqlite::types::Value) -> Option<String> {
-    use rusqlite::types::Value;
-    let raw: f64 = match v {
-        Value::Integer(i) => *i as f64,
-        Value::Real(r) => *r,
-        Value::Text(s) => s.parse().ok()?,
-        Value::Null => return None,
-        Value::Blob(b) => String::from_utf8_lossy(b).parse().ok()?,
-    };
-    // Heuristic: values > 1e12 are milliseconds (epoch ms vs epoch s).
-    let secs: i64 = if raw > 1e12 { (raw / 1000.0) as i64 } else { raw as i64 };
-    let tz = local_tz();
-    let dt = tz.timestamp_opt(secs, 0).single()?;
-    Some(dt.format("%Y-%m-%d").to_string())
-}
-
-fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
-    let missing = |status: &str| {
-        (
-            Vec::new(),
-            SourceInfo {
-                status: Some(status.to_string()),
-                files: Some(0),
-                records: Some(0),
-            },
-        )
-    };
-
-    let db_path = match paths::ccswitch_db_candidates().into_iter().find(|p| p.exists()) {
-        Some(p) => p,
-        None => return missing("missing_db"),
-    };
-
-    let conn = match rusqlite::Connection::open_with_flags(
-        &db_path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) {
-        Ok(c) => c,
-        Err(_) => {
-            return (
-                Vec::new(),
-                SourceInfo {
-                    status: Some("unreadable_db".to_string()),
-                    files: Some(1),
-                    records: Some(0),
-                },
-            )
-        }
-    };
-
-    // Validate the schema before querying — mirrors upstream's
-    // `pragma table_info(proxy_request_logs)` + required-columns check.
-    let required: BTreeSet<&str> = [
-        "request_id",
-        "app_type",
-        "provider_id",
-        "model",
-        "request_model",
-        "pricing_model",
-        "input_tokens",
-        "output_tokens",
-        "cache_read_tokens",
-        "cache_creation_tokens",
-        "total_cost_usd",
-        "status_code",
-        "created_at",
-        "data_source",
-    ]
-    .into_iter()
-    .collect();
-
-    let available: BTreeSet<String> = match conn.prepare("pragma table_info(proxy_request_logs)") {
-        Ok(mut s) => match s.query_map([], |row| row.get::<_, String>(1)) {
-            Ok(rows) => rows.flatten().collect(),
-            Err(_) => {
-                return (
-                    Vec::new(),
-                    SourceInfo {
-                        status: Some("schema_unreadable".to_string()),
-                        files: Some(1),
-                        records: Some(0),
-                    },
-                )
-            }
-        },
-        Err(_) => {
-            return (
-                Vec::new(),
-                SourceInfo {
-                    status: Some("schema_unreadable".to_string()),
-                    files: Some(1),
-                    records: Some(0),
-                },
-            )
-        }
-    };
-    if available.is_empty() {
-        return (
-            Vec::new(),
-            SourceInfo {
-                status: Some("missing_table".to_string()),
-                files: Some(1),
-                records: Some(0),
-            },
-        );
-    }
-    let all_present = required.iter().all(|r| available.contains(*r));
-    if !all_present {
-        return (
-            Vec::new(),
-            SourceInfo {
-                status: Some("schema_mismatch".to_string()),
-                files: Some(1),
-                records: Some(0),
-            },
-        );
-    }
-
-    // NOTE: upstream uses `where coalesce(data_source,'proxy')='proxy'`, but
-    // real-world CC Switch DBs store `data_source` as 'codex_session' /
-    // 'opencode_session' / 'session_log' — NONE equal 'proxy', so that filter
-    // drops every row and the source silently reports zero. We drop the
-    // data_source clause entirely (success-status + tokens>0 is enough) so the
-    // actual proxy activity is aggregated.
-    let sql = "select \
-        created_at, app_type, \
-        coalesce(nullif(pricing_model, ''), nullif(model, ''), nullif(request_model, ''), 'unknown') as display_model, \
-        coalesce(input_tokens, 0) as input_tokens, \
-        coalesce(output_tokens, 0) as output_tokens, \
-        coalesce(cache_read_tokens, 0) as cache_read_tokens, \
-        coalesce(cache_creation_tokens, 0) as cache_creation_tokens, \
-        cast(coalesce(nullif(total_cost_usd, ''), '0') as real) as total_cost_usd \
-        from proxy_request_logs \
-        where status_code >= 200 and status_code < 300 \
-        and (coalesce(input_tokens, 0) + coalesce(output_tokens, 0) \
-               + coalesce(cache_read_tokens, 0) + coalesce(cache_creation_tokens, 0)) > 0 \
-        order by created_at, request_id";
-
-    // Collect rows inside the prepare block so the statement's borrow ends
-    // before we build records (the Rows iterator borrows the statement).
-    let row_data: Vec<(
-        rusqlite::types::Value,
-        rusqlite::types::Value,
-        rusqlite::types::Value,
-        rusqlite::types::Value,
-        rusqlite::types::Value,
-        rusqlite::types::Value,
-        rusqlite::types::Value,
-        rusqlite::types::Value,
-    )> = match conn.prepare(sql) {
-        Ok(mut s) => match s.query_map([], |row| {
-            Ok((
-                row.get::<_, rusqlite::types::Value>(0)?,
-                row.get::<_, rusqlite::types::Value>(1)?,
-                row.get::<_, rusqlite::types::Value>(2)?,
-                row.get::<_, rusqlite::types::Value>(3)?,
-                row.get::<_, rusqlite::types::Value>(4)?,
-                row.get::<_, rusqlite::types::Value>(5)?,
-                row.get::<_, rusqlite::types::Value>(6)?,
-                row.get::<_, rusqlite::types::Value>(7)?,
-            ))
-        }) {
-            Ok(rows) => rows.flatten().collect(),
-            Err(_) => {
-                return (
-                    Vec::new(),
-                    SourceInfo {
-                        status: Some("query_failed".to_string()),
-                        files: Some(1),
-                        records: Some(0),
-                    },
-                )
-            }
-        },
-        Err(_) => {
-            return (
-                Vec::new(),
-                SourceInfo {
-                    status: Some("query_failed".to_string()),
-                    files: Some(1),
-                    records: Some(0),
-                },
-            )
-        }
-    };
-
-    let mut records = Vec::new();
-    for (
-        created_at,
-        app_type,
-        display_model,
-        input_tokens,
-        output_tokens,
-        cache_read_tokens,
-        cache_creation_tokens,
-        total_cost_usd,
-    ) in row_data
-    {
-
-        let day = match cc_switch_epoch_day(&created_at) {
-            Some(d) => d,
-            None => continue,
-        };
-        let input = sqlite_value_as_f64(&input_tokens) as i64;
-        let output = sqlite_value_as_f64(&output_tokens) as i64;
-        let cache_read = sqlite_value_as_f64(&cache_read_tokens) as i64;
-        let cache_creation = sqlite_value_as_f64(&cache_creation_tokens) as i64;
-        let total = input + output + cache_read + cache_creation;
-        if total <= 0 {
-            continue;
-        }
-
-        let cost_usd = {
-            let raw = sqlite_value_as_f64(&total_cost_usd);
-            if raw.is_finite() && raw > 0.0 {
-                Some(raw)
-            } else {
-                None
-            }
-        };
-
-        records.push(UsageRecord {
-            date: day,
-            tool: cc_switch_tool_name(&sqlite_value_as_string(&app_type)),
-            model: model_key(&sqlite_value_as_string(&display_model)),
-            usage: TokenUsageCounts {
-                input_tokens: input,
-                output_tokens: output,
-                cache_read_input_tokens: cache_read,
-                cache_creation_input_tokens: cache_creation,
-                reasoning_output_tokens: 0,
-                total_tokens: total,
-            },
-            cost_usd,
-        });
-    }
-
-    let status = if records.is_empty() { "missing_proxy_rows" } else { "ok" };
-    let count = records.len();
-    (
-        records,
-        SourceInfo {
-            status: Some(status.to_string()),
-            files: Some(1),
-            records: Some(count as i64),
-        },
-    )
-}
-
-// ---------------------------------------------------------------------------
 // Aggregation
 // ---------------------------------------------------------------------------
 
