@@ -91,6 +91,29 @@ pub struct ModelUsage {
     pub percent: Option<f64>,
 }
 
+/// One app_type bucket within the CC Switch proxy summary (e.g. codex/claude).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CCSwitchAppBreakdown {
+    pub app_type: String,
+    pub requests: i64,
+    pub tokens: i64,
+    pub cost: f64,
+}
+
+/// Standalone summary of CC Switch proxy activity, shown separately on the UI
+/// as a REFERENCE panel — it is NOT folded into `totals`/`daily`/`tools`,
+/// because the same traffic is already captured by the native Codex/Claude
+/// logs when the user routes traffic through CC Switch. Adding it would
+/// double-count. Surfacing it separately lets users cross-check the proxy's
+/// own numbers (which carry a direct USD cost, bypassing the pricing table).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CCSwitchSummary {
+    pub available: bool,
+    pub total_tokens: i64,
+    pub total_cost: f64,
+    pub by_app: Vec<CCSwitchAppBreakdown>,
+}
+
 /// The full aggregated snapshot, written to `data/usage.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageSnapshot {
@@ -103,6 +126,10 @@ pub struct UsageSnapshot {
     pub tools: Vec<ToolUsage>,
     pub models: Vec<ModelUsage>,
     pub sources: std::collections::BTreeMap<String, SourceInfo>,
+    /// CC Switch proxy activity, surfaced as a reference panel (NOT included
+    /// in totals/daily/tools — see CCSwitchSummary docs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ccswitch: Option<CCSwitchSummary>,
 }
 
 impl UsageSnapshot {
@@ -115,6 +142,7 @@ impl UsageSnapshot {
             tools: vec![],
             models: vec![],
             sources: std::collections::BTreeMap::new(),
+            ccswitch: None,
         }
     }
 }
