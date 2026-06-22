@@ -89,6 +89,33 @@ fn set_close_to_tray(enabled: bool) -> Result<TokenStepSettings, String> {
     Ok(settings::load())
 }
 
+/// Toggle launch-on-startup by writing/removing the HKCU Run key. Uses the
+/// current executable path so the entry stays correct after updates.
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<TokenStepSettings, String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let run = hkcu
+        .open_subkey_with_flags(
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            KEY_SET_VALUE | KEY_READ,
+        )
+        .map_err(|e| e.to_string())?;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let value = format!("\"{}\"", exe.display());
+    if enabled {
+        run.set_value("TokenStep", &value).map_err(|e| e.to_string())?;
+    } else {
+        // Ignore "value not found" when removing — already off is fine.
+        let _ = run.delete_value("TokenStep");
+    }
+    let mut s = settings::load();
+    s.autostart = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
 #[tauri::command]
 fn set_theme(theme: String) -> Result<TokenStepSettings, String> {
     let mut s = settings::load();
@@ -637,6 +664,7 @@ pub fn run() {
             set_daily_goal,
             set_refresh_interval,
             set_close_to_tray,
+            set_autostart,
             set_theme,
             set_language,
             set_show_codex_quota,
