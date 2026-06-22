@@ -1,4 +1,4 @@
-# TokenStep
+# TokenStep for Windows
 
 **像记录步数一样，记录你每天的 AI Token 消耗。**
 
@@ -6,7 +6,7 @@ AI 时代，每个人都在和 Agent 一起工作。
 
 但我们很少知道：今天到底用了多少 AI？有没有比昨天更进一步？
 
-TokenStep 是一个 macOS 菜单栏 App，用来本地统计你在 Codex、Claude Code 等 AI 编程工具里的 Token 消耗，并把它变成一个像 Apple 健身圆环一样的每日目标。
+TokenStep 是一个 Windows 桌面应用，用来本地统计你在 Codex、Claude Code 等 AI 编程工具里的 Token 消耗，并把它变成一个像健身圆环一样的每日目标。
 
 默认目标是：**每天 1 亿 Token**。
 
@@ -14,21 +14,21 @@ TokenStep 是一个 macOS 菜单栏 App，用来本地统计你在 Codex、Claud
 
 它不是为了严肃比较，而是让你直观看到：今天你和 AI 一起走了多远。
 
-<img width="412" height="627" alt="image" src="https://github.com/user-attachments/assets/c4196b33-6a60-42a4-b66a-6a4d516b459a" />
-<img width="560" height="554" alt="image" src="https://github.com/user-attachments/assets/dbb7d00c-858e-4897-a04c-43ca45366d30" />
-
+> 本版本是 macOS 版 TokenStep 的 Windows 移植版，原作者为 [@黄叔](https://github.com/Backtthefuture)（他已在 macOS 版 README 中推荐了本 Windows 移植版）。MIT 许可证。原项目地址：https://github.com/Backtthefuture/TokenStep
 
 ## 立即下载
 
-下载最新版 DMG，打开后把 `TokenStep.app` 拖进「应用程序」即可使用：
+下载最新版安装包，双击运行即可：
 
-[下载 TokenStep 最新版](https://github.com/Backtthefuture/TokenStep/releases/latest/download/TokenStep-0.1.21.dmg)
+[下载 TokenStep for Windows 最新版](https://github.com/canyexuanfan/TokenStep-Windows/releases/latest)
 
 也可以从 Release 页面查看所有版本：
 
-[GitHub Releases](https://github.com/Backtthefuture/TokenStep/releases/latest)
+[GitHub Releases](https://github.com/canyexuanfan/TokenStep-Windows/releases)
 
-TokenStep 已使用 Developer ID 签名并通过 Apple 公证。首次打开时，macOS 可能会出现标准确认弹窗，这是正常现象。
+安装包已使用自签名证书签名。首次运行时 Windows SmartScreen 可能会提示「已保护你的电脑」，点击「更多信息 → 仍要运行」即可，这是自签名证书的正常现象。
+
+如果你更偏好免安装版，也可以直接下载 `TokenStep_vX.X.X.exe`，双击运行，无需安装。
 
 ## TokenStep 适合谁？
 
@@ -45,26 +45,28 @@ TokenStep 适合这些人：
 
 ## 它能做什么？
 
-- 菜单栏实时显示今日 Token 消耗和进度圆环。
-- 点击菜单栏打开轻量浮层。
-- 原生 macOS 仪表盘：今日、历史、统计、模型与工具、隐私。
+- 系统托盘常驻，后台运行，实时统计今日 Token 消耗和进度圆环。
+- 点击托盘图标打开主窗口。
+- 仪表盘：今日、历史、统计、隐私、设置。
 - 超过 1 亿后自动进入第 2 圈、第 3 圈。
-- 最近 30 天 Token 使用趋势。
+- 最近 30 天 Token 使用趋势（按客户端分色堆叠柱图）。
 - 按客户端、按模型查看用量统计。
 - 粗略估算 Token 消耗金额。
 - 每日目标可设置，默认每天一个亿。
 - 自动刷新，默认 1 分钟。
-- 开机启动，可在设置里关闭。
-- 多种主题色，菜单栏、圆环、活动墙和按钮会一起变化。
+- 多种主题色，圆环、活动墙和按钮会一起变化。
 - 一键截图分享当前页面。
 - Codex 5 小时 / 7 天剩余额度可在设置中打开，默认关闭。
-- 自动检查更新，发现新版后可下载已签名公证的 DMG。
-- 本地数据存放在 `~/Library/Application Support/TokenStep`。
+- Claude Code 配额卡片（需已登录 Claude Code）。
+- 三语界面：简体中文 / English / 繁體中文，切换立即生效。
+- 自动检查更新，发现新版后可一键安装。
+- 本地数据存放在 `%APPDATA%\TokenStep`，不上传任何内容。
 
 ## 当前支持
 
-- Codex：优先读取 Codex 本地 SQLite token 汇总，必要时回退 JSONL。
-- Claude Code：读取 `~/.claude/projects/**/*.jsonl` 里的 usage 元数据。
+- **Codex**：优先读取 Codex 本地 SQLite token 汇总，必要时回退 JSONL。
+- **Claude Code**：读取 `~/.claude/projects` 下的 JSONL 转录日志。
+- **CC Switch**：实验性支持，读取 `~/.cc-switch/cc-switch.db` 的代理请求日志（经过 CC Switch 代理的 Codex/Claude/Gemini 流量）。
 
 更多 AI 编程工具支持会逐步加入。
 
@@ -76,19 +78,9 @@ TokenStep 默认只做本地统计。
 
 它不会上传你的代码、prompt、对话正文或项目文件。
 
+唯一的外部网络请求是「检查更新」（访问 GitHub Releases）和「Token 榜单」（可选功能，访问 scys.com），均可关闭。
+
 「消耗金额」只是本地粗略估算，不等于真实账单。
-
-完整说明见 [docs/PRIVACY.md](docs/PRIVACY.md)。
-
-## 安装方式
-
-1. 下载 [TokenStep 最新版 DMG](https://github.com/Backtthefuture/TokenStep/releases/latest/download/TokenStep-0.1.21.dmg)。
-2. 打开 DMG。
-3. 把 `TokenStep.app` 拖到「应用程序」。
-4. 启动 TokenStep。
-5. 在 macOS 右上角菜单栏点击 TokenStep 图标。
-
-更详细的安装说明见 [docs/INSTALL.md](docs/INSTALL.md)。
 
 ## 为什么做 TokenStep？
 
@@ -102,68 +94,38 @@ TokenStep 想把这件事变得可见：
 
 **今天你不是用了多少工具，而是和 AI 一起走了多少步。**
 
-## 下载统计
-
-查看 GitHub Release 下载数：
-
-```bash
-python3 script/github_download_stats.py
-```
-
-统计方案见 [docs/ANALYTICS.md](docs/ANALYTICS.md)。
-
-## 本地构建
+## 从源码构建
 
 要求：
 
-- macOS 14+
-- Xcode Command Line Tools
+- Windows 10/11
+- [Rust](https://rustup.rs/)（stable，x86_64-pc-windows-msvc）
+- [Node.js](https://nodejs.org/)（用于 jsdom 测试，可选）
 
-构建并运行：
-
-```bash
-./script/build_and_run.sh --verify
-```
-
-只构建不启动：
+构建并产出 NSIS 安装包：
 
 ```bash
-./script/build_swiftui_and_run.sh --no-launch
+cd windows/src-tauri
+cargo tauri build
 ```
 
-生成的 App 位于：
+产物生成在 `windows/src-tauri/target/release/bundle/nsis/`。
 
-```text
-TokenStepSwift/dist/TokenStep.app
-```
+签名与部署流程见 `windows/scripts/build-release.bat`（含 NSIS 静默覆盖安装的 patch，升级时不弹卸载确认）。
 
-## 发布打包
+## 跨平台移植说明
 
-Developer ID 签名：
+本 Windows 版与 macOS 版在核心数据采集与统计逻辑上保持一致，但以下 macOS 专属功能不在 Windows 版范围内：
 
-```bash
-TOKENSTEP_VERSION=0.1.21 \
-CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-./script/package_release.sh
-```
+- Token Island（刘海浮层）、菜单栏浮层
+- Apple 公证 / DMG 打包
+- iCloud / 系统集成特性
 
-签名 + Apple 公证：
+Windows 版使用系统托盘 + 主窗口的交互模式，对应 macOS 的菜单栏 + 浮层。
 
-```bash
-TOKENSTEP_VERSION=0.1.21 \
-CODE_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
-TOKENSTEP_NOTARY_PROFILE="tokenstep-notary" \
-./script/package_release.sh --notarize
-```
+## 致谢
 
-产物会生成到：
-
-```text
-release/TokenStep-<version>.zip
-release/TokenStep-<version>.dmg
-```
-
-维护者说明见 [docs/RELEASE.md](docs/RELEASE.md)。
+本项目基于 [@黄叔](https://github.com/Backtthefuture) 的 [macOS 版 TokenStep](https://github.com/Backtthefuture/TokenStep) 移植，感谢原作者开源与支持。MIT 许可证。
 
 ## 开源协议
 
