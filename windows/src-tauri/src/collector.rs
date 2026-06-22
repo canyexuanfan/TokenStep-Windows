@@ -10,12 +10,12 @@
 //! on Windows.
 
 use crate::models::{
-    DailyUsage, ModelUsage, SourceInfo, TokenUsageCounts, ToolUsage, UsageSnapshot,
-    UsageTotals,
+    DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, RhythmTag, SourceInfo,
+    TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
 };
 use crate::paths;
 use crate::pricing;
-use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Timelike, Utc};
 use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -32,6 +32,10 @@ fn local_tz() -> FixedOffset {
 #[derive(Debug, Clone)]
 struct UsageRecord {
     date: String,
+    /// Original ISO timestamp (when available). Used to bucket tokens by hour
+    /// for the rhythm feature. `None` for sources without sub-day resolution
+    /// (e.g. Codex SQLite `threads` table) — those records skip rhythm.
+    timestamp: Option<String>,
     tool: String,
     model: String,
     usage: TokenUsageCounts,
@@ -171,6 +175,7 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
         usage.total_tokens = tokens as i64;
         records.push(UsageRecord {
             date: day,
+            timestamp: None, // Codex SQLite threads table has no sub-day resolution
             tool: "Codex".to_string(),
             model: model_key(&sqlite_value_as_string(&model)),
             usage,
@@ -273,6 +278,7 @@ fn collect_codex_jsonl(
             }
             file_records.push(UsageRecord {
                 date: day,
+                timestamp: Some(timestamp.to_string()),
                 tool: "Codex".to_string(),
                 model: current_model.clone(),
                 usage,
@@ -434,6 +440,7 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
             .values()
             .map(|c| UsageRecord {
                 date: c.day.clone(),
+                timestamp: Some(c.timestamp.clone()),
                 tool: "Claude Code".to_string(),
                 model: c.model.clone(),
                 usage: c.usage.clone(),
@@ -611,6 +618,7 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
         };
         records.push(UsageRecord {
             date: day,
+            timestamp: iso_from_epoch(&created_at),
             tool: cc_switch_tool_name(&sqlite_value_as_string(&app_type)),
             model: model_key(&sqlite_value_as_string(&display_model)),
             usage: TokenUsageCounts {
@@ -646,6 +654,7 @@ fn aggregate(
     sources: BTreeMap<String, SourceInfo>,
 ) -> UsageSnapshot {
     let mut daily: BTreeMap<String, DailyAccumulator> = BTreeMap::new();
+    let mut rhythms: BTreeMap<String, RhythmAccumulator> = BTreeMap::new();
     let mut tools: BTreeMap<String, UsageAccumulator> = BTreeMap::new();
     let mut models: BTreeMap<(String, String), UsageAccumulator> = BTreeMap::new();
 
@@ -674,6 +683,21 @@ fn aggregate(
         daily_entry.total_tokens += record.usage.total_tokens;
         daily_entry.cost += cost;
 
+        // Rhythm: bucket this record's tokens into its hour-of-day (0-23),
+        // but only when we have a sub-day timestamp. Mirrors upstream
+        // `RhythmAccumulator.add(tokens:hour:)`.
+        if let Some(ref ts) = record.timestamp {
+            if let Some(hour) = hour_from_iso(ts) {
+                rhythms
+                    .entry(record.date.clone())
+                    .or_insert_with(|| RhythmAccumulator {
+                        date: record.date.clone(),
+                        ..Default::default()
+                    })
+                    .add(record.usage.total_tokens, hour);
+            }
+        }
+
         let tool_entry = tools.entry(record.tool.clone()).or_default();
         tool_entry.usage.add(&record.usage);
         tool_entry.cost += cost;
@@ -699,6 +723,13 @@ fn aggregate(
         })
         .collect();
     daily_rows.sort_by(|a, b| a.date.cmp(&b.date));
+
+    let mut rhythm_rows: Vec<DailyRhythm> = rhythms
+        .into_values()
+        .map(|r| r.into_daily_rhythm())
+        .filter(|r| r.total_tokens > 0)
+        .collect();
+    rhythm_rows.sort_by(|a, b| a.date.cmp(&b.date));
 
     let mut tool_rows: Vec<ToolUsage> = tools
         .into_iter()
@@ -732,6 +763,7 @@ fn aggregate(
             active_days,
         },
         daily: daily_rows,
+        rhythms: rhythm_rows,
         tools: tool_rows,
         models: model_rows,
         sources,
@@ -753,6 +785,234 @@ struct DailyAccumulator {
 struct UsageAccumulator {
     usage: TokenUsageCounts,
     cost: f64,
+}
+
+// ---------------------------------------------------------------------------
+// Rhythm: per-day hourly token buckets + classification.
+// Port of upstream `RhythmAccumulator` + `classify` + `companionTag`.
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct RhythmAccumulator {
+    date: String,
+    hourly_tokens: [i64; 24],
+}
+
+impl RhythmAccumulator {
+    fn add(&mut self, tokens: i64, hour: u32) {
+        if tokens > 0 && (hour as usize) < 24 {
+            self.hourly_tokens[hour as usize] += tokens;
+        }
+    }
+
+    /// Fold the hourly buckets into a `DailyRhythm`, computing peak/active-hour
+    /// metrics and the classification tag. Mirrors upstream `dailyRhythm`.
+    fn into_daily_rhythm(self) -> DailyRhythm {
+        let buckets: Vec<HourlyTokenBucket> = self
+            .hourly_tokens
+            .iter()
+            .enumerate()
+            .map(|(hour, &tokens)| HourlyTokenBucket {
+                hour: hour as i64,
+                tokens,
+            })
+            .collect();
+
+        let total_tokens: i64 = self.hourly_tokens.iter().sum();
+        let (peak_hour, peak_tokens) = self
+            .hourly_tokens
+            .iter()
+            .enumerate()
+            .max_by(|(ha, ta), (hb, tb)| {
+                if ta == tb {
+                    ha.cmp(hb).reverse() // earlier hour wins ties (matches Swift max behavior)
+                } else {
+                    ta.cmp(tb)
+                }
+            })
+            .filter(|(_, &t)| t > 0)
+            .map(|(h, &t)| (h as i64, t))
+            .unwrap_or((-1, 0));
+
+        let active_threshold = Self::significant_threshold(total_tokens, peak_tokens);
+        let significant: Vec<i64> = self
+            .hourly_tokens
+            .iter()
+            .map(|&t| if t >= active_threshold { t } else { 0 })
+            .collect();
+        let active_hours = significant.iter().filter(|&&t| t > 0).count() as i64;
+        let first_active_hour = significant.iter().position(|&t| t > 0).map(|h| h as i64);
+        let last_active_hour = significant.iter().rposition(|&t| t > 0).map(|h| h as i64);
+
+        let primary_tag = Self::classify(
+            &self.hourly_tokens,
+            &significant,
+            total_tokens,
+            if peak_hour >= 0 { Some(peak_hour) } else { None },
+            peak_tokens,
+            active_hours,
+            first_active_hour,
+        );
+
+        DailyRhythm {
+            date: self.date,
+            buckets,
+            total_tokens,
+            peak_hour: if peak_hour >= 0 { Some(peak_hour) } else { None },
+            peak_tokens,
+            active_hours,
+            first_active_hour,
+            last_active_hour,
+            primary_tag,
+            companion_tag: Self::companion_tag(primary_tag),
+        }
+    }
+
+    /// Threshold below which an hour's tokens are considered noise. Mirrors
+    /// upstream `significantTokenThreshold`.
+    fn significant_threshold(total_tokens: i64, peak_tokens: i64) -> i64 {
+        let baseline = peak_tokens.max(total_tokens / 24);
+        let scaled = ((baseline as f64) * 0.12).ceil() as i64;
+        scaled.max(4)
+    }
+
+    /// Classify a day's usage into one of 10 rhythm tags. Port of upstream
+    /// `classify` — pure numeric thresholds, no platform deps.
+    #[allow(clippy::too_many_arguments)]
+    fn classify(
+        _hourly: &[i64; 24],
+        significant: &[i64],
+        total_tokens: i64,
+        peak_hour: Option<i64>,
+        peak_tokens: i64,
+        active_hours: i64,
+        first_active_hour: Option<i64>,
+    ) -> RhythmTag {
+        if total_tokens <= 0 {
+            return RhythmTag::QuietDay;
+        }
+        let peak_share = share(peak_tokens, total_tokens);
+        if is_double_peak(significant, peak_tokens) {
+            return RhythmTag::DoublePeak;
+        }
+        if peak_share >= 0.50 {
+            return RhythmTag::OneShot;
+        }
+        let night_share = share(tokens_in_hours(&[21, 22, 23, 0, 1, 2], significant), total_tokens);
+        if night_share >= 0.35 || (peak_hour.map(|h| h >= 21 || h <= 2).unwrap_or(false) && night_share >= 0.25) {
+            return RhythmTag::NightAgent;
+        }
+        let evening_share = share(tokens_in_hours(&[19, 20], significant), total_tokens);
+        if peak_hour.map(|h| (19..=20).contains(&h)).unwrap_or(false) || evening_share >= 0.30 {
+            return RhythmTag::EveningSprint;
+        }
+        let afternoon_share = share(tokens_in_hours_range(14, 18, significant), total_tokens);
+        if afternoon_share >= 0.35
+            || peak_hour.map(|h| (14..=18).contains(&h)).unwrap_or(false) && afternoon_share >= 0.25
+        {
+            return RhythmTag::AfternoonBurst;
+        }
+        let early_share = share(tokens_in_hours_range(5, 9, significant), total_tokens);
+        if first_active_hour.map(|h| h <= 8).unwrap_or(false) && early_share >= 0.25 {
+            return RhythmTag::EarlyStarter;
+        }
+        let morning_share = share(tokens_in_hours_range(8, 12, significant), total_tokens);
+        if morning_share >= 0.35
+            || peak_hour.map(|h| (8..=12).contains(&h)).unwrap_or(false) && morning_share >= 0.25
+        {
+            return RhythmTag::MorningPlanner;
+        }
+        if active_hours >= 6 && peak_share < 0.35 {
+            return RhythmTag::Fragmented;
+        }
+        if active_hours >= 4 {
+            return RhythmTag::SteadyCruise;
+        }
+        RhythmTag::QuietDay
+    }
+
+    /// The "opposite" rhythm, used as a companion suggestion. Port of
+    /// upstream `companionTag`.
+    fn companion_tag(tag: RhythmTag) -> RhythmTag {
+        match tag {
+            RhythmTag::EarlyStarter => RhythmTag::NightAgent,
+            RhythmTag::MorningPlanner => RhythmTag::AfternoonBurst,
+            RhythmTag::AfternoonBurst => RhythmTag::MorningPlanner,
+            RhythmTag::EveningSprint => RhythmTag::SteadyCruise,
+            RhythmTag::NightAgent => RhythmTag::EarlyStarter,
+            RhythmTag::DoublePeak => RhythmTag::SteadyCruise,
+            RhythmTag::Fragmented => RhythmTag::OneShot,
+            RhythmTag::OneShot => RhythmTag::Fragmented,
+            RhythmTag::SteadyCruise => RhythmTag::DoublePeak,
+            RhythmTag::QuietDay => RhythmTag::MorningPlanner,
+        }
+    }
+}
+
+/// Whether the day has two distinct peaks (port of `isDoublePeak`).
+fn is_double_peak(significant: &[i64], peak_tokens: i64) -> bool {
+    if peak_tokens <= 0 {
+        return false;
+    }
+    // Count hours whose tokens are at least 60% of the peak, excluding
+    // adjacent hours (so a single fat peak isn't double-counted).
+    let threshold = ((peak_tokens as f64) * 0.60).ceil() as i64;
+    let mut peaks = 0;
+    let mut prev_peak = false;
+    for &t in significant {
+        let is_peak = t >= threshold;
+        if is_peak && !prev_peak {
+            peaks += 1;
+        }
+        prev_peak = is_peak;
+    }
+    peaks >= 2
+}
+
+/// Sum tokens across a set of specific hours (port of `tokens(in:)`).
+fn tokens_in_hours(hours: &[i32], significant: &[i64]) -> i64 {
+    hours
+        .iter()
+        .filter_map(|&h| significant.get(h as usize))
+        .sum()
+}
+
+/// Sum tokens across an inclusive range of hours.
+fn tokens_in_hours_range(start: i32, end: i32, significant: &[i64]) -> i64 {
+    (start..=end).filter_map(|h| significant.get(h as usize)).sum()
+}
+
+/// Ratio of `part` to `whole`, as an f64 in [0,1]. Guards divide-by-zero.
+fn share(part: i64, whole: i64) -> f64 {
+    if whole <= 0 {
+        0.0
+    } else {
+        part as f64 / whole as f64
+    }
+}
+
+/// Extract the local hour-of-day (0-23) from an ISO timestamp. Port of
+/// upstream `hour(fromISO:)`. Uses the same local-tz conversion as
+/// `day_string_from_iso`.
+fn hour_from_iso(ts: &str) -> Option<u32> {
+    parse_iso(ts).map(|dt| dt.hour())
+}
+
+/// Convert a CC Switch `created_at` epoch value (seconds OR milliseconds) into
+/// an ISO-8601 string in local time, so rhythm can bucket it by hour.
+fn iso_from_epoch(v: &rusqlite::types::Value) -> Option<String> {
+    use rusqlite::types::Value;
+    let raw: f64 = match v {
+        Value::Integer(i) => *i as f64,
+        Value::Real(r) => *r,
+        Value::Text(s) => s.parse().ok()?,
+        Value::Null => return None,
+        Value::Blob(b) => String::from_utf8_lossy(b).parse().ok()?,
+    };
+    let secs: i64 = if raw > 1e12 { (raw / 1000.0) as i64 } else { raw as i64 };
+    let tz = local_tz();
+    let dt = tz.timestamp_opt(secs, 0).single()?;
+    Some(dt.format("%Y-%m-%dT%H:%M:%S%:z").to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -926,6 +1186,8 @@ struct CachedUsageFile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedRecord {
     date: String,
+    #[serde(default)]
+    timestamp: Option<String>,
     tool: String,
     model: String,
     usage: TokenUsageCounts,
@@ -937,6 +1199,7 @@ impl From<&UsageRecord> for CachedRecord {
     fn from(r: &UsageRecord) -> Self {
         CachedRecord {
             date: r.date.clone(),
+            timestamp: r.timestamp.clone(),
             tool: r.tool.clone(),
             model: r.model.clone(),
             usage: r.usage.clone(),
@@ -954,7 +1217,7 @@ struct CollectorCache {
 impl Default for CollectorCache {
     fn default() -> Self {
         CollectorCache {
-            version: 3,
+            version: 4,
             files: BTreeMap::new(),
         }
     }
@@ -966,7 +1229,7 @@ fn load_cache() -> CollectorCache {
     };
     match serde_json::from_str::<CollectorCache>(&text) {
         // Bump on schema change; old caches are rebuilt from source.
-        Ok(c) if c.version == 3 => c,
+        Ok(c) if c.version == 4 => c,
         _ => CollectorCache::default(),
     }
 }
@@ -1015,6 +1278,7 @@ fn cached_records(
             .iter()
             .map(|c| UsageRecord {
                 date: c.date.clone(),
+                timestamp: c.timestamp.clone(),
                 tool: c.tool.clone(),
                 model: c.model.clone(),
                 usage: c.usage.clone(),

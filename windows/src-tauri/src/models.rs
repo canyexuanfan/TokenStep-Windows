@@ -91,6 +91,61 @@ pub struct ModelUsage {
     pub percent: Option<f64>,
 }
 
+/// A single hour bucket (0-23) with its token total — port of upstream
+/// `HourlyTokenBucket`. Drives the 24h rhythm chart.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HourlyTokenBucket {
+    pub hour: i64,
+    pub tokens: i64,
+}
+
+/// The rhythm classification tag assigned to a day based on when tokens were
+/// consumed. Port of upstream `RhythmTag` (snake_case raw values).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RhythmTag {
+    EarlyStarter,
+    MorningPlanner,
+    AfternoonBurst,
+    EveningSprint,
+    NightAgent,
+    DoublePeak,
+    Fragmented,
+    OneShot,
+    SteadyCruise,
+    QuietDay,
+}
+
+impl Default for RhythmTag {
+    fn default() -> Self {
+        RhythmTag::QuietDay
+    }
+}
+
+/// A day's rhythm profile: hourly token buckets + derived metrics + a
+/// classification tag. Port of upstream `DailyRhythm`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DailyRhythm {
+    pub date: String,
+    pub buckets: Vec<HourlyTokenBucket>,
+    #[serde(rename = "total_tokens")]
+    pub total_tokens: i64,
+    #[serde(rename = "peak_hour", default, skip_serializing_if = "Option::is_none")]
+    pub peak_hour: Option<i64>,
+    #[serde(rename = "peak_tokens")]
+    pub peak_tokens: i64,
+    #[serde(rename = "active_hours")]
+    pub active_hours: i64,
+    #[serde(rename = "first_active_hour", default, skip_serializing_if = "Option::is_none")]
+    pub first_active_hour: Option<i64>,
+    #[serde(rename = "last_active_hour", default, skip_serializing_if = "Option::is_none")]
+    pub last_active_hour: Option<i64>,
+    #[serde(rename = "primary_tag")]
+    pub primary_tag: RhythmTag,
+    #[serde(rename = "companion_tag")]
+    pub companion_tag: RhythmTag,
+}
+
 /// The full aggregated snapshot, written to `data/usage.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageSnapshot {
@@ -100,6 +155,8 @@ pub struct UsageSnapshot {
     pub timezone: Option<String>,
     pub totals: UsageTotals,
     pub daily: Vec<DailyUsage>,
+    #[serde(default)]
+    pub rhythms: Vec<DailyRhythm>,
     pub tools: Vec<ToolUsage>,
     pub models: Vec<ModelUsage>,
     pub sources: std::collections::BTreeMap<String, SourceInfo>,
@@ -112,6 +169,7 @@ impl UsageSnapshot {
             timezone: Some("Asia/Shanghai".to_string()),
             totals: UsageTotals::default(),
             daily: vec![],
+            rhythms: vec![],
             tools: vec![],
             models: vec![],
             sources: std::collections::BTreeMap::new(),
