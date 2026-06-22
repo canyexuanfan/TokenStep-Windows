@@ -457,6 +457,76 @@ function tokenToolLegendHTML(rows) {
   );
 }
 
+// ---- Rhythm (24h hourly bars) ----
+// Port of the macOS rhythm chart: 24 vertical bars (one per hour 0-23),
+// peak hour highlighted. Reuses the .activity/.bar CSS used by the 30-day
+// stacked chart (24 bars fit the flex:1 layout cleanly).
+function hourlyBarsHTML(rhythm) {
+  if (!rhythm || !rhythm.buckets || !rhythm.buckets.length)
+    return '<div class="empty">' + t("暂无节奏数据") + "</div>";
+  var max = Math.max.apply(
+    null,
+    rhythm.buckets.map(function (b) { return b.tokens || 0; }).concat([1])
+  );
+  var peak = rhythm.peak_hour;
+  return (
+    '<div class="activity" style="margin-top:14px">' +
+    rhythm.buckets
+      .map(function (b) {
+        var tokens = b.tokens || 0;
+        var heightPct = tokens > 0 ? Math.max(4, (tokens / max) * 100) : 0;
+        if (tokens <= 0) {
+          return '<div class="bar" style="height:4px;background:transparent"></div>';
+        }
+        var isPeak = peak != null && b.hour === peak;
+        var color = isPeak ? "var(--green-dark)" : "var(--green)";
+        return (
+          '<div class="bar" style="height:' +
+          heightPct +
+          "%;background:" +
+          color +
+          '" title="' +
+          b.hour +
+          ":00 " +
+          formatTokens(tokens) +
+          '"></div>'
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+// Hour labels under the 24h chart (0 / 6 / 12 / 18 / 23).
+function hourlyAxisHTML() {
+  var marks = [0, 6, 12, 18, 23];
+  return (
+    '<div style="display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--muted);font-weight:600">' +
+    marks.map(function (h) { return "<span>" + h + ":00</span>"; }).join("") +
+    "</div>"
+  );
+}
+
+// Map a RhythmTag (snake_case from the backend) to its localized title key.
+// Keep in sync with i18n.js (each value here is an i18n key).
+var RHYTHM_TAG_TITLE = {
+  early_starter: "清晨启动型",
+  morning_planner: "上午规划型",
+  afternoon_burst: "下午爆发型",
+  evening_sprint: "晚间冲刺型",
+  night_agent: "夜间 Agent 型",
+  double_peak: "双峰推进型",
+  fragmented: "碎片推进型",
+  one_shot: "一鼓作气型",
+  steady_cruise: "稳步推进型",
+  quiet_day: "安静的一天",
+};
+
+function rhythmTagTitle(tag) {
+  var key = RHYTHM_TAG_TITLE[tag];
+  return key ? t(key) : tag;
+}
+
 // ---- Quota window card (shared by Codex + Claude quota) ----
 // Renders one 5h/7d utilization window. `prefix` disambiguates element ids.
 function quotaWindowHTML(label, pct, resetsAt, prefix) {
@@ -620,4 +690,7 @@ window.TS = {
   stackedActivityBarsHTML,
   tokenToolLegendHTML,
   quotaWindowHTML,
+  hourlyBarsHTML,
+  hourlyAxisHTML,
+  rhythmTagTitle,
 };

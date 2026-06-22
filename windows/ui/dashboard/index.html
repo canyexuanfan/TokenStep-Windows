@@ -292,6 +292,13 @@
           .map(function (k) { return { model: k, tokens: t.models[k] || 0, percent: t.total_tokens ? (100 * (t.models[k] || 0) / t.total_tokens) : 0 }; })
           .sort(function (a, b) { return b.tokens - a.tokens; })
           .slice(0, 5);
+        // ---- Rhythm card: today's 24h token distribution + rhythm tag ----
+        // Port of upstream macOS rhythm card. Shown only when today's rhythm
+        // exists (Codex JSONL / Claude / CC Switch records carry timestamps).
+        var todayRhythm = (snapshot.rhythms || []).filter(function (r) { return r.date === window.TS.todayKey(); })[0];
+        var rhythmCard = todayRhythm
+          ? '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 24 小时波动') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.rhythmTagTitle(todayRhythm.primary_tag) + '</div></div>' + (todayRhythm.peak_hour != null ? '<span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('峰值') + ' ' + todayRhythm.peak_hour + ':00</span>' : '') + '</div>' + window.TS.hourlyBarsHTML(todayRhythm) + window.TS.hourlyAxisHTML() + '</div>'
+          : '';
         var distCards = '<div class="dist-grid">' +
           '<div class="card">' + distributionInner(window.TS.t('今日客户端'), todayToolsArr) + '</div>' +
           '<div class="card">' + distributionInner(window.TS.t('今日模型'), todayModelsArr) + '</div>' +
@@ -312,7 +319,7 @@
           ? '<div class="card" id="tokenRankCard"><div class="card-title">' + window.TS.t('Token 榜单') + '</div><div id="tokenRankContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
           : '';
 
-        return hero + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + activityCard + distCards;
+        return hero + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + activityCard + rhythmCard + distCards;
       }
       function distributionInner(title, rows) {
         var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
