@@ -115,6 +115,15 @@ fn set_ask_before_downloading_updates(enabled: bool) -> Result<TokenStepSettings
     Ok(settings::load())
 }
 
+/// Toggle whether to only install verified/signed updates.
+#[tauri::command]
+fn set_require_verified_updates(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.require_verified_updates = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
 /// Toggle launch-on-startup by writing/removing the HKCU Run key. Uses the
 /// current executable path so the entry stays correct after updates.
 #[tauri::command]
@@ -694,6 +703,7 @@ pub fn run() {
             reset_settings,
             set_auto_update_enabled,
             set_ask_before_downloading_updates,
+            set_require_verified_updates,
             set_theme,
             set_language,
             set_show_codex_quota,
