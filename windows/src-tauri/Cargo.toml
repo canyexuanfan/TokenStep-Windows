@@ -1,6 +1,6 @@
 [package]
 name = "tokenstep"
-version = "0.1.2"
+version = "0.1.3"
 description = "Turn AI token usage into a daily step ring — Windows edition"
 authors = ["TokenStep"]
 edition = "2021"
