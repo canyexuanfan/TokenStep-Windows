@@ -14,7 +14,7 @@ TokenStep 是一个 Windows 桌面应用，用来本地统计你在 Codex、Clau
 
 它不是为了严肃比较，而是让你直观看到：今天你和 AI 一起走了多远。
 
-> 本版本是 macOS 版 TokenStep 的 Windows 移植版，原作者为 [@黄叔](https://github.com/Backtthefuture)（他已在 macOS 版 README 中推荐了本 Windows 移植版）。MIT 许可证。原项目地址：https://github.com/Backtthefuture/TokenStep
+> 本版本是 macOS 版 TokenStep 的 Windows 移植版，原作者为 [@黄叔](https://github.com/Backtthefuture)。MIT 许可证。原项目地址：https://github.com/Backtthefuture/TokenStep
 
 ## 立即下载
 
