@@ -50,12 +50,11 @@ pub fn codex_sqlite_candidates() -> Vec<PathBuf> {
 }
 
 /// Roots to scan for Codex JSONL rollout files.
+/// NOTE: upstream (f93acce) stopped scanning `archived_sessions` to avoid
+/// double-counting sessions that were already tallied before being archived.
 pub fn codex_jsonl_roots() -> Vec<PathBuf> {
     let home = home_dir();
-    vec![
-        home.join(".codex").join("sessions"),
-        home.join(".codex").join("archived_sessions"),
-    ]
+    vec![home.join(".codex").join("sessions")]
 }
 
 /// Root to scan for Claude Code project JSONL files.

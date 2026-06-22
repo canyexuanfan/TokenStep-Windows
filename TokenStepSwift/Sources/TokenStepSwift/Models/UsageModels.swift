@@ -99,6 +99,20 @@ struct SourceInfo: Codable {
     var status: String?
     var files: Int?
     var records: Int?
+    var rawRecords: Int?
+    var dedupedRecords: Int?
+    var skippedRecords: Int?
+    var strategy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case files
+        case records
+        case rawRecords = "raw_records"
+        case dedupedRecords = "deduped_records"
+        case skippedRecords = "skipped_records"
+        case strategy
+    }
 }
 
 struct CodexQuotaSnapshot: Equatable {
@@ -357,8 +371,8 @@ struct TokenStepSettings: Codable {
         autoUpdateEnabled: true,
         askBeforeDownloadingUpdates: true,
         requireVerifiedUpdates: true,
-        tokenIslandEnabled: true,
-        tokenIslandPlacement: .automatic,
+        tokenIslandEnabled: false,
+        tokenIslandPlacement: .menuBar,
         showCodexQuota: false,
         showTokenRank: false,
         tokenRankUserID: "",
