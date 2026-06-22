@@ -193,6 +193,12 @@ pub struct TokenStepSettings {
     /// Launch TokenStep on system startup (HKCU Run key).
     #[serde(rename = "autostart", default)]
     pub autostart: bool,
+    /// Whether to automatically check for updates on launch (default true).
+    #[serde(rename = "auto_update_enabled", default = "default_true")]
+    pub auto_update_enabled: bool,
+    /// Whether to ask before downloading an update (vs silent download).
+    #[serde(rename = "ask_before_downloading_updates", default = "default_true")]
+    pub ask_before_downloading_updates: bool,
     /// Color theme: green (default) / ocean / violet / amber / graphite.
     #[serde(rename = "theme", default = "default_theme")]
     pub theme: String,
@@ -242,6 +248,8 @@ impl Default for TokenStepSettings {
             history_days: 180,
             close_to_tray: true,
             autostart: false,
+            auto_update_enabled: true,
+            ask_before_downloading_updates: true,
             theme: "green".to_string(),
             screenshot_dir: String::new(),
             language: "zhHans".to_string(),

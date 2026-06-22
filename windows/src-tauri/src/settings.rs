@@ -53,6 +53,8 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         history_days: s.history_days.clamp(7, 365),
         close_to_tray: s.close_to_tray,
         autostart: s.autostart,
+        auto_update_enabled: s.auto_update_enabled,
+        ask_before_downloading_updates: s.ask_before_downloading_updates,
         theme,
         screenshot_dir: s.screenshot_dir,
         language: {
