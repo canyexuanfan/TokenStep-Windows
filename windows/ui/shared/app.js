@@ -827,7 +827,9 @@ function contributionWallHTML(rows, goal, weeks = 53) {
       if (day > today) { col += '<div class="wall-cell" style="background:transparent"></div>'; continue; }
       const key = day.getFullYear() + "-" + String(day.getMonth() + 1).padStart(2, "0") + "-" + String(day.getDate()).padStart(2, "0");
       const tokens = byDate[key] ? byDate[key].total_tokens : 0;
-      col += '<div class="wall-cell" style="background:' + contributionColor(tokens, goal) + '" title="' + key + " " + formatTokens(tokens) + '"></div>';
+      const isToday = key === todayKey();
+      const outline = isToday ? ";outline:2px solid var(--green);outline-offset:1px" : "";
+      col += '<div class="wall-cell" style="background:' + contributionColor(tokens, goal) + outline + '" title="' + key + " " + formatTokens(tokens) + (isToday ? " (" + t("今天") + ")" : "") + '"></div>';
     }
     cols += '<div class="wall-col">' + col + "</div>";
   }
@@ -840,7 +842,8 @@ function contributionWallHTML(rows, goal, weeks = 53) {
     '<span class="pill"><span class="pill-label">' + t("活跃") + '</span><span class="pill-value">' + activeCount + t(" 天") + "</span></span>" +
     '<span class="pill"><span class="pill-label">' + t("达标") + '</span><span class="pill-value">' + goalCount + t(" 天") + "</span></span>" +
     '<span class="pill"><span class="pill-label">' + t("最高") + '</span><span class="pill-value">' + formatTokens(maxTokens, true) + "</span></span>" +
-    "</div>"
+    "</div>" +
+    '<div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);font-weight:600"><span>' + t("少") + '</span>' + ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"].map(function (c) { return '<span style="width:12px;height:12px;border-radius:3px;background:' + c + '"></span>'; }).join("") + '<span>' + t("多") + '</span></div>'
   );
 }
 
@@ -973,37 +976,46 @@ function tokenToolLegendHTML(rows) {
 function hourlyBarsHTML(rhythm) {
   if (!rhythm || !rhythm.buckets || !rhythm.buckets.length)
     return '<div class="empty">' + t("暂无节奏数据") + "</div>";
-  var max = Math.max.apply(
-    null,
-    rhythm.buckets.map(function (b) { return b.tokens || 0; }).concat([1])
-  );
-  var peak = rhythm.peak_hour;
-  return (
-    '<div class="activity" style="margin-top:14px">' +
-    rhythm.buckets
-      .map(function (b) {
-        var tokens = b.tokens || 0;
-        var heightPct = tokens > 0 ? Math.max(4, (tokens / max) * 100) : 0;
-        if (tokens <= 0) {
-          return '<div class="bar" style="height:4px;background:transparent"></div>';
-        }
-        var isPeak = peak != null && b.hour === peak;
-        var color = isPeak ? "var(--green-dark)" : "var(--green)";
-        return (
-          '<div class="bar" style="height:' +
-          heightPct +
-          "%;background:" +
-          color +
-          '" title="' +
-          b.hour +
-          ":00 " +
-          formatTokens(tokens) +
-          '"></div>'
-        );
-      })
-      .join("") +
-    "</div>"
-  );
+  // Smooth wave version (port of macOS RhythmLineShape, SVG).
+  return hourlyWaveHTML(rhythm);
+}
+
+// SVG smooth wave for the 24h rhythm chart (port of macOS RhythmLineShape).
+// Renders a Catmull-Rom curve + gradient area fill + peak marker.
+function hourlyWaveHTML(rhythm) {
+  if (!rhythm || !rhythm.buckets || !rhythm.buckets.length)
+    return '<div class="empty">' + t("暂无节奏数据") + "</div>";
+  var buckets = rhythm.buckets;
+  var max = Math.max.apply(null, buckets.map(function (b) { return b.tokens || 0; }).concat([1]));
+  var W = 520, H = 100, pad = 6;
+  var stepX = (W - pad * 2) / 23;
+  var pts = buckets.map(function (b, i) {
+    var tokens = b.tokens || 0;
+    return { x: pad + i * stepX, y: H - pad - (tokens / max) * (H - pad * 2), v: tokens };
+  });
+  // Build the smooth path (Catmull-Rom → bezier segments).
+  var linePath = "M" + pts[0].x + "," + pts[0].y;
+  for (var i = 0; i < pts.length - 1; i++) {
+    var p0 = pts[i - 1] || pts[i];
+    var p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    var cp1x = p1.x + ((p2.x - p0.x) * 0.5) / 6;
+    var cp1y = p1.y + ((p2.y - p0.y) * 0.5) / 6;
+    var cp2x = p2.x - ((p3.x - p1.x) * 0.5) / 6;
+    var cp2y = p2.y - ((p3.y - p1.y) * 0.5) / 6;
+    linePath += " C" + cp1x + "," + cp1y + " " + cp2x + "," + cp2y + " " + p2.x + "," + p2.y;
+  }
+  var areaPath = linePath + " L" + pts[pts.length - 1].x + "," + (H - pad) + " L" + pts[0].x + "," + (H - pad) + " Z";
+  var peakCircle = "";
+  if (rhythm.peak_hour != null && pts[rhythm.peak_hour]) {
+    var pp = pts[rhythm.peak_hour];
+    peakCircle = '<circle cx="' + pp.x + '" cy="' + pp.y + '" r="4" fill="#fff" stroke="var(--green)" stroke-width="2"/>';
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:100px;margin-top:14px">' +
+    '<defs><linearGradient id="rhGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--green)" stop-opacity="0.35"/><stop offset="100%" stop-color="var(--green)" stop-opacity="0"/></linearGradient></defs>' +
+    '<path d="' + areaPath + '" fill="url(#rhGrad)"/>' +
+    '<path d="' + linePath + '" fill="none" stroke="var(--green)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+    peakCircle +
+    "</svg>";
 }
 
 // Hour labels under the 24h chart (0 / 6 / 12 / 18 / 23).

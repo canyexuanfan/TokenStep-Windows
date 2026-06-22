@@ -89,6 +89,32 @@ fn set_close_to_tray(enabled: bool) -> Result<TokenStepSettings, String> {
     Ok(settings::load())
 }
 
+/// Reset all settings to defaults (port of macOS "restore defaults" footer).
+#[tauri::command]
+fn reset_settings() -> Result<TokenStepSettings, String> {
+    let s = TokenStepSettings::default();
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+/// Toggle whether updates are checked automatically on launch.
+#[tauri::command]
+fn set_auto_update_enabled(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.auto_update_enabled = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+/// Toggle whether to prompt before downloading an update.
+#[tauri::command]
+fn set_ask_before_downloading_updates(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.ask_before_downloading_updates = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
 /// Toggle launch-on-startup by writing/removing the HKCU Run key. Uses the
 /// current executable path so the entry stays correct after updates.
 #[tauri::command]
@@ -665,6 +691,9 @@ pub fn run() {
             set_refresh_interval,
             set_close_to_tray,
             set_autostart,
+            reset_settings,
+            set_auto_update_enabled,
+            set_ask_before_downloading_updates,
             set_theme,
             set_language,
             set_show_codex_quota,
