@@ -527,11 +527,23 @@
         // Theme picker: 5 visual color swatches (port of ThemeSwatchButton).
         var themes = window.TS.THEMES;
         var currentTheme = settings.theme || 'green';
+        // Theme swatches match macOS ThemeSwatchButton: 38px gradient circle
+        // (accentSoft → accent → accentDark) over title+subtitle, in an 80px
+        // rounded-rect that shows a colored border when selected.
         var themeSwatchesHTML = Object.keys(themes).map(function (k) {
           var th = themes[k];
-          var swatch = th.ring1 || 'rgb(64,196,99)';
+          var v = th.vars;
           var selected = k === currentTheme;
-          return '<button class="theme-swatch" data-theme="' + k + '" title="' + window.TS.t(th.title) + '（' + window.TS.t(th.sub) + '）" style="width:56px;height:56px;border-radius:14px;border:2px solid ' + (selected ? 'var(--ink)' : 'transparent') + ';background:' + swatch + ';cursor:pointer;position:relative;flex-shrink:0">' + (selected ? '<span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:20px;font-weight:900">✓</span>' : '') + '</button>';
+          var grad = 'linear-gradient(135deg,' + (v['--mint'] || v['--green']) + ',' + v['--green'] + ',' + v['--green-dark'] + ')';
+          // color-mix for the per-theme alpha overlays/shadows.
+          var swatchShadow = '0 4px 8px ' + (selected ? 'color-mix(in srgb,' + v['--green-dark'] + ' 22%,transparent)' : 'color-mix(in srgb,' + v['--green-dark'] + ' 10%,transparent)');
+          return '<button class="theme-swatch" data-theme="' + k + '" title="' + window.TS.t(th.title) + '（' + window.TS.t(th.sub) + '）" style="flex:1;min-width:84px;height:80px;border-radius:16px;border:1.4px solid ' + (selected ? 'color-mix(in srgb,' + v['--green'] + ' 46%,transparent)' : 'rgba(0,0,0,0.045)') + ';background:' + (selected ? 'color-mix(in srgb,' + v['--mint'] + ' 22%,transparent)' : 'color-mix(in srgb,var(--track) 24%,transparent)') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px;font-family:inherit">' +
+            '<span style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:' + grad + ';box-shadow:' + swatchShadow + ';color:#fff;font-size:13px;font-weight:900">' + (selected ? '✓' : '') + '</span>' +
+            '<span style="display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.1">' +
+              '<span style="font-size:13px;font-weight:800;color:' + (selected ? 'var(--ink)' : 'var(--ink-soft)') + '">' + window.TS.t(th.title) + '</span>' +
+              '<span style="font-size:11px;font-weight:700;color:var(--muted)">' + window.TS.t(th.sub) + '</span>' +
+            '</span>' +
+          '</button>';
         }).join('');
         // Language selector.
         var curLang = settings.language || 'zhHans';
@@ -553,9 +565,11 @@
           : (latestUpdate ? '<div style="margin-top:10px;color:var(--muted)">' + window.TS.tf('当前为最新版本 v%@', latestUpdate.current_version) + '</div>' : '<div style="margin-top:10px;color:var(--muted)">' + window.TS.t('点击下方按钮从 GitHub 检查新版本') + '</div>');
         var autoUpdateChecked = settings.auto_update_enabled !== false ? ' checked' : '';
         var askDlChecked = settings.ask_before_downloading_updates !== false ? ' checked' : '';
-        html += '<div class="card"><div class="card-title">' + window.TS.t('更新') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('检查更新') + '</div><div class="setting-hint">' + window.TS.t('从 GitHub Releases 检查是否有新版本') + '</div></div><button class="btn" id="checkUpdateBtn">' + window.TS.t('立即检查') + '</button></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('自动检查更新') + '</div><div class="setting-hint">' + window.TS.t('启动时自动检查是否有新版本') + '</div></div><label class="switch"><input type="checkbox" id="autoUpdateToggle"' + autoUpdateChecked + '/><span class="slider"></span></label></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('下载前询问') + '</div><div class="setting-hint">' + window.TS.t('发现新版本时先询问再下载') + '</div></div><label class="switch"><input type="checkbox" id="askDlToggle"' + askDlChecked + '/><span class="slider"></span></label></div>' + updHint + '</div>';
+        var verifiedChecked = settings.require_verified_updates !== false ? ' checked' : '';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('更新') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('检查更新') + '</div><div class="setting-hint">' + window.TS.t('从 GitHub Releases 检查是否有新版本') + '</div></div><button class="btn" id="checkUpdateBtn">' + window.TS.t('立即检查') + '</button></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('自动检查更新') + '</div><div class="setting-hint">' + window.TS.t('启动时自动检查是否有新版本') + '</div></div><label class="switch"><input type="checkbox" id="autoUpdateToggle"' + autoUpdateChecked + '/><span class="slider"></span></label></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('下载前询问') + '</div><div class="setting-hint">' + window.TS.t('发现新版本时先询问再下载') + '</div></div><label class="switch"><input type="checkbox" id="askDlToggle"' + askDlChecked + '/><span class="slider"></span></label></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('仅安装签名版本') + '</div><div class="setting-hint">' + window.TS.t('只安装带有效签名的更新包') + '</div></div><label class="switch"><input type="checkbox" id="verifiedToggle"' + verifiedChecked + '/><span class="slider"></span></label></div>' + updHint + '</div>';
         html += '<div class="card"><div class="card-title">' + window.TS.t('截图') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('截图保存位置') + '</div><div class="setting-hint" id="screenshotDirHint">' + (settings.screenshot_dir ? settings.screenshot_dir : window.TS.t('默认：程序所在目录')) + '</div></div><button class="btn" id="pickScreenshotDirBtn">' + window.TS.t('选择文件夹') + '</button></div></div>';
         html += '<div class="card"><div class="card-title">' + window.TS.t('关于') + '</div><div class="card-row" style="justify-content:space-between"><b>TokenStep for Windows</b><span style="color:var(--muted)">' + (latestUpdate ? latestUpdate.current_version : '0.1.3') + '</span></div><div class="card-row" style="justify-content:space-between"><b>' + window.TS.t('作者') + '</b><span style="color:var(--muted)">' + window.TS.t('十七°') + '</span></div><div style="margin-top:14px;padding:14px;background:var(--canvas);border-radius:14px;font-size:14px;color:var(--muted)">' + window.TS.t('基于 macOS 版 TokenStep 移植（原作者黄叔），MIT 许可证。') + '</div></div>';
+        html += '<div class="card" style="border:1px solid color-mix(in srgb,var(--green) 25%,transparent)"><div style="display:flex;align-items:flex-start;gap:12px;padding:12px;background:color-mix(in srgb,var(--mint) 18%,transparent);border-radius:17px"><div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:color-mix(in srgb,var(--mint) 30%,transparent);display:flex;align-items:center;justify-content:center;font-size:18px">🛡</div><div style="flex:1"><div style="font-weight:800;color:var(--ink);font-size:15px">' + window.TS.t('本地隐私保护已开启') + '</div><div style="font-size:13px;font-weight:800;color:var(--green-dark);margin-top:3px">' + window.TS.t('代码与对话不会离开这台电脑') + '</div></div></div><div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">' + [window.TS.t('只统计 token 数量'), window.TS.t('不读取代码与对话'), window.TS.t('不默认上传数据')].map(function (txt) { return '<div style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700;color:var(--ink-soft)"><span style="color:var(--green);font-weight:900">✓</span>' + txt + '</div>'; }).join('') + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><span class="pill"><span class="pill-label">' + window.TS.t('本机') + '</span></span><span class="pill"><span class="pill-label">' + (snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : window.TS.t('等待同步')) + '</span></span><span class="pill"><span class="pill-label">' + window.TS.tf('%@ 个客户端', String(Object.keys(snapshot.sources || {}).length)) + '</span></span></div></div>';
         html += '<div style="margin-top:18px;text-align:center"><button class="btn" id="resetDefaultsBtn" style="color:var(--muted);font-weight:700">' + window.TS.t('恢复默认设置') + '</button></div>';
         return html;
       }
@@ -666,6 +680,8 @@
           if (autoUpd) autoUpd.addEventListener('change', function () { invoke('set_auto_update_enabled', { enabled: autoUpd.checked }).then(function (s) { settings = s; }); });
           var askDl = document.getElementById('askDlToggle');
           if (askDl) askDl.addEventListener('change', function () { invoke('set_ask_before_downloading_updates', { enabled: askDl.checked }).then(function (s) { settings = s; }); });
+          var verToggle = document.getElementById('verifiedToggle');
+          if (verToggle) verToggle.addEventListener('change', function () { invoke('set_require_verified_updates', { enabled: verToggle.checked }).then(function (s) { settings = s; }); });
           var checkUpdateBtn = document.getElementById('checkUpdateBtn');
           if (checkUpdateBtn) checkUpdateBtn.addEventListener('click', function () {
             checkUpdateBtn.disabled = true;

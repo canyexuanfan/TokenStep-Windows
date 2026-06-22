@@ -199,6 +199,9 @@ pub struct TokenStepSettings {
     /// Whether to ask before downloading an update (vs silent download).
     #[serde(rename = "ask_before_downloading_updates", default = "default_true")]
     pub ask_before_downloading_updates: bool,
+    /// Whether to only install releases from verified/signed sources.
+    #[serde(rename = "require_verified_updates", default = "default_true")]
+    pub require_verified_updates: bool,
     /// Color theme: green (default) / ocean / violet / amber / graphite.
     #[serde(rename = "theme", default = "default_theme")]
     pub theme: String,
@@ -250,6 +253,7 @@ impl Default for TokenStepSettings {
             autostart: false,
             auto_update_enabled: true,
             ask_before_downloading_updates: true,
+            require_verified_updates: true,
             theme: "green".to_string(),
             screenshot_dir: String::new(),
             language: "zhHans".to_string(),
