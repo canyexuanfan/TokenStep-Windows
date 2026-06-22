@@ -27,7 +27,7 @@ The default daily goal is **100 million tokens**. It shows:
 
 | Tool | Source (Windows) |
 |------|------------------|
-| **Codex** | `~/.codex/sessions/**/*.jsonl`, `~/.codex/archived_sessions/*.jsonl` (primary); the `threads` table in `~/.codex/state_5.sqlite` (fallback) |
+| **Codex** | `~/.codex/sessions/**/*.jsonl` (primary); the `threads` table in `~/.codex/state_5.sqlite` (fallback). Archived sessions are excluded to avoid double-counting. |
 | **Claude Code** | `~/.claude/projects/**/*.jsonl` |
 
 Counting rule: if the log provides `total_tokens` directly, use it; otherwise sum input / output / cache_creation / cache_read / reasoning. Note that **cache-read tokens are also counted**, so totals may read higher than some tools report. See [`windows/src-tauri/src/collector.rs`](windows/src-tauri/src/collector.rs).
