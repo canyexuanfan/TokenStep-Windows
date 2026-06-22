@@ -190,6 +190,9 @@ pub struct TokenStepSettings {
     /// instead of quitting the app. Set false to make the X button quit.
     #[serde(rename = "close_to_tray", default = "default_true")]
     pub close_to_tray: bool,
+    /// Launch TokenStep on system startup (HKCU Run key).
+    #[serde(rename = "autostart", default)]
+    pub autostart: bool,
     /// Color theme: green (default) / ocean / violet / amber / graphite.
     #[serde(rename = "theme", default = "default_theme")]
     pub theme: String,
@@ -238,6 +241,7 @@ impl Default for TokenStepSettings {
             refresh_interval_seconds: 60,
             history_days: 180,
             close_to_tray: true,
+            autostart: false,
             theme: "green".to_string(),
             screenshot_dir: String::new(),
             language: "zhHans".to_string(),

@@ -296,6 +296,515 @@ function renderDataCard(canvas, data) {
   return canvas;
 }
 
+// ---- Share cards (port of macOS ShareDailyCardView / ShareRhythmCardView) ----
+// 600×840 Canvas cards designed for social sharing. Content mirrors the macOS
+// version block-for-block (header → medal ring → comparison → breakdown
+// panels → trend → footer). The "十七°" signature is preserved.
+
+// Ensure roundRect exists (called from share card renderers too).
+function _ensureRoundRect(ctx) {
+  if (ctx.roundRect) return;
+  ctx.roundRect = function (x, y, w, h, r) {
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+    return this;
+  };
+}
+
+// Build a daily share card (today OR yesterday mode).
+//   opts.day         — DailyUsage {date, tools:{}, models:{}, total_tokens, cost}
+//   opts.previousDay — DailyUsage (for the "比前一天多/少 X%" comparison) or null
+//   opts.daily30     — last 30 DailyUsage rows (for the trend panel)
+//   opts.settings    — {daily_goal_tokens}
+//   opts.mode        — "today" | "yesterday"
+function renderShareDailyCard(canvas, opts) {
+  const ctx = canvas.getContext("2d");
+  _ensureRoundRect(ctx);
+  const C = themeColors;
+  const W = canvas.width;
+  const H = canvas.height;
+  const day = opts.day || { total_tokens: 0, cost: 0, tools: {}, models: {} };
+  const settings = opts.settings || { daily_goal_tokens: 100000000 };
+  const goal = Math.max(settings.daily_goal_tokens, 1);
+  const lap = lapProgress(day.total_tokens, goal);
+  const pad = 36;
+
+  // 1) Background.
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, C.canvas);
+  bg.addColorStop(1, C.surface);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // 2) Header: brand + subtitle.
+  ctx.fillStyle = C.ink;
+  ctx.font = "800 34px 'Segoe UI', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("TokenStep", pad, pad + 30);
+  ctx.fillStyle = C.muted;
+  ctx.font = "600 15px 'Segoe UI', sans-serif";
+  const subtitle =
+    (opts.mode === "yesterday" ? t("昨日 AI 步数 · ") : t("今日 AI 步数 · ")) +
+    (day.date || "");
+  ctx.fillText(subtitle, pad, pad + 54);
+
+  // 3) Medal ring with glow (centered). 212 visual diameter → r=92.
+  const cx = W / 2;
+  const cy = pad + 90 + 92;
+  const r = 92;
+  // Glow: draw the progress arc several times with increasing blur.
+  ctx.save();
+  ctx.shadowColor = lap.color || C.green;
+  ctx.shadowBlur = 28;
+  ctx.strokeStyle = lap.color || C.green;
+  ctx.lineWidth = 20;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lap.currentLapProgress);
+  ctx.stroke();
+  ctx.restore();
+  // Track ring.
+  ctx.strokeStyle = C.track;
+  ctx.lineWidth = 20;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  // Re-stroke progress on top (without glow) for crisp edge.
+  ctx.strokeStyle = lap.color || C.green;
+  ctx.lineWidth = 20;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lap.currentLapProgress);
+  ctx.stroke();
+  // Center: completion % + lap line.
+  const completionPct = Math.min(100, Math.round((day.total_tokens / goal) * 100));
+  ctx.fillStyle = C.ink;
+  ctx.textAlign = "center";
+  ctx.font = "800 40px 'Segoe UI', sans-serif";
+  ctx.fillText(completionPct + "%", cx, cy + 2);
+  ctx.fillStyle = C.muted;
+  ctx.font = "600 14px 'Segoe UI', sans-serif";
+  ctx.fillText(
+    t("%d 圈 · 每圈 %@").replace("%d", String(lap.completedLaps + (lap.currentLapProgress > 0 ? 1 : 0))).replace("%@", formatTokens(goal, true)),
+    cx,
+    cy + 28
+  );
+
+  // 4) Comparison text (today vs yesterday / yesterday vs day-before).
+  let yCmp = cy + r + 44;
+  ctx.fillStyle = C.mutedStrong;
+  ctx.font = "700 17px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  const cmp = comparisonText(day, opts.previousDay);
+  ctx.fillText(cmp, cx, yCmp);
+
+  // 5) Breakdown panels: sources (tools) + models.
+  const panelY = yCmp + 28;
+  drawShareBreakdownPanel(ctx, C, pad, panelY, W - pad * 2, t("今日来源"), day.tools || {}, true);
+  drawShareBreakdownPanel(
+    ctx,
+    C,
+    pad,
+    panelY + 150,
+    W - pad * 2,
+    t("主力模型"),
+    day.models || {},
+    false
+  );
+
+  // 6) 30-day trend panel (stacked mini bars).
+  const trendY = panelY + 150 + 130;
+  drawShareTrendPanel(ctx, C, pad, trendY, W - pad * 2, opts.daily30 || [], goal);
+
+  // 7) Footer signature (preserved).
+  ctx.fillStyle = C.mutedFaint;
+  ctx.font = "600 13px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TokenStep · " + t("十七°") + " · " + t("本地统计"), W / 2, H - 22);
+
+  return canvas;
+}
+
+// Three-state comparison line (port of `comparisonText`).
+function comparisonText(day, previousDay) {
+  if (!previousDay || !previousDay.total_tokens || previousDay.total_tokens <= 0) {
+    return t("这是一个新的记录日");
+  }
+  const delta =
+    ((day.total_tokens - previousDay.total_tokens) / previousDay.total_tokens) * 100;
+  if (Math.abs(delta) < 1) return t("和前一天基本持平");
+  if (delta > 0) return t("比前一天多 %@").replace("%@", formatPercent(Math.abs(delta)));
+  return t("比前一天少 %@").replace("%@", formatPercent(Math.abs(delta)));
+}
+
+// A breakdown panel: title + up to 4 rows (color dot + name + tokens + bar).
+function drawShareBreakdownPanel(ctx, C, x, y, w, title, values, useToolColor) {
+  // Panel background.
+  ctx.fillStyle = C.surface;
+  ctx.strokeStyle = "rgba(0,0,0,0.06)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, 120, 16);
+  ctx.fill();
+  ctx.stroke();
+  // Title.
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 13px 'Segoe UI', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(title, x + 16, y + 24);
+  // Rows.
+  const total = Math.max(dayValuesSum(values), 1);
+  const entries = Object.keys(values)
+    .filter(function (k) { return values[k] > 0; })
+    .sort(function (a, b) { return values[b] - values[a]; })
+    .slice(0, 4);
+  const rowH = 20;
+  const rowStart = y + 40;
+  entries.forEach(function (name, i) {
+    const tokens = values[name];
+    const pct = (tokens / total) * 100;
+    const ry = rowStart + i * rowH;
+    const color = useToolColor ? tokenToolColor(name) : C.green;
+    // Color dot.
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x + 22, ry - 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Name.
+    ctx.fillStyle = C.ink;
+    ctx.font = "600 13px 'Segoe UI', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(name, x + 34, ry);
+    // Tokens (right-aligned).
+    ctx.fillStyle = C.muted;
+    ctx.textAlign = "right";
+    ctx.fillText(formatTokens(tokens, true), x + w - 16, ry);
+    // Progress bar (below the row text).
+    const barX = x + 34;
+    const barW = w - 50;
+    ctx.fillStyle = C.track;
+    ctx.beginPath();
+    ctx.roundRect(barX, ry + 4, barW, 5, 2.5);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(barX, ry + 4, (barW * pct) / 100, 5, 2.5);
+    ctx.fill();
+  });
+  if (!entries.length) {
+    ctx.fillStyle = C.mutedFaint;
+    ctx.font = "600 13px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(t("暂无数据"), x + w / 2, rowStart + 10);
+  }
+}
+
+function dayValuesSum(values) {
+  var s = 0;
+  for (var k in values) s += Number(values[k] || 0);
+  return s;
+}
+
+// 30-day trend: stacked mini bars (one per day, colored by tool).
+function drawShareTrendPanel(ctx, C, x, y, w, daily, goal) {
+  ctx.fillStyle = C.surface;
+  ctx.strokeStyle = "rgba(0,0,0,0.06)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, 116, 16);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 13px 'Segoe UI', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(t("最近 30 天"), x + 16, y + 24);
+  const rows = daily.slice(-30);
+  if (!rows.length) return;
+  const maxTokens = Math.max.apply(null, [goal].concat(rows.map(function (d) { return d.total_tokens; })).concat([1]));
+  const barsY = y + 38;
+  const barsH = 64;
+  const barGap = 2;
+  const barW = Math.max(3, (w - 32 - barGap * (rows.length - 1)) / rows.length);
+  rows.forEach(function (d, i) {
+    const bx = x + 16 + i * (barW + barGap);
+    const totalH = Math.max(2, (d.total_tokens / maxTokens) * barsH);
+    if (d.total_tokens <= 0) return;
+    const segs = orderedToolEntries(d.tools || {});
+    if (!segs.length) {
+      ctx.fillStyle = contributionColor(d.total_tokens, goal);
+      ctx.fillRect(bx, barsY + barsH - totalH, barW, totalH);
+      return;
+    }
+    let drawn = 0;
+    segs.slice().reverse().forEach(function (s) {
+      const sh = Math.max(1, (totalH * s.tokens) / Math.max(d.total_tokens, 1));
+      ctx.fillStyle = tokenToolColor(s.name);
+      ctx.fillRect(bx, barsY + barsH - drawn - sh, barW, sh);
+      drawn += sh;
+    });
+  });
+}
+
+// ---- Rhythm share card (port of ShareRhythmCardView) ----
+// opts.rhythm — DailyRhythm {buckets[24], peak_hour, primary_tag, ...}
+// opts.date   — "YYYY-MM-DD"
+function renderRhythmCard(canvas, opts) {
+  const ctx = canvas.getContext("2d");
+  _ensureRoundRect(ctx);
+  const W = canvas.width;
+  const H = canvas.height;
+  const rhythm = opts.rhythm || { buckets: [], primary_tag: "quiet_day" };
+  const tag = rhythm.primary_tag || "quiet_day";
+  const palette = rhythmPalette(tag);
+
+  // 1) Dark neon background: radial gradient + faint grid.
+  const bg = ctx.createRadialGradient(W / 2, H * 0.35, 40, W / 2, H * 0.5, W);
+  bg.addColorStop(0, palette.bgInner);
+  bg.addColorStop(1, palette.bgOuter);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  // Grid.
+  ctx.strokeStyle = "rgba(255,255,255,0.04)";
+  ctx.lineWidth = 1;
+  for (var gx = 0; gx < W; gx += 32) {
+    ctx.beginPath();
+    ctx.moveTo(gx, 0);
+    ctx.lineTo(gx, H);
+    ctx.stroke();
+  }
+  for (var gy = 0; gy < H; gy += 32) {
+    ctx.beginPath();
+    ctx.moveTo(0, gy);
+    ctx.lineTo(W, gy);
+    ctx.stroke();
+  }
+
+  const cx = W / 2;
+  const pad = 40;
+
+  // 2) Header: glowing brand + date + weekday.
+  ctx.save();
+  ctx.shadowColor = palette.glow;
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 30px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TokenStep", cx, pad + 24);
+  ctx.restore();
+  ctx.fillStyle = "rgba(255,255,255,0.6)";
+  ctx.font = "600 14px 'Segoe UI', sans-serif";
+  ctx.fillText(formatDateWeekday(opts.date), cx, pad + 48);
+
+  // 3) Rhythm tag (gradient text) + laurel branches.
+  const tagY = pad + 96;
+  drawLaurel(ctx, cx - 150, tagY - 6, -1, palette.accent);
+  drawLaurel(ctx, cx + 150, tagY - 6, 1, palette.accent);
+  ctx.save();
+  const grad = ctx.createLinearGradient(cx - 120, tagY, cx + 120, tagY);
+  grad.addColorStop(0, palette.accent);
+  grad.addColorStop(1, palette.accent2);
+  ctx.fillStyle = grad;
+  ctx.font = "800 36px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(rhythmTagTitle(tag), cx, tagY);
+  ctx.restore();
+
+  // 4) Neon wave: Catmull-Rom smooth curve + area fill + peak marker.
+  const waveY = tagY + 60;
+  const waveH = 200;
+  drawRhythmWave(ctx, rhythm, cx, waveY, W - pad * 2, waveH, palette);
+
+  // 5) Hour axis with day/moon icons.
+  const axisY = waveY + waveH + 8;
+  drawRhythmAxis(ctx, pad, axisY, W - pad * 2, palette);
+
+  // 6) Token console: total tokens big number with chevrons.
+  const tokenY = axisY + 50;
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.font = "600 13px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(t("Token 总量"), cx, tokenY);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "800 44px 'Segoe UI', sans-serif";
+  ctx.fillText(formatTokens(rhythm.total_tokens || 0), cx, tokenY + 40);
+
+  // 7) Three-metric footer: active span / night share / longest streak.
+  const mY = tokenY + 80;
+  const metrics = rhythmMetrics(rhythm);
+  const mW = (W - pad * 2) / 3;
+  metrics.forEach(function (m, i) {
+    const mx = pad + i * mW;
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.font = "600 12px 'Segoe UI', sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(m.label, mx + mW / 2, mY);
+    ctx.fillStyle = palette.accent;
+    ctx.font = "800 20px 'Segoe UI', sans-serif";
+    ctx.fillText(m.value, mx + mW / 2, mY + 24);
+  });
+
+  // 8) Footer signature.
+  ctx.fillStyle = "rgba(255,255,255,0.35)";
+  ctx.font = "600 12px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("TokenStep · " + t("十七°") + " · " + t("本地统计"), cx, H - 20);
+
+  return canvas;
+}
+
+// 4 palettes keyed by rhythm tag (port of RhythmCardPalette).
+function rhythmPalette(tag) {
+  switch (tag) {
+    case "night_agent":
+      return { bgInner: "#1a1033", bgOuter: "#0a0618", glow: "#a855f7", accent: "#c084fc", accent2: "#e879f9" };
+    case "morning_planner":
+    case "early_starter":
+      return { bgInner: "#2a1d08", bgOuter: "#100a02", glow: "#f59e0b", accent: "#fbbf24", accent2: "#fde68a" };
+    case "fragmented":
+      return { bgInner: "#04212a", bgOuter: "#020e12", glow: "#06b6d4", accent: "#22d3ee", accent2: "#67e8f9" };
+    default:
+      return { bgInner: "#04230f", bgOuter: "#020c05", glow: "#22c55e", accent: "#4ade80", accent2: "#86efac" };
+  }
+}
+
+// Draw a laurel branch (simplified) — `dir` = -1 left, 1 right.
+function drawLaurel(ctx, x, y, dir, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(dir, 1);
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.7;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(20, -14, 40, -4);
+  ctx.stroke();
+  // Leaves.
+  for (var i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.ellipse(10 + i * 9, -8 - i * 1.5, 7, 3.5, -0.6, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.5 + i * 0.1;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Smooth Catmull-Rom wave with area fill, glow, and a peak marker dot.
+function drawRhythmWave(ctx, rhythm, cx, y, w, h, palette) {
+  const buckets = rhythm.buckets || [];
+  if (!buckets.length) return;
+  const max = Math.max.apply(null, buckets.map(function (b) { return b.tokens || 0; }).concat([1]));
+  const stepX = w / 23;
+  const points = buckets.map(function (b, i) {
+    const tokens = b.tokens || 0;
+    return { x: (cx - w / 2) + i * stepX, y: y + h - (tokens / max) * (h - 10), v: tokens };
+  });
+  // Area fill (under the curve).
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, y + h);
+  catmullRomPath(ctx, points, 0.5);
+  ctx.lineTo(points[points.length - 1].x, y + h);
+  ctx.closePath();
+  const areaGrad = ctx.createLinearGradient(0, y, 0, y + h);
+  areaGrad.addColorStop(0, palette.accent + "55");
+  areaGrad.addColorStop(1, palette.accent + "00");
+  ctx.fillStyle = areaGrad;
+  ctx.fill();
+  ctx.restore();
+  // Glowing stroke line.
+  ctx.save();
+  ctx.shadowColor = palette.glow;
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = palette.accent;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  catmullRomPath(ctx, points, 0.5);
+  ctx.stroke();
+  ctx.restore();
+  // Peak marker.
+  if (rhythm.peak_hour != null) {
+    const peakPt = points[rhythm.peak_hour];
+    if (peakPt) {
+      ctx.save();
+      ctx.shadowColor = palette.glow;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(peakPt.x, peakPt.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+// Append a Catmull-Rom spline through the points to the current path.
+function catmullRomPath(ctx, pts, tension) {
+  if (pts.length < 2) return;
+  for (var i = 0; i < pts.length - 1; i++) {
+    var p0 = pts[i - 1] || pts[i];
+    var p1 = pts[i];
+    var p2 = pts[i + 1];
+    var p3 = pts[i + 2] || p2;
+    var cp1x = p1.x + ((p2.x - p0.x) * tension) / 6;
+    var cp1y = p1.y + ((p2.y - p0.y) * tension) / 6;
+    var cp2x = p2.x - ((p3.x - p1.x) * tension) / 6;
+    var cp2y = p2.y - ((p3.y - p1.y) * tension) / 6;
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+  }
+}
+
+// Hour axis: 0/6/12/18/23 with day/moon icons at the ends.
+function drawRhythmAxis(ctx, x, y, w, palette) {
+  const marks = [0, 6, 12, 18, 23];
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.font = "600 11px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  marks.forEach(function (h) {
+    const px = x + (h / 23) * w;
+    ctx.fillText(h + ":00", px, y + 12);
+  });
+}
+
+// Format a date as "6月22日 周一".
+function formatDateWeekday(dateStr) {
+  if (!dateStr) return "";
+  var d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return dateStr;
+  var weekdays = [t("周日"), t("周一"), t("周二"), t("周三"), t("周四"), t("周五"), t("周六")];
+  return (d.getMonth() + 1) + t("月") + d.getDate() + t("日") + " " + weekdays[d.getDay()];
+}
+
+// Three rhythm metrics (active span / night share / longest streak).
+function rhythmMetrics(rhythm) {
+  var buckets = rhythm.buckets || [];
+  var first = rhythm.first_active_hour != null ? rhythm.first_active_hour : null;
+  var last = rhythm.last_active_hour != null ? rhythm.last_active_hour : null;
+  var span = first != null && last != null ? (first + "-" + last) : "—";
+  // Night share: hours 21,22,23,0,1,2.
+  var night = 0, total = 0, streak = 0, maxStreak = 0;
+  for (var i = 0; i < buckets.length; i++) {
+    var tk = buckets[i].tokens || 0;
+    total += tk;
+    if ((i >= 21 || i <= 2) && tk > 0) night += tk;
+    if (tk > 0) { streak++; if (streak > maxStreak) maxStreak = streak; } else { streak = 0; }
+  }
+  var nightPct = total > 0 ? Math.round((night / total) * 100) : 0;
+  return [
+    { label: t("活跃时段"), value: span + ":00" },
+    { label: t("夜间占比"), value: nightPct + "%" },
+    { label: t("最长连续"), value: maxStreak + t("h") },
+  ];
+}
+
 // ---- Screenshot / data export (port of ScreenshotExporter.swift) ----
 // Download the current dashboard as an HTML self-contained file, or export the
 // raw data as CSV/JSON.
@@ -693,4 +1202,8 @@ window.TS = {
   hourlyBarsHTML,
   hourlyAxisHTML,
   rhythmTagTitle,
+  renderShareDailyCard,
+  renderRhythmCard,
+  rhythmMetrics,
+  comparisonText,
 };

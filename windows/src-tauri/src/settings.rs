@@ -52,6 +52,7 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         refresh_interval_seconds: interval,
         history_days: s.history_days.clamp(7, 365),
         close_to_tray: s.close_to_tray,
+        autostart: s.autostart,
         theme,
         screenshot_dir: s.screenshot_dir,
         language: {
