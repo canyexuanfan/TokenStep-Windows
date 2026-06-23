@@ -336,13 +336,14 @@ function renderShareDailyCard(canvas, opts) {
   const contentW = W - pad * 2;
   const isYesterday = opts.mode === "yesterday";
 
-  // ── Backdrop: canvas base + diagonal mint→clear→green tint. ──────────
+  // ── Backdrop: near-solid canvas (reference is essentially flat #F5F7F8). ──
   ctx.fillStyle = C.canvas;
   ctx.fillRect(0, 0, W, H);
+  // Very faint diagonal tint — barely visible, like the macOS original.
   const tint = ctx.createLinearGradient(0, 0, W, H);
-  tint.addColorStop(0, hexA(C.mint, 0.10));
-  tint.addColorStop(0.5, "rgba(0,0,0,0)");
-  tint.addColorStop(1, hexA(C.green, 0.025));
+  tint.addColorStop(0, hexA(C.mint, 0.045));
+  tint.addColorStop(0.55, "rgba(0,0,0,0)");
+  tint.addColorStop(1, hexA(C.green, 0.012));
   ctx.fillStyle = tint;
   ctx.fillRect(0, 0, W, H);
 
@@ -357,14 +358,14 @@ function renderShareDailyCard(canvas, opts) {
   ctx.fillStyle = C.muted;
   ctx.font = "700 13px 'Segoe UI', sans-serif";
   ctx.fillText(t("每日 Token 消耗追踪"), pad + 42 + 12, pad + 36);
-  // Right text column (mode title + date), right-aligned.
+  // Right text column (date only — reference has no mode title here).
   ctx.textAlign = "right";
   ctx.fillStyle = C.ink;
-  ctx.font = "800 16px 'Segoe UI', sans-serif";
-  ctx.fillText(isYesterday ? t("昨日 AI 工作成绩单") : t("今日 AI 战绩"), W - pad, pad + 20);
+  ctx.font = "800 18px 'Segoe UI', sans-serif";
+  ctx.fillText(day.date || "", W - pad, pad + 20);
   ctx.fillStyle = C.muted;
   ctx.font = "700 13px 'Segoe UI', sans-serif";
-  ctx.fillText(day.date || "", W - pad, pad + 36);
+  ctx.fillText(formatRhythmWeekday(day.date), W - pad, pad + 36);
 
   let y = pad + headerH + 14; // spacing:14 after header
 
@@ -389,15 +390,15 @@ function renderShareDailyCard(canvas, opts) {
   ctx.filter = "none";
   ctx.restore();
   // Track ring.
-  const ringR = ringSize / 2 - 10; // lineWidth 20 → inner radius
+  const ringR = ringSize / 2 - 8; // lineWidth 16
   ctx.strokeStyle = C.track;
-  ctx.lineWidth = 20;
+  ctx.lineWidth = 16;
   ctx.beginPath();
   ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
   ctx.stroke();
   // Progress ring (12 o'clock start, clockwise).
   ctx.strokeStyle = lapColor;
-  ctx.lineWidth = 20;
+  ctx.lineWidth = 16;
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.arc(ringCx, ringCy, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lap.currentLapProgress);
@@ -440,7 +441,7 @@ function renderShareDailyCard(canvas, opts) {
   // Per-lap goal.
   ctx.fillStyle = C.muted;
   ctx.font = "700 14px 'Segoe UI', sans-serif";
-  ctx.fillText(tf(t("每圈目标 %@"), [formatTokens(goal, true)]), rightX, heroInnerY + 116);
+  ctx.fillText(tf(t("每圈目标 %@"), formatTokens(goal, true)), rightX, heroInnerY + 116);
   // Comparison line (today: 今日 Token; yesterday: vs previous day).
   ctx.fillStyle = C.muted;
   ctx.font = "800 14px 'Segoe UI', sans-serif";
