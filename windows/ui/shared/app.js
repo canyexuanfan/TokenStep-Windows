@@ -294,10 +294,12 @@ function drawTokenStepMark(ctx, x, y, size, opts) {
 // accounting for the given padding.
 function drawShareCardSurface(ctx, x, y, w, h, padding, radius) {
   ctx.save();
-  // Shadow: only offset the shape, drawn via the fill of a translucent copy.
+  // Shadow: fill the white card with an offset blurred shadow so the card
+  // appears to float above the backdrop (stronger than the macOS 0.045 to
+  // compensate for Canvas lacking SwiftUI's soft ambient shadow).
   ctx.save();
-  ctx.shadowColor = "rgba(0,0,0,0.045)";
-  ctx.shadowBlur = 18;
+  ctx.shadowColor = "rgba(0,0,0,0.09)";
+  ctx.shadowBlur = 22;
   ctx.shadowOffsetY = 10;
   ctx.fillStyle = themeColors.surface;
   ctx.beginPath();
@@ -382,12 +384,13 @@ function renderShareDailyCard(canvas, opts) {
   const ringBox = ringOuter * 2;
   const ringCx = heroInnerX + ringBox / 2;
   const ringCy = heroInnerY + heroInnerH / 2;
-  // Soft glow behind ring.
+  // Soft glow behind ring (boosted for depth; macOS uses 0.09 but Canvas
+  // needs a touch more to read as a luminous halo).
   ctx.save();
-  ctx.fillStyle = hexA(lapColor, 0.09);
-  ctx.filter = "blur(10px)";
+  ctx.fillStyle = hexA(lapColor, 0.16);
+  ctx.filter = "blur(14px)";
   ctx.beginPath();
-  ctx.arc(ringCx, ringCy, ringOuter + 4, 0, Math.PI * 2);
+  ctx.arc(ringCx, ringCy, ringOuter + 6, 0, Math.PI * 2);
   ctx.fill();
   ctx.filter = "none";
   ctx.restore();
@@ -398,13 +401,23 @@ function renderShareDailyCard(canvas, opts) {
   ctx.beginPath();
   ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
   ctx.stroke();
-  // Progress ring (12 o'clock start, clockwise).
-  ctx.strokeStyle = lapColor;
+  // Progress ring (12 o'clock start, clockwise) — with green drop shadow +
+  // vertical gradient stroke for a subtle luminous sheen (matches macOS
+  // ProgressRingView .shadow(color, radius:5, y:3) and adds depth).
+  ctx.save();
+  ctx.shadowColor = hexA(lapColor, 0.30);
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 3;
+  const ringGrad = ctx.createLinearGradient(ringCx, ringCy - ringR, ringCx, ringCy + ringR);
+  ringGrad.addColorStop(0, lighten(lapColor, 0.12));
+  ringGrad.addColorStop(1, lapColor);
+  ctx.strokeStyle = ringGrad;
   ctx.lineWidth = 16;
   ctx.lineCap = "round";
   ctx.beginPath();
   ctx.arc(ringCx, ringCy, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lap.currentLapProgress);
   ctx.stroke();
+  ctx.restore();
   // Ring center: big token number + per-lap goal label.
   ctx.fillStyle = C.ink;
   ctx.textAlign = "center";
@@ -511,13 +524,29 @@ function drawShield(ctx, x, y, color) {
   ctx.restore();
 }
 
-// Hex color (#rrggbb) + alpha → rgba() string.
+// Hex color (#rrggbb or rgb(r,g,b)) + alpha → rgba() string.
 function hexA(hex, a) {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.substring(0, 2), 16);
-  const g = parseInt(h.substring(2, 4), 16);
-  const b = parseInt(h.substring(4, 6), 16);
-  return "rgba(" + r + "," + g + "," + b + "," + a + ")";
+  const rgb = parseColor(hex);
+  return "rgba(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + "," + a + ")";
+}
+
+// Parse "#rrggbb" or "rgb(r,g,b)" → [r,g,b].
+function parseColor(c) {
+  if (c.charAt(0) === "#") {
+    const h = c.slice(1);
+    return [parseInt(h.substring(0, 2), 16), parseInt(h.substring(2, 4), 16), parseInt(h.substring(4, 6), 16)];
+  }
+  const m = c.match(/\d+/g);
+  return [parseInt(m[0], 10), parseInt(m[1], 10), parseInt(m[2], 10)];
+}
+
+// Lighten a color toward white by `amt` (0..1) → "#rrggbb".
+function lighten(c, amt) {
+  const rgb = parseColor(c);
+  const r = Math.round(rgb[0] + (255 - rgb[0]) * amt);
+  const g = Math.round(rgb[1] + (255 - rgb[1]) * amt);
+  const b = Math.round(rgb[2] + (255 - rgb[2]) * amt);
+  return "#" + [r, g, b].map(function (v) { return ("0" + v.toString(16)).slice(-2); }).join("");
 }
 
 // Three-state comparison line (port of `comparisonText`).
