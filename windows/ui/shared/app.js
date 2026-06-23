@@ -471,7 +471,7 @@ function renderShareDailyCard(canvas, opts) {
   const trendH = drawShareTrendPanel(ctx, C, pad, y, contentW, opts.daily30 || [], goal, day);
   y += trendH + 14;
 
-  // ── Footer: shield + 本地统计·不上传对话 (left) | tokenstep.app · 十七° (right). ──
+  // ── Footer: shield + 本地统计·不上传对话 (left) | mac 原版官网 + 十七° 移植 (right). ──
   const footerY = H - pad - 8;
   ctx.textAlign = "left";
   ctx.fillStyle = C.muted;
@@ -479,7 +479,7 @@ function renderShareDailyCard(canvas, opts) {
   drawShield(ctx, pad, footerY - 9, C.muted);
   ctx.fillText(t("本地统计") + " · " + t("不上传代码或对话"), pad + 20, footerY);
   ctx.textAlign = "right";
-  ctx.fillText("tokenstep.app · " + t("十七°"), W - pad, footerY);
+  ctx.fillText(t("mac 原版") + " tokenstep.app · " + t("十七°") + " " + t("移植"), W - pad, footerY);
 
   return canvas;
 }
