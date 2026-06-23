@@ -370,27 +370,29 @@ function renderShareDailyCard(canvas, opts) {
   let y = pad + headerH + 14; // spacing:14 after header
 
   // ── Hero: ShareCardSurface(r26,pad20) holding a horizontal ring+stats. ──
-  const heroH = 232;
+  const heroH = 256;
   drawShareCardSurface(ctx, pad, y, contentW, heroH, 20, 26);
   const heroInnerX = pad + 20;
   const heroInnerY = y + 20;
   const heroInnerW = contentW - 40;
-  // Left: ring group 224×224, with a 228 blurred glow behind it.
+  const heroInnerH = heroH - 40;
+  // Left: ring group, vertically centered in the hero card.
   const ringSize = 212;
-  const ringBox = 224;
+  const ringOuter = ringSize / 2; // 106, fits within heroInnerH=216
+  const ringBox = ringOuter * 2;
   const ringCx = heroInnerX + ringBox / 2;
-  const ringCy = heroInnerY + (heroH - 40) / 2;
+  const ringCy = heroInnerY + heroInnerH / 2;
   // Soft glow behind ring.
   ctx.save();
   ctx.fillStyle = hexA(lapColor, 0.09);
   ctx.filter = "blur(10px)";
   ctx.beginPath();
-  ctx.arc(ringCx, ringCy, 114, 0, Math.PI * 2);
+  ctx.arc(ringCx, ringCy, ringOuter + 4, 0, Math.PI * 2);
   ctx.fill();
   ctx.filter = "none";
   ctx.restore();
   // Track ring.
-  const ringR = ringSize / 2 - 8; // lineWidth 16
+  const ringR = ringSize / 2 - 8; // lineWidth 16 → inner radius 98
   ctx.strokeStyle = C.track;
   ctx.lineWidth = 16;
   ctx.beginPath();
@@ -406,47 +408,50 @@ function renderShareDailyCard(canvas, opts) {
   // Ring center: big token number + per-lap goal label.
   ctx.fillStyle = C.ink;
   ctx.textAlign = "center";
-  ctx.font = "800 56px 'Segoe UI', sans-serif";
-  ctx.fillText(formatTokens(day.total_tokens), ringCx, ringCy + 4);
+  ctx.font = "800 52px 'Segoe UI', sans-serif";
+  ctx.fillText(formatTokens(day.total_tokens), ringCx, ringCy - 2);
   ctx.fillStyle = C.muted;
-  ctx.font = "800 16px 'Segoe UI', sans-serif";
+  ctx.font = "700 14px 'Segoe UI', sans-serif";
   ctx.fillText(
     tf(t("/ %@ 每圈"), formatTokens(goal, true)),
     ringCx,
-    ringCy + 30
+    ringCy + 24
   );
 
-  // Right of ring: completion%, laps, per-lap goal, comparison.
-  const rightX = heroInnerX + ringBox + 18;
-  const rightW = heroInnerW - ringBox - 18;
+  // Right of ring: completion%, laps, per-lap goal, comparison — vertically
+  // centered relative to the ring.
+  const rightX = heroInnerX + ringBox + 22;
+  const rightW = heroInnerW - ringBox - 22;
+  const rightCx = heroInnerY + heroInnerH / 2; // align block to ring center
   ctx.textAlign = "left";
+  // Intro line (top of the right block).
   ctx.fillStyle = C.muted;
   ctx.font = "800 15px 'Segoe UI', sans-serif";
-  ctx.fillText(isYesterday ? t("昨天我和 AI 一起完成了") : t("今天我和 AI 一起消耗了"), rightX, heroInnerY + 18);
+  ctx.fillText(isYesterday ? t("昨天我和 AI 一起完成了") : t("今天我和 AI 一起消耗了"), rightX, rightCx - 56);
   // Big completion% in lap color.
   const completionPct = Math.min(999, Math.round(lap.rawProgress * 100));
   ctx.fillStyle = lapColor;
   ctx.font = "800 50px 'Segoe UI', sans-serif";
   const pctText = formatPercent(completionPct);
-  ctx.fillText(pctText, rightX, heroInnerY + 62);
+  ctx.fillText(pctText, rightX, rightCx - 8);
   const pctW = ctx.measureText(pctText).width;
   ctx.fillStyle = C.muted;
   ctx.font = "800 15px 'Segoe UI', sans-serif";
-  ctx.fillText(t("总完成度"), rightX + pctW + 8, heroInnerY + 62 - 18);
+  ctx.fillText(t("总完成度"), rightX + pctW + 8, rightCx - 26);
   // Completed laps text.
   ctx.fillStyle = hexA(C.ink, 0.78);
   ctx.font = "800 18px 'Segoe UI', sans-serif";
   const lapsTotal = lap.completedLaps + (lap.currentLapProgress > 0 ? 1 : 0);
-  ctx.fillText(tf(t("已完成 %d 圈"), lapsTotal), rightX, heroInnerY + 96);
+  ctx.fillText(tf(t("已完成 %d 圈"), lapsTotal), rightX, rightCx + 28);
   // Per-lap goal.
   ctx.fillStyle = C.muted;
   ctx.font = "700 14px 'Segoe UI', sans-serif";
-  ctx.fillText(tf(t("每圈目标 %@"), formatTokens(goal, true)), rightX, heroInnerY + 116);
+  ctx.fillText(tf(t("每圈目标 %@"), formatTokens(goal, true)), rightX, rightCx + 50);
   // Comparison line (today: 今日 Token; yesterday: vs previous day).
   ctx.fillStyle = C.muted;
   ctx.font = "800 14px 'Segoe UI', sans-serif";
   const cmpLine = isYesterday ? comparisonText(day, opts.previousDay) : t("今日 Token");
-  ctx.fillText(cmpLine, rightX, heroInnerY + 136);
+  ctx.fillText(cmpLine, rightX, rightCx + 72);
 
   y += heroH + 14; // spacing:14
 
