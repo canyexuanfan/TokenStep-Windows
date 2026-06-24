@@ -820,7 +820,7 @@ function drawOverviewActivityPanel(ctx, C, x, y, w, daily, goal, today) {
   ctx.fillText(t("最近 30 天"), innerX, y + padding + 18);
   ctx.fillStyle = C.muted;
   ctx.font = "600 14px 'Segoe UI', sans-serif";
-  ctx.fillText(t("颜色越深，圈数越高"), innerX, y + padding + 36);
+  ctx.fillText(t("柱越高，用量越多；颜色代表客户端"), innerX, y + padding + 36);
   // Today capsule (right).
   const capText = t("今天") + " " + formatTokens((today && today.total_tokens) || 0, true);
   ctx.font = "700 14px 'Segoe UI', sans-serif";
@@ -876,6 +876,14 @@ function drawOverviewActivityPanel(ctx, C, x, y, w, daily, goal, today) {
       });
       ctx.restore();
     });
+    // Goal reference line at goal/maxTokens (port of macOS 1pt .quaternary line).
+    const goalLineY = barsY + barsH - (goal / maxTokens) * barsH;
+    ctx.strokeStyle = hexA(C.muted, 0.45);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(innerX, goalLineY);
+    ctx.lineTo(innerX + innerW, goalLineY);
+    ctx.stroke();
   }
   // Legend (top tools across the 30 days).
   const legendY = y + 16 * 2 + 30 + 10 + 96 + 14;
@@ -1292,6 +1300,14 @@ function drawShareTrendPanel(ctx, C, x, y, w, daily, goal, day) {
     });
     ctx.restore();
   });
+  // Goal reference line at goal/maxTokens (port of macOS 1pt .quaternary line).
+  const goalLineY = barsY + barsH - (goal / maxTokens) * barsH;
+  ctx.strokeStyle = hexA(C.muted, 0.45);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(innerX, goalLineY);
+  ctx.lineTo(innerX + innerW, goalLineY);
+  ctx.stroke();
   return panelH;
 }
 
@@ -1972,13 +1988,18 @@ function stackedActivityBarsHTML(rows, goal) {
     null,
     [goal].concat(rows.map((d) => d.total_tokens)).concat([1])
   );
+  // Goal reference line at goal/maxTokens (port of macOS 1pt .quaternary line).
+  const goalPct = Math.min(100, (goal / maxTokens) * 100);
   return (
     '<div class="activity" style="margin-top:14px">' +
+    '<div class="goal-line" style="bottom:' + goalPct + '%"></div>' +
     rows
       .map((d) => {
         const totalHeight = Math.max(4, (d.total_tokens / maxTokens) * 100);
         if (d.total_tokens <= 0) {
-          return '<div class="bar" style="height:4px;background:transparent"></div>';
+          // Empty day → 4pt track-colored placeholder (macOS behavior; CSS
+          // default background is --track, so just keep the min-height).
+          return '<div class="bar" style="height:4px"></div>';
         }
         const segments = orderedToolEntries(d.tools || {});
         if (!segments.length) {
@@ -1990,7 +2011,9 @@ function stackedActivityBarsHTML(rows, goal) {
             '"></div>'
           );
         }
-        // Stack segments bottom-up (preferred tool on top visually).
+        // Stack segments bottom-up (preferred tool on top visually). The
+        // outer .bar has overflow:hidden+border-radius, so the whole stack
+        // is clipped to one rounded shape (matches macOS clipShape).
         const segHtml = segments
           .slice()
           .reverse()
@@ -2005,7 +2028,7 @@ function stackedActivityBarsHTML(rows, goal) {
             );
           })
           .join("");
-        return '<div class="bar" style="height:' + totalHeight + "%;" + '" title="' + d.date + " " + formatTokens(d.total_tokens) + '">' + segHtml + "</div>";
+        return '<div class="bar" style="height:' + totalHeight + "%;background:transparent;" + '" title="' + d.date + " " + formatTokens(d.total_tokens) + '">' + segHtml + "</div>";
       })
       .join("") +
     "</div>"
@@ -2040,6 +2063,11 @@ function tokenToolLegendHTML(rows) {
           "</span>"
       )
       .join("") +
+    // Goal-line legend (port of macOS TokenToolLegend showsGoalLine).
+    '<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);font-weight:600">' +
+    '<span style="width:16px;height:1px;background:var(--mutedFaint);opacity:.55"></span>' +
+    t("每日目标") +
+    "</span>" +
     "</div>"
   );
 }

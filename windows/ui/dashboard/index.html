@@ -382,7 +382,7 @@
 
         // ---- 30-day activity bars card ----
         var last30 = snapshot.daily.slice(-30);
-        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 30 天') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.t('颜色越深，圈数越高') + '</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('今天') + ' ' + formatTokens(t.total_tokens, true) + '</span></div>' + window.TS.stackedActivityBarsHTML(last30, settings.daily_goal_tokens) + window.TS.tokenToolLegendHTML(last30) + '</div>';
+        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 30 天') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.t('柱越高，用量越多；颜色代表客户端') + '</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('今天') + ' ' + formatTokens(t.total_tokens, true) + '</span></div>' + window.TS.stackedActivityBarsHTML(last30, settings.daily_goal_tokens) + window.TS.tokenToolLegendHTML(last30) + '</div>';
 
         // ---- Distribution cards: TODAY's client + model split (not all-time) ----
         // Port of upstream d0af1c4: show today's breakdown, not the cumulative
