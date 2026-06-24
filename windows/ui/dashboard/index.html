@@ -221,11 +221,14 @@
           var previousDay = snapshot.daily[snapshot.daily.length - idx - 1];
           if (!day) { if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('暂无数据') + '</div>'; return; }
           var c = document.createElement('canvas');
-          c.width = 600; c.height = 840;
+          c.width = 600;
+          // height is set by renderShareDailyCard (auto-grows to fit content).
           window.TS.renderShareDailyCard(c, {
             day: day, previousDay: previousDay,
             daily30: snapshot.daily.slice(-30),
             settings: settings, mode: mode,
+            totals: snapshot.totals || {},
+            goalDays: snapshot.daily.filter(function (d) { return d.total_tokens >= settings.daily_goal_tokens; }).length,
           });
           finishCard(c, copy, eb);
         } catch (e) {
@@ -249,14 +252,28 @@
       }
 
       // Full-page screenshot via domToCanvas.
+      // Full-page screenshot: re-render the Today view as a Canvas image
+      // (the old domToCanvas/foreignObject approach fails under WebView2
+      // because cloned nodes lose their CSS-variable colors). This produces
+      // a stable, good-looking PNG of today's overview.
       function capturePage(copy) {
         var eb = document.getElementById('errorBanner');
-        var view = document.getElementById('view');
-        if (!view) { if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('截图失败：找不到内容区域') + '</div>'; return; }
-        domToCanvas(view).then(function (canvas) { finishCard(canvas, copy, eb); }).catch(function (e) {
-          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('截图失败:') + ' ' + (e && e.message ? e.message : e) + '（' + window.TS.t('请改用系统截图）') + '</div>';
+        if (!snapshot.daily || !snapshot.daily.length) {
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('暂无数据') + '</div>';
+          return;
+        }
+        try {
+          var c = document.createElement('canvas');
+          c.width = 720;
+          window.TS.renderTodayOverview(c, {
+            snapshot: snapshot,
+            settings: settings,
+          });
+          finishCard(c, copy, eb);
+        } catch (e) {
+          if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('截图失败:') + ' ' + (e && e.message ? e.message : e) + '</div>';
           setTimeout(function () { if (eb) eb.innerHTML = ''; }, 4000);
-        });
+        }
       }
 
       // Copy canvas PNG to clipboard, or save it. Falls back to save if
