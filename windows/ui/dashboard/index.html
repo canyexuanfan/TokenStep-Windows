@@ -603,7 +603,7 @@
           loadClaudeQuota();
           loadTokenRank();
         }
-        else if (current === 'history') view.innerHTML = viewHistory();
+        else if (current === 'history') { view.innerHTML = viewHistory(); var aw = document.getElementById('activityWall'); if (aw) aw.scrollLeft = aw.scrollWidth; }
         else if (current === 'stats') view.innerHTML = viewStats();
         else if (current === 'privacy') view.innerHTML = viewPrivacy();
         else if (current === 'settings') {
