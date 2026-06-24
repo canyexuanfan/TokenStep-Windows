@@ -2017,11 +2017,13 @@ function stackedActivityBarsHTML(rows, goal) {
             '"></div>'
           );
         }
-        // Segments stacked bottom-up: each segment's height is its share of
-        // total_tokens *relative to the bar* (so the segments sum to exactly
-        // 100% of the bar height — no overflow/underflow, bottoms always flush).
-        // column-reverse stacks the first segment at the bottom.
+        // Segments stacked bottom-up to match the Canvas export exactly:
+        // orderedToolEntries → [Codex, Claude, ...], reversed → [Claude, Codex],
+        // and column-reverse places the first array item at the bottom, so
+        // Claude ends up on the bottom (same as drawShareTrendPanel).
         const segHtml = segments
+          .slice()
+          .reverse()
           .map((s) => {
             const sharePct = (s.tokens / Math.max(d.total_tokens, 1)) * 100;
             return (
@@ -2070,7 +2072,7 @@ function tokenToolLegendHTML(rows) {
       .join("") +
     // Goal-line legend (port of macOS TokenToolLegend showsGoalLine).
     '<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);font-weight:600">' +
-    '<span style="width:16px;height:1px;background:var(--mutedFaint);opacity:.55"></span>' +
+    '<span style="width:16px;height:1px;background:var(--muted-faint);opacity:.55"></span>' +
     t("每日目标") +
     "</span>" +
     "</div>"
