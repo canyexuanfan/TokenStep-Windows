@@ -318,189 +318,753 @@ function drawShareCardSurface(ctx, x, y, w, h, padding, radius) {
 // Build a daily share card (today OR yesterday mode).
 //   opts.day         — DailyUsage {date, tools:{}, models:{}, total_tokens, cost}
 //   opts.previousDay — DailyUsage (for the "比前一天多/少 X%" comparison) or null
-//   opts.daily30     — last 30 DailyUsage rows (for the trend panel)
+//   opts.daily30     — last 30 DailyUsage rows (trend panel + month avg)
 //   opts.settings    — {daily_goal_tokens}
 //   opts.mode        — "today" | "yesterday"
+//   opts.totals      — {tokens, active_days} (for the metric strip) or null
+//   opts.goalDays    — number of days that reached the goal (or null)
 // Layout port of ShareDailyCardView.swift. Outer VStack(alignment:.leading,
-// spacing:14) padded 28, on a TokenStepBackdrop, frame 600×840.
+// spacing:14) padded 28, on a TokenStepBackdrop, width 600, height自适应.
+// Mac original is 600×840 but only fits its own blocks; this port adds the
+// front-end-only lap-chips / pills / metric-strip, so the canvas grows taller
+// to keep every block at its true macOS metrics (no squashing).
 function renderShareDailyCard(canvas, opts) {
   const ctx = canvas.getContext("2d");
   _ensureRoundRect(ctx);
   const C = themeColors;
-  const W = canvas.width;
-  const H = canvas.height;
   const day = opts.day || { total_tokens: 0, cost: 0, tools: {}, models: {} };
   const settings = opts.settings || { daily_goal_tokens: 100000000 };
   const goal = Math.max(settings.daily_goal_tokens, 1);
   const lap = lapProgress(day.total_tokens, goal);
   const lapColor = lap.color || C.green;
   const pad = 28;
+  const W = canvas.width || 600;
   const contentW = W - pad * 2;
   const isYesterday = opts.mode === "yesterday";
 
-  // ── Backdrop: near-solid canvas (reference is essentially flat #F5F7F8). ──
+  // ── Pre-compute derived values used by both measure & draw passes. ──
+  const daily30 = opts.daily30 || [];
+  const monthAvg = daily30.length
+    ? Math.round(daily30.reduce(function (a, d) { return a + (d.total_tokens || 0); }, 0) / 30)
+    : 0;
+  const totals = opts.totals || {};
+  const goalDays = opts.goalDays != null ? opts.goalDays : 0;
+
+  // lap-chip list (port of viewToday lapChips logic).
+  const chipList = [];
+  if (lap.completedLaps > 0) {
+    var visible = lap.completedLaps <= 2 ? [] : [lap.completedLaps - 1];
+    visible.forEach(function (n) {
+      chipList.push({
+        active: false,
+        title: "✓ " + tf(t("%d圈完成"), n),
+        detail: formatTokens(n * goal, true),
+      });
+    });
+    chipList.push({
+      active: true,
+      title: "↻ " + tf(t("%@进行中"), lap.lapTitle),
+      detail: formatPercent(lap.currentLapPercent),
+    });
+  }
+
+  // ── Two-pass: first measure total height, then set canvas.height & draw. ──
+  // Precise block heights (kept in sync with the draw pass below).
+  const headerH = 42; // mark height
+  const ringSize = 212;
+  const ringBox = ringSize; // 212
+  const pillsRowH = 40;
+  const chipsGap = chipList.length ? 12 : 0;
+  const chipsRowH = chipList.length ? 40 : 0;
+  const heroContentH = ringBox + 18 + pillsRowH + chipsGap + chipsRowH;
+  const heroH = 20 * 2 + heroContentH; // surface padding 20
+  const metricStripH = 96; // one mini card height
+  const footerH = 20;
+
+  // Count breakdown rows to size those panels.
+  const toolEntries = Object.keys(day.tools || {})
+    .filter(function (k) { return day.tools[k] > 0; })
+    .sort(function (a, b) { return day.tools[b] - day.tools[a]; })
+    .slice(0, 4);
+  const modelEntries = Object.keys(day.models || {})
+    .filter(function (k) { return day.models[k] > 0; })
+    .sort(function (a, b) { return day.models[b] - day.models[a]; })
+    .slice(0, 4);
+  // Breakdown panel height MUST equal drawShareBreakdownPanel's returned
+  // panelH = padding*2(32) + headerH(34) + entries.length*rowH(25). Keep in
+  // sync with that function. Empty data → entries.length 0 → 66px panel.
+  const breakdownToolH = 16 * 2 + 34 + Math.max(toolEntries.length, 1) * 25;
+  const breakdownModelH = 16 * 2 + 34 + Math.max(modelEntries.length, 1) * 25;
+  // Trend panel height MUST equal drawShareTrendPanel's panelH (162).
+  const trendH = 162;
+
+  const blocks = [headerH, heroH, metricStripH, breakdownToolH, breakdownModelH, trendH];
+  const spacing = 14;
+  const totalH = pad + blocks.reduce(function (a, b) { return a + b; }, 0) + spacing * (blocks.length - 1) + 14 /* gap before footer */ + footerH + pad;
+
+  // Apply measured height (idempotent: if caller already set a height, we
+  // override it because content now drives the size).
+  canvas.width = W;
+  canvas.height = totalH;
+  const H = canvas.height;
+  _ensureRoundRect(ctx); // re-apply after resize (resize resets context state)
+
+  // ── Backdrop: TokenStepBackdrop port — canvas color + faint diagonal tint. ──
   ctx.fillStyle = C.canvas;
   ctx.fillRect(0, 0, W, H);
-  // Very faint diagonal tint — barely visible, like the macOS original.
   const tint = ctx.createLinearGradient(0, 0, W, H);
-  tint.addColorStop(0, hexA(C.mint, 0.045));
-  tint.addColorStop(0.55, "rgba(0,0,0,0)");
-  tint.addColorStop(1, hexA(C.green, 0.012));
+  tint.addColorStop(0, hexA(C.mint, 0.10));
+  tint.addColorStop(0.5, "rgba(0,0,0,0)");
+  tint.addColorStop(1, hexA(C.green, 0.025));
   ctx.fillStyle = tint;
   ctx.fillRect(0, 0, W, H);
 
-  // ── Header: mark(42) + title/subtitle (left) | mode title + date (right). ──
+  // ── Header: mark(42) + brand (left) | mode title + date (right). ──
   drawTokenStepMark(ctx, pad, pad, 42);
-  const headerH = 42;
-  // Left text column after the mark.
   ctx.textAlign = "left";
   ctx.fillStyle = C.ink;
   ctx.font = "800 27px 'Segoe UI', sans-serif";
-  ctx.fillText("TokenStep", pad + 42 + 12, pad + 20);
+  ctx.fillText("TokenStep", pad + 42 + 12, pad + 22);
   ctx.fillStyle = C.muted;
   ctx.font = "700 13px 'Segoe UI', sans-serif";
-  ctx.fillText(t("每日 Token 消耗追踪"), pad + 42 + 12, pad + 36);
-  // Right text column (date only — reference has no mode title here).
+  ctx.fillText(t("每日 Token 消耗追踪"), pad + 42 + 12, pad + 38);
+  // Right column: Mac shows mode title (headline heavy) over date (caption).
   ctx.textAlign = "right";
   ctx.fillStyle = C.ink;
   ctx.font = "800 18px 'Segoe UI', sans-serif";
-  ctx.fillText(day.date || "", W - pad, pad + 20);
+  ctx.fillText(isYesterday ? t("昨日 AI 工作成绩单") : t("今日 AI 战绩"), W - pad, pad + 20);
   ctx.fillStyle = C.muted;
   ctx.font = "700 13px 'Segoe UI', sans-serif";
-  ctx.fillText(formatRhythmWeekday(day.date), W - pad, pad + 36);
+  ctx.fillText((day.date || "") + " " + formatRhythmWeekday(day.date), W - pad, pad + 38);
 
-  let y = pad + headerH + 14; // spacing:14 after header
+  let y = pad + headerH + 14;
 
-  // ── Hero: ShareCardSurface(r26,pad20) holding a horizontal ring+stats. ──
-  const heroH = 256;
+  // ── Hero: ShareCardSurface(r26,pad20) holding three rows: ────────────
+  //   row 1: ring (left) + right text block, vertically centered
+  //   row 2: pills (2 equal columns, full width)
+  //   row 3: lap-chips (full width, when present)
   drawShareCardSurface(ctx, pad, y, contentW, heroH, 20, 26);
   const heroInnerX = pad + 20;
   const heroInnerY = y + 20;
   const heroInnerW = contentW - 40;
-  const heroInnerH = heroH - 40;
-  // Left: ring group, vertically centered in the hero card.
-  const ringSize = 212;
-  const ringOuter = ringSize / 2; // 106, fits within heroInnerH=216
-  const ringBox = ringOuter * 2;
+
+  // Row 1 — ring (left) + right text block. Both vertically centered on the
+  // ring's vertical center, matching macOS HStack(alignment:.center).
   const ringCx = heroInnerX + ringBox / 2;
-  const ringCy = heroInnerY + heroInnerH / 2;
-  // Soft glow behind ring (boosted for depth; macOS uses 0.09 but Canvas
-  // needs a touch more to read as a luminous halo).
+  const ringCy = heroInnerY + ringBox / 2;
+  // Soft glow behind ring — macOS uses Circle().fill(lap.color.opacity(0.09)).blur(10) at 228.
   ctx.save();
-  ctx.fillStyle = hexA(lapColor, 0.16);
-  ctx.filter = "blur(14px)";
+  ctx.fillStyle = hexA(lapColor, 0.09);
+  ctx.filter = "blur(10px)";
   ctx.beginPath();
-  ctx.arc(ringCx, ringCy, ringOuter + 6, 0, Math.PI * 2);
+  ctx.arc(ringCx, ringCy, 114, 0, Math.PI * 2);
   ctx.fill();
   ctx.filter = "none";
   ctx.restore();
-  // Track ring.
-  const ringR = ringSize / 2 - 8; // lineWidth 16 → inner radius 98
+  // Track ring (full circle, lineCap round — matches ProgressRingView).
+  const ringStroke = 20; // macOS share card passes lineWidth:20
+  const ringR = (ringSize - ringStroke) / 2; // inner radius
   ctx.strokeStyle = C.track;
-  ctx.lineWidth = 16;
+  ctx.lineWidth = ringStroke;
+  ctx.lineCap = "round";
   ctx.beginPath();
   ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
   ctx.stroke();
-  // Progress ring (12 o'clock start, clockwise) — with green drop shadow +
-  // vertical gradient stroke for a subtle luminous sheen (matches macOS
-  // ProgressRingView .shadow(color, radius:5, y:3) and adds depth).
+  // Progress ring: 12 o'clock start, clockwise, solid lapColor, light shadow.
   ctx.save();
-  ctx.shadowColor = hexA(lapColor, 0.30);
-  ctx.shadowBlur = 8;
+  ctx.shadowColor = hexA(lapColor, 0.10);
+  ctx.shadowBlur = 5;
   ctx.shadowOffsetY = 3;
-  const ringGrad = ctx.createLinearGradient(ringCx, ringCy - ringR, ringCx, ringCy + ringR);
-  ringGrad.addColorStop(0, lighten(lapColor, 0.12));
-  ringGrad.addColorStop(1, lapColor);
-  ctx.strokeStyle = ringGrad;
-  ctx.lineWidth = 16;
+  ctx.strokeStyle = lapColor;
+  ctx.lineWidth = ringStroke;
   ctx.lineCap = "round";
   ctx.beginPath();
-  ctx.arc(ringCx, ringCy, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lap.currentLapProgress);
+  ctx.arc(ringCx, ringCy, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(lap.currentLapProgress, 1)));
   ctx.stroke();
   ctx.restore();
-  // Ring center: big token number + per-lap goal label.
+  // Ring center: big token number (54px black) + per-lap goal label.
+  // 54px (not 64) so the number fits the ring inner diameter comfortably.
   ctx.fillStyle = C.ink;
   ctx.textAlign = "center";
-  ctx.font = "800 52px 'Segoe UI', sans-serif";
-  ctx.fillText(formatTokens(day.total_tokens), ringCx, ringCy - 2);
+  ctx.font = "800 54px 'Segoe UI', sans-serif";
+  ctx.fillText(formatTokens(day.total_tokens), ringCx, ringCy + 6);
   ctx.fillStyle = C.muted;
   ctx.font = "700 14px 'Segoe UI', sans-serif";
-  ctx.fillText(
-    tf(t("/ %@ 每圈"), formatTokens(goal, true)),
-    ringCx,
-    ringCy + 24
-  );
+  ctx.fillText(tf(t("/ %@ 每圈"), formatTokens(goal, true)), ringCx, ringCy + 30);
 
-  // Right of ring: completion%, laps, per-lap goal, comparison — vertically
-  // centered relative to the ring.
-  const rightX = heroInnerX + ringBox + 22;
-  const rightW = heroInnerW - ringBox - 22;
-  const rightCx = heroInnerY + heroInnerH / 2; // align block to ring center
+  // Right text block — vertically centered against the ring center.
+  const rightX = heroInnerX + ringBox + 24;
+  const rightW = heroInnerW - ringBox - 24;
+  // Compute total right-block height, then top = ringCy - height/2 (centered).
+  const introH = 20, pctH = 58, infoLineH = 20;
+  const infoGap = 4;
+  const rightBlockH = introH + 6 + pctH + 10 + infoLineH * 3 + infoGap * 2;
+  let ry = ringCy - rightBlockH / 2;
   ctx.textAlign = "left";
-  // Intro line (top of the right block).
+  // Intro line (callout heavy ~16px).
   ctx.fillStyle = C.muted;
-  ctx.font = "800 15px 'Segoe UI', sans-serif";
-  ctx.fillText(isYesterday ? t("昨天我和 AI 一起完成了") : t("今天我和 AI 一起消耗了"), rightX, rightCx - 56);
-  // Big completion% in lap color.
+  ctx.font = "700 16px 'Segoe UI', sans-serif";
+  ctx.fillText(isYesterday ? t("昨天我和 AI 一起完成了") : t("今天我和 AI 一起消耗了"), rightX, ry + introH);
+  ry += introH + 6;
+  // Big completion% (58px black) in lap color, baseline-aligned label.
   const completionPct = Math.min(999, Math.round(lap.rawProgress * 100));
-  ctx.fillStyle = lapColor;
-  ctx.font = "800 50px 'Segoe UI', sans-serif";
   const pctText = formatPercent(completionPct);
-  ctx.fillText(pctText, rightX, rightCx - 8);
+  ctx.fillStyle = lapColor;
+  ctx.font = "900 52px 'Segoe UI', sans-serif";
+  ctx.fillText(pctText, rightX, ry + pctH);
   const pctW = ctx.measureText(pctText).width;
   ctx.fillStyle = C.muted;
-  ctx.font = "800 15px 'Segoe UI', sans-serif";
-  ctx.fillText(t("总完成度"), rightX + pctW + 8, rightCx - 26);
-  // Completed laps text.
-  ctx.fillStyle = hexA(C.ink, 0.78);
+  ctx.font = "700 15px 'Segoe UI', sans-serif";
+  // "总完成度" sits on the same baseline as the big number (alphabetic baseline).
+  ctx.fillText(t("总完成度"), rightX + pctW + 8, ry + pctH - 8);
+  ry += pctH + 10;
+  // Three info lines, stacked by line height (no absolute offsets).
+  // Line 1: completed laps (title3 heavy ~18px).
+  ctx.fillStyle = hexA(C.ink, 0.82);
   ctx.font = "800 18px 'Segoe UI', sans-serif";
   const lapsTotal = lap.completedLaps + (lap.currentLapProgress > 0 ? 1 : 0);
-  ctx.fillText(tf(t("已完成 %d 圈"), lapsTotal), rightX, rightCx + 28);
-  // Per-lap goal.
+  ctx.fillText(tf(t("已完成 %d 圈"), lapsTotal), rightX, ry + infoLineH);
+  ry += infoLineH + infoGap;
+  // Line 2: per-lap goal (subheadline bold ~14px).
   ctx.fillStyle = C.muted;
   ctx.font = "700 14px 'Segoe UI', sans-serif";
-  ctx.fillText(tf(t("每圈目标 %@"), formatTokens(goal, true)), rightX, rightCx + 50);
-  // Comparison line (today: 今日 Token; yesterday: vs previous day).
+  ctx.fillText(tf(t("每圈目标 %@"), formatTokens(goal, true)), rightX, ry + infoLineH);
+  ry += infoLineH + infoGap;
+  // Line 3: comparison / 今日 Token (subheadline heavy ~14px).
   ctx.fillStyle = C.muted;
-  ctx.font = "800 14px 'Segoe UI', sans-serif";
+  ctx.font = "700 14px 'Segoe UI', sans-serif";
   const cmpLine = isYesterday ? comparisonText(day, opts.previousDay) : t("今日 Token");
-  ctx.fillText(cmpLine, rightX, rightCx + 72);
+  ctx.fillText(truncate(ctx, cmpLine, rightW), rightX, ry + infoLineH);
 
-  y += heroH + 14; // spacing:14
+  // Row 2 — pills: two equal columns spanning full hero inner width.
+  const pillsY = heroInnerY + ringBox + 18;
+  const pillGap = 12;
+  const pillW = (heroInnerW - pillGap) / 2;
+  drawPill(ctx, heroInnerX, pillsY, pillW, pillsRowH, t("消耗金额"), formatMoney(day.cost));
+  drawPill(ctx, heroInnerX + pillW + pillGap, pillsY, pillW, pillsRowH, t("本月均值"), formatTokens(monthAvg, true));
+
+  // Row 3 — lap-chips: full width, only when present.
+  if (chipList.length) {
+    const chipsY = pillsY + pillsRowH + 12;
+    drawLapChips(ctx, heroInnerX, chipsY, heroInnerW, chipsRowH, chipList, lapColor);
+  }
+
+  y += heroH + 14;
+
+  // ── Metric strip: 累计 / 活跃 / 达标 (3 mini cards). ────────────────
+  drawMetricStrip(ctx, pad, y, contentW, metricStripH, [
+    { label: t("累计 Token 消耗"), value: formatTokens(totals.tokens || 0, true), detail: t("所有本机记录") },
+    { label: t("活跃天数"), value: (totals.active_days || 0) + " " + t("天"), detail: t("有 AI 使用的日期") },
+    { label: t("达标天数"), value: goalDays + " " + t("天"), detail: t("达到每日目标") },
+  ]);
+  y += metricStripH + 14;
 
   // ── Breakdown: 今日/昨日来源 (tools). ────────────────────────────────
-  const breakdownH = drawShareBreakdownPanel(
+  const b1H = drawShareBreakdownPanel(
     ctx, C, pad, y, contentW,
     isYesterday ? t("昨日来源") : t("今日来源"),
     t("颜色代表客户端"),
     day.tools || {}, true
   );
-  y += breakdownH + 14;
+  y += b1H + 14;
 
   // ── Breakdown: 主力模型. ─────────────────────────────────────────────
-  const modelH = drawShareBreakdownPanel(
+  const b2H = drawShareBreakdownPanel(
     ctx, C, pad, y, contentW,
     t("主力模型"),
     t("按 Token 消耗排序"),
     day.models || {}, false
   );
-  y += modelH + 14;
+  y += b2H + 14;
 
   // ── Trend panel (30-day bars + summary capsule). ─────────────────────
-  const trendH = drawShareTrendPanel(ctx, C, pad, y, contentW, opts.daily30 || [], goal, day);
+  drawShareTrendPanel(ctx, C, pad, y, contentW, daily30, goal, day);
   y += trendH + 14;
 
-  // ── Footer: shield + 本地统计·不上传对话 (left) | mac 原版官网 + 十七° 移植 (right). ──
-  const footerY = H - pad - 8;
+  // ── Footer: shield + 本地统计·不上传对话 (left) | tokenstep.app (right). ──
+  const footerY = y + footerH - 6;
   ctx.textAlign = "left";
   ctx.fillStyle = C.muted;
   ctx.font = "700 12px 'Segoe UI', sans-serif";
   drawShield(ctx, pad, footerY - 9, C.muted);
   ctx.fillText(t("本地统计") + " · " + t("不上传代码或对话"), pad + 20, footerY);
   ctx.textAlign = "right";
-  ctx.fillText(t("mac 原版") + " tokenstep.app · " + t("十七°") + " " + t("移植"), W - pad, footerY);
+  ctx.fillText("tokenstep.app", W - pad, footerY);
 
   return canvas;
+}
+
+// Render a "today overview" image for the full-page screenshot feature.
+// This is the front-end-style counterpart to the macOS-style share card:
+// a taller, wider canvas laying out hero + metric strip + 30-day activity +
+// today's client/model distribution, mirroring the on-screen Today page.
+//   opts.snapshot — full snapshot {totals, daily, tools, models, rhythms}
+//   opts.settings — {daily_goal_tokens, ...}
+// Width is fixed by the caller (720); height auto-grows to fit content.
+function renderTodayOverview(canvas, opts) {
+  const ctx = canvas.getContext("2d");
+  _ensureRoundRect(ctx);
+  const C = themeColors;
+  const snap = opts.snapshot || {};
+  const settings = opts.settings || { daily_goal_tokens: 100000000 };
+  const goal = Math.max(settings.daily_goal_tokens, 1);
+  const daily = snap.daily || [];
+  const today = daily[daily.length - 1] || { total_tokens: 0, cost: 0, tools: {}, models: {} };
+  const lap = lapProgress(today.total_tokens, goal);
+  const lapColor = lap.color || C.green;
+
+  const W = canvas.width || 720;
+  const pad = 32;
+  const contentW = W - pad * 2;
+  const headerH = 48;
+
+  // ── Measure each block so canvas.height fits exactly. ──
+  const ringSize = 204;
+  const ringBox = ringSize;
+  const pillsRowH = 44;
+  const pillGap = 14;
+  const metricStripH = 104;
+  const activityPanelH = 16 * 2 + 30 + 10 + 96 + 14 + 22; // pad + title + gap + bars + gap + legend
+  // Distribution: two side-by-side panels. Height = pad*2 + title(28) + 5 rows*32.
+  const distPanelH = 16 * 2 + 28 + 5 * 32;
+  const footerH = 22;
+
+  // lap-chip row (same rule as the share card).
+  const chipList = [];
+  if (lap.completedLaps > 0) {
+    var visible = lap.completedLaps <= 2 ? [] : [lap.completedLaps - 1];
+    visible.forEach(function (n) {
+      chipList.push({ active: false, title: "✓ " + tf(t("%d圈完成"), n), detail: formatTokens(n * goal, true) });
+    });
+    chipList.push({ active: true, title: "↻ " + tf(t("%@进行中"), lap.lapTitle), detail: formatPercent(lap.currentLapPercent) });
+  }
+  const chipsRowH = chipList.length ? 44 : 0;
+  const chipsGap = chipList.length ? 14 : 0;
+
+  // Hero content height: ring row (ring tall) + chips + pills.
+  const heroContentH = ringBox + chipsGap + chipsRowH + 16 + pillsRowH;
+  const heroH = 22 * 2 + heroContentH; // surface padding 22
+
+  const spacing = 16;
+  const blocks = [headerH, heroH, metricStripH, activityPanelH, distPanelH];
+  const totalH = pad + blocks.reduce(function (a, b) { return a + b; }, 0) + spacing * (blocks.length - 1) + 14 + footerH + pad;
+
+  canvas.width = W;
+  canvas.height = totalH;
+  const H = canvas.height;
+  _ensureRoundRect(ctx);
+
+  // ── Backdrop. ──
+  ctx.fillStyle = C.canvas;
+  ctx.fillRect(0, 0, W, H);
+  const tint = ctx.createLinearGradient(0, 0, W, H);
+  tint.addColorStop(0, hexA(C.mint, 0.10));
+  tint.addColorStop(0.5, "rgba(0,0,0,0)");
+  tint.addColorStop(1, hexA(C.green, 0.025));
+  ctx.fillStyle = tint;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── Header. ──
+  drawTokenStepMark(ctx, pad, pad, 48);
+  ctx.textAlign = "left";
+  ctx.fillStyle = C.ink;
+  ctx.font = "800 30px 'Segoe UI', sans-serif";
+  ctx.fillText("TokenStep", pad + 48 + 14, pad + 24);
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 14px 'Segoe UI', sans-serif";
+  ctx.fillText(t("每日 Token 消耗追踪"), pad + 48 + 14, pad + 42);
+  ctx.textAlign = "right";
+  ctx.fillStyle = C.ink;
+  ctx.font = "800 20px 'Segoe UI', sans-serif";
+  ctx.fillText(t("今日概览"), W - pad, pad + 24);
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 13px 'Segoe UI', sans-serif";
+  ctx.fillText((today.date || "") + " " + formatRhythmWeekday(today.date), W - pad, pad + 42);
+
+  let y = pad + headerH + spacing;
+
+  // ── Hero: ring (left) + right text block, then chips, then pills. ──
+  drawShareCardSurface(ctx, pad, y, contentW, heroH, 22, 24);
+  const hx = pad + 22;
+  const hy = y + 22;
+  const hw = contentW - 44;
+  const ringCx = hx + ringBox / 2;
+  const ringCy = hy + ringBox / 2;
+  // Glow.
+  ctx.save();
+  ctx.fillStyle = hexA(lapColor, 0.09);
+  ctx.filter = "blur(10px)";
+  ctx.beginPath();
+  ctx.arc(ringCx, ringCy, ringSize / 2 + 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.filter = "none";
+  ctx.restore();
+  // Track + progress ring (stroke 20, like the front-end ringSvg).
+  const ringStroke = 20;
+  const ringR = (ringSize - ringStroke) / 2;
+  ctx.strokeStyle = C.track;
+  ctx.lineWidth = ringStroke;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(ringCx, ringCy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.save();
+  ctx.shadowColor = hexA(lapColor, 0.10);
+  ctx.shadowBlur = 5;
+  ctx.shadowOffsetY = 3;
+  // Front-end ring uses a mint→green→greenDark diagonal gradient.
+  const rg = ctx.createLinearGradient(ringCx - ringR, ringCy + ringR, ringCx + ringR, ringCy - ringR);
+  rg.addColorStop(0, C.mint);
+  rg.addColorStop(0.5, C.green);
+  rg.addColorStop(1, C.greenDark);
+  ctx.strokeStyle = rg;
+  ctx.lineWidth = ringStroke;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(ringCx, ringCy, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(lap.currentLapProgress, 1)));
+  ctx.stroke();
+  ctx.restore();
+  // Ring center: token number + per-lap goal (front-end sizing: 42px value).
+  ctx.fillStyle = C.ink;
+  ctx.textAlign = "center";
+  ctx.font = "800 42px 'Segoe UI', sans-serif";
+  ctx.fillText(formatTokens(today.total_tokens), ringCx, ringCy + 4);
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 16px 'Segoe UI', sans-serif";
+  ctx.fillText("/ " + formatTokens(goal, true) + " " + t("每圈"), ringCx, ringCy + 28);
+
+  // Right text block — vertically centered on ring center (front-end layout).
+  const rightX = hx + ringBox + 34;
+  const rightW = hw - ringBox - 34;
+  const lapTitleH = 40, subH = 26;
+  const rightBlockH = lapTitleH + subH * 2 + 8;
+  let ry = ringCy - rightBlockH / 2;
+  ctx.textAlign = "left";
+  // Lap title + percent (big, lap color) — front-end uses 35px.
+  ctx.fillStyle = lapColor;
+  ctx.font = "800 34px 'Segoe UI', sans-serif";
+  ctx.fillText(lap.lapTitle + " · " + formatPercent(lap.currentLapPercent), rightX, ry + lapTitleH);
+  ry += lapTitleH + 4;
+  // 已完成 X.
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 18px 'Segoe UI', sans-serif";
+  ctx.fillText(t("已完成 ") + formatTokens(lap.completedLaps * goal, true), rightX, ry + subH);
+  ry += subH + 4;
+  // 每圈目标.
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 18px 'Segoe UI', sans-serif";
+  ctx.fillText(t("每圈目标 ") + formatTokens(goal, true), rightX, ry + subH);
+
+  // Chips row (full width).
+  let belowY = hy + ringBox;
+  if (chipList.length) {
+    belowY += chipsGap;
+    drawLapChips(ctx, hx, belowY, hw, chipsRowH, chipList, lapColor);
+    belowY += chipsRowH;
+  }
+  // Pills row: two equal columns.
+  belowY += 16;
+  const pillW = (hw - pillGap) / 2;
+  const monthAvg = daily.slice(-30).length
+    ? Math.round(daily.slice(-30).reduce(function (a, d) { return a + (d.total_tokens || 0); }, 0) / 30)
+    : 0;
+  drawPill(ctx, hx, belowY, pillW, pillsRowH, t("消耗金额"), formatMoney(today.cost));
+  drawPill(ctx, hx + pillW + pillGap, belowY, pillW, pillsRowH, t("本月均值"), formatTokens(monthAvg, true));
+
+  y += heroH + spacing;
+
+  // ── Metric strip. ──
+  const goalDays = daily.filter(function (d) { return d.total_tokens >= goal; }).length;
+  drawMetricStrip(ctx, pad, y, contentW, metricStripH, [
+    { label: t("累计 Token 消耗"), value: formatTokens((snap.totals || {}).tokens || 0, true), detail: t("所有本机记录") },
+    { label: t("活跃天数"), value: ((snap.totals || {}).active_days || 0) + " " + t("天"), detail: t("有 AI 使用的日期") },
+    { label: t("达标天数"), value: goalDays + " " + t("天"), detail: t("达到每日目标") },
+  ]);
+  y += metricStripH + spacing;
+
+  // ── 30-day activity panel. ──
+  drawOverviewActivityPanel(ctx, C, pad, y, contentW, daily.slice(-30), goal, today);
+  y += activityPanelH + spacing;
+
+  // ── Distribution: today's client + model (two side-by-side panels). ──
+  const distGap = 16;
+  const distW = (contentW - distGap) / 2;
+  drawOverviewDistPanel(ctx, C, pad, y, distW, distPanelH, t("今日客户端"), today.tools || {}, true);
+  drawOverviewDistPanel(ctx, C, pad + distW + distGap, y, distW, distPanelH, t("今日模型"), today.models || {}, false);
+  y += distPanelH + 14;
+
+  // ── Footer. ──
+  const footerY = y + footerH - 4;
+  ctx.textAlign = "left";
+  ctx.fillStyle = C.muted;
+  ctx.font = "700 12px 'Segoe UI', sans-serif";
+  drawShield(ctx, pad, footerY - 9, C.muted);
+  ctx.fillText(t("本地统计") + " · " + t("不上传代码或对话"), pad + 20, footerY);
+  ctx.textAlign = "right";
+  ctx.fillText("tokenstep.app", W - pad, footerY);
+
+  return canvas;
+}
+
+// 30-day activity panel for the overview image. Taller bars (96) + a legend
+// row beneath, mirroring the on-screen Today page's activity card.
+function drawOverviewActivityPanel(ctx, C, x, y, w, daily, goal, today) {
+  const padding = 16;
+  drawShareCardSurface(ctx, x, y, w, 16 * 2 + 30 + 10 + 96 + 14 + 22, padding, 22);
+  const innerX = x + padding;
+  const innerW = w - padding * 2;
+  // Title + subtitle.
+  ctx.fillStyle = C.ink;
+  ctx.font = "800 20px 'Segoe UI', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(t("最近 30 天"), innerX, y + padding + 18);
+  ctx.fillStyle = C.muted;
+  ctx.font = "600 14px 'Segoe UI', sans-serif";
+  ctx.fillText(t("颜色越深，圈数越高"), innerX, y + padding + 36);
+  // Today capsule (right).
+  const capText = t("今天") + " " + formatTokens((today && today.total_tokens) || 0, true);
+  ctx.font = "700 14px 'Segoe UI', sans-serif";
+  const capW = ctx.measureText(capText).width + 24;
+  const capH = 28;
+  const capX = x + w - padding - capW;
+  const capY = y + padding + 6;
+  ctx.fillStyle = hexA(C.mint, 0.28);
+  ctx.beginPath();
+  ctx.roundRect(capX, capY, capW, capH, capH / 2);
+  ctx.fill();
+  ctx.fillStyle = C.greenDark;
+  ctx.textAlign = "center";
+  ctx.fillText(capText, capX + capW / 2, capY + capH - 8);
+
+  // Bars.
+  const rows = daily.slice(-30);
+  if (rows.length) {
+    const maxTokens = Math.max.apply(null, [goal].concat(rows.map(function (d) { return d.total_tokens; })).concat([1]));
+    const barsY = y + padding + 46;
+    const barsH = 96;
+    const barGap = 5;
+    const barW = Math.max(4, (innerW - barGap * (rows.length - 1)) / rows.length);
+    const barR = Math.min(4, barW / 2);
+    rows.forEach(function (d, i) {
+      const bx = innerX + i * (barW + barGap);
+      const totalH = Math.max(4, (d.total_tokens / maxTokens) * barsH);
+      if (d.total_tokens <= 0) {
+        ctx.fillStyle = C.track;
+        ctx.beginPath();
+        ctx.roundRect(bx, barsY + barsH - 4, barW, 4, Math.min(2, barW / 2));
+        ctx.fill();
+        return;
+      }
+      const segs = orderedToolEntries(d.tools || {});
+      if (!segs.length) {
+        ctx.fillStyle = contributionColor(d.total_tokens, goal);
+        ctx.beginPath();
+        ctx.roundRect(bx, barsY + barsH - totalH, barW, totalH, barR);
+        ctx.fill();
+        return;
+      }
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(bx, barsY + barsH - totalH, barW, totalH, barR);
+      ctx.clip();
+      let drawn = 0;
+      segs.slice().reverse().forEach(function (s) {
+        const sh = Math.max(1, (totalH * s.tokens) / Math.max(d.total_tokens, 1));
+        ctx.fillStyle = tokenToolColor(s.name);
+        ctx.fillRect(bx, barsY + barsH - drawn - sh, barW, sh);
+        drawn += sh;
+      });
+      ctx.restore();
+    });
+  }
+  // Legend (top tools across the 30 days).
+  const legendY = y + 16 * 2 + 30 + 10 + 96 + 14;
+  drawOverviewLegend(ctx, C, innerX, legendY, innerW, rows);
+}
+
+// Compact legend for the activity bars: top tools by total tokens.
+function drawOverviewLegend(ctx, C, x, y, maxW, rows) {
+  const totals = {};
+  rows.forEach(function (d) {
+    Object.keys(d.tools || {}).forEach(function (k) {
+      totals[k] = (totals[k] || 0) + (d.tools[k] || 0);
+    });
+  });
+  const entries = Object.keys(totals).sort(function (a, b) { return totals[b] - totals[a]; }).slice(0, 4);
+  if (!entries.length) return;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  let lx = x;
+  entries.forEach(function (name) {
+    const color = tokenToolColor(name);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(lx + 5, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = C.muted;
+    ctx.font = "600 13px 'Segoe UI', sans-serif";
+    ctx.fillText(name, lx + 14, y);
+    const tw = ctx.measureText(name).width;
+    lx += 14 + tw + 18;
+  });
+  ctx.textBaseline = "alphabetic";
+}
+
+// Distribution panel: a title + up to 5 rows (name + bar + amount/percent).
+function drawOverviewDistPanel(ctx, C, x, y, w, panelH, title, values, useToolColor) {
+  const padding = 16;
+  drawShareCardSurface(ctx, x, y, w, panelH, padding, 22);
+  const innerX = x + padding;
+  const innerW = w - padding * 2;
+  ctx.fillStyle = C.ink;
+  ctx.font = "800 18px 'Segoe UI', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(title, innerX, y + padding + 18);
+  const entries = Object.keys(values)
+    .filter(function (k) { return values[k] > 0; })
+    .sort(function (a, b) { return values[b] - values[a]; })
+    .slice(0, 5);
+  const total = entries.reduce(function (a, k) { return a + values[k]; }, 0) || 1;
+  const rowStart = y + padding + 28 + 8;
+  const rowH = 32;
+  if (!entries.length) {
+    ctx.fillStyle = C.muted;
+    ctx.font = "600 14px 'Segoe UI', sans-serif";
+    ctx.fillText(t("暂无数据"), innerX, rowStart + 16);
+    return;
+  }
+  entries.forEach(function (name, i) {
+    const tokens = values[name];
+    const ry = rowStart + i * rowH;
+    const fillW = Math.max(1, (tokens / total) * innerW);
+    const color = useToolColor ? tokenToolColor(name) : C.green;
+    // Name.
+    ctx.fillStyle = C.ink;
+    ctx.font = "700 14px 'Segoe UI', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(truncate(ctx, name, innerW * 0.55), innerX, ry + 14);
+    // Track + fill.
+    const trackY = ry + 18;
+    ctx.fillStyle = C.track;
+    ctx.beginPath();
+    ctx.roundRect(innerX, trackY, innerW, 6, 3);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(innerX, trackY, fillW, 6, 3);
+    ctx.fill();
+    // Amount + percent (right).
+    ctx.fillStyle = C.muted;
+    ctx.font = "600 13px 'Segoe UI', sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(formatTokens(tokens, true) + " · " + (100 * tokens / total).toFixed(1) + "%", innerX + innerW, ry + 14);
+  });
+}
+
+// Pill capsule (port of front-end .pill): label (muted) + value (ink).
+// Draws a full-width rounded pill occupying (x,y,w,h).
+function drawPill(ctx, x, y, w, h, label, value) {
+  ctx.save();
+  ctx.fillStyle = themeColors.surface;
+  ctx.strokeStyle = "rgba(0,0,0,0.055)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, h / 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  const cy = y + h / 2;
+  ctx.fillStyle = themeColors.muted;
+  ctx.font = "600 13px 'Segoe UI', sans-serif";
+  ctx.fillText(label, x + 16, cy);
+  ctx.fillStyle = themeColors.ink;
+  ctx.font = "700 16px 'Segoe UI', sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillText(value, x + w - 16, cy);
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
+
+// Lap-chip row (port of front-end .lap-chips). Draws chips left-aligned,
+// wrapping not needed (≤2 chips). active chip text uses lapColor.
+function drawLapChips(ctx, x, y, maxW, h, chips, lapColor) {
+  ctx.save();
+  ctx.textBaseline = "middle";
+  const gap = 10;
+  let cx = x;
+  chips.forEach(function (chip) {
+    // Measure title+detail to size the chip width.
+    ctx.font = "800 13px 'Segoe UI', sans-serif";
+    const tw = ctx.measureText(chip.title).width;
+    ctx.font = "700 13px 'Segoe UI', sans-serif";
+    const dw = ctx.measureText(chip.detail).width;
+    const innerW = tw + 10 + dw;
+    const cw = innerW + 24; // padding 12 each side
+    // Background.
+    if (chip.active) {
+      ctx.fillStyle = hexA(themeColors.green, 0.12);
+      ctx.strokeStyle = hexA(themeColors.green, 0.36);
+    } else {
+      ctx.fillStyle = hexA(themeColors.track, 0.46);
+      ctx.strokeStyle = "rgba(0,0,0,0.055)";
+    }
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(cx, y, cw, h, 12);
+    ctx.fill();
+    ctx.stroke();
+    // Text: title + detail inline, vertically centered.
+    ctx.textAlign = "left";
+    ctx.fillStyle = chip.active ? lapColor : themeColors.ink;
+    ctx.font = "800 13px 'Segoe UI', sans-serif";
+    ctx.fillText(chip.title, cx + 12, y + h / 2);
+    ctx.fillStyle = chip.active ? lapColor : themeColors.muted;
+    ctx.font = "700 13px 'Segoe UI', sans-serif";
+    ctx.fillText(chip.detail, cx + 12 + tw + 10, y + h / 2);
+    cx += cw + gap;
+  });
+  ctx.textBaseline = "alphabetic";
+  ctx.restore();
+}
+
+// Metric strip: 3 equal-width mini cards (port of .metric-strip / .metric-mini).
+function drawMetricStrip(ctx, x, y, w, h, items) {
+  const gap = 18;
+  const cardW = (w - gap * (items.length - 1)) / items.length;
+  ctx.save();
+  items.forEach(function (it, i) {
+    const cx = x + i * (cardW + gap);
+    // Card surface.
+    ctx.fillStyle = themeColors.surface;
+    ctx.strokeStyle = "rgba(0,0,0,0.055)";
+    ctx.lineWidth = 1;
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.06)";
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 6;
+    ctx.beginPath();
+    ctx.roundRect(cx, y, cardW, h, 24);
+    ctx.fill();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.roundRect(cx, y, cardW, h, 24);
+    ctx.stroke();
+    // Label / value / detail, top-aligned with padding 22.
+    const tx = cx + 22;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = themeColors.muted;
+    ctx.font = "700 15px 'Segoe UI', sans-serif";
+    ctx.fillText(it.label, tx, y + 30);
+    ctx.fillStyle = themeColors.ink;
+    ctx.font = "800 27px 'Segoe UI', sans-serif";
+    ctx.fillText(it.value, tx, y + 64);
+    ctx.fillStyle = themeColors.muted;
+    ctx.font = "600 13px 'Segoe UI', sans-serif";
+    ctx.fillText(it.detail, tx, y + 84);
+  });
+  ctx.restore();
 }
 
 // Small shield-ish glyph for the footer (stand-in for SF "shield.checkered").
@@ -574,7 +1138,7 @@ function drawShareBreakdownPanel(ctx, C, x, y, w, title, subtitle, values, useTo
   const radius = 22;
   const headerH = 34; // title + subtitle
   const rowH = 25;
-  const panelH = padding * 2 + headerH + entries.length * rowH;
+  const panelH = padding * 2 + headerH + Math.max(entries.length, 1) * rowH;
   // Surface (shadow + stroke).
   drawShareCardSurface(ctx, x, y, w, panelH, padding, radius);
   const innerX = x + padding;
@@ -653,11 +1217,12 @@ function dayValuesSum(values) {
 }
 
 // 30-day trend (port of ShareTrendPanel): title + subtitle + summary capsule +
-// stacked mini bars. Returns panel height.
+// stacked mini bars. Returns panel height. Bars use macOS metrics:
+// StackedActivityBarsView gap=5, cornerRadius=min(4,w/2), height 84.
 function drawShareTrendPanel(ctx, C, x, y, w, daily, goal, day) {
   const padding = 16;
   const radius = 22;
-  const panelH = 140;
+  const panelH = 162; // padding*2 + header(34) + gap(12) + bars(84)
   drawShareCardSurface(ctx, x, y, w, panelH, padding, radius);
   const innerX = x + padding;
   const innerW = w - padding * 2;
@@ -687,20 +1252,37 @@ function drawShareTrendPanel(ctx, C, x, y, w, daily, goal, day) {
   const rows = daily.slice(-30);
   if (!rows.length) return panelH;
   const maxTokens = Math.max.apply(null, [goal].concat(rows.map(function (d) { return d.total_tokens; })).concat([1]));
-  const barsY = y + padding + 44;
-  const barsH = 64;
-  const barGap = 2;
-  const barW = Math.max(3, (w - 32 - barGap * (rows.length - 1)) / rows.length);
+  const barsY = y + padding + 46;
+  const barsH = 84; // macOS StackedActivityBarsView .frame(height:84)
+  const barGap = 5; // macOS gap
+  const barW = Math.max(4, (innerW - barGap * (rows.length - 1)) / rows.length);
+  const barR = Math.min(4, barW / 2);
   rows.forEach(function (d, i) {
-    const bx = x + 16 + i * (barW + barGap);
-    const totalH = Math.max(2, (d.total_tokens / maxTokens) * barsH);
-    if (d.total_tokens <= 0) return;
-    const segs = orderedToolEntries(d.tools || {});
-    if (!segs.length) {
-      ctx.fillStyle = contributionColor(d.total_tokens, goal);
-      ctx.fillRect(bx, barsY + barsH - totalH, barW, totalH);
+    const bx = innerX + i * (barW + barGap);
+    const totalH = Math.max(4, (d.total_tokens / maxTokens) * barsH);
+    // Empty day → 4pt track-colored placeholder bar at the bottom (macOS behavior).
+    if (d.total_tokens <= 0) {
+      ctx.fillStyle = C.track;
+      ctx.beginPath();
+      ctx.roundRect(bx, barsY + barsH - 4, barW, 4, Math.min(2, barW / 2));
+      ctx.fill();
       return;
     }
+    const segs = orderedToolEntries(d.tools || {});
+    if (!segs.length) {
+      // No tool breakdown → single contribution-color bar.
+      ctx.fillStyle = contributionColor(d.total_tokens, goal);
+      ctx.beginPath();
+      ctx.roundRect(bx, barsY + barsH - totalH, barW, totalH, barR);
+      ctx.fill();
+      return;
+    }
+    // Stacked by tool, segments.reversed() (largest at bottom). The whole bar
+    // is clipped to the rounded shape so top/bottom corners are round.
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(bx, barsY + barsH - totalH, barW, totalH, barR);
+    ctx.clip();
     let drawn = 0;
     segs.slice().reverse().forEach(function (s) {
       const sh = Math.max(1, (totalH * s.tokens) / Math.max(d.total_tokens, 1));
@@ -708,6 +1290,7 @@ function drawShareTrendPanel(ctx, C, x, y, w, daily, goal, day) {
       ctx.fillRect(bx, barsY + barsH - drawn - sh, barW, sh);
       drawn += sh;
     });
+    ctx.restore();
   });
   return panelH;
 }
@@ -1706,6 +2289,7 @@ window.TS = {
   hourlyAxisHTML,
   rhythmTagTitle,
   renderShareDailyCard,
+  renderTodayOverview,
   renderRhythmCard,
   rhythmMetrics,
   comparisonText,
