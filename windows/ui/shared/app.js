@@ -1901,7 +1901,7 @@ function rhythmMetrics(rhythm) {
 // raw data as CSV/JSON.
 // ---- Contribution wall (port of Components.swift ContributionWallView) ----
 // GitHub-style activity heatmap: weeks as columns, days as rows.
-function contributionWallHTML(rows, goal, weeks = 53) {
+function contributionWallHTML(rows, goal, weeks = 34) {
   const byDate = {};
   rows.forEach((d) => { byDate[d.date] = d; });
   const today = new Date();
@@ -1927,14 +1927,16 @@ function contributionWallHTML(rows, goal, weeks = 53) {
   const activeCount = rows.filter((d) => d.total_tokens > 0).length;
   const goalCount = rows.filter((d) => d.total_tokens >= goal).length;
   const maxTokens = rows.length ? Math.max(...rows.map((d) => d.total_tokens)) : 0;
+  // Legend swatches mirror macOS ContributionWallView: goal-relative 6-step ramp.
+  const legendVals = [0, Math.round(goal * 0.25), Math.round(goal * 0.7), goal, goal * 2, goal * 3];
   return (
-    '<div class="wall">' + cols + "</div>" +
+    '<div class="wall" id="activityWall">' + cols + "</div>" +
     '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px">' +
     '<span class="pill"><span class="pill-label">' + t("活跃") + '</span><span class="pill-value">' + activeCount + t(" 天") + "</span></span>" +
     '<span class="pill"><span class="pill-label">' + t("达标") + '</span><span class="pill-value">' + goalCount + t(" 天") + "</span></span>" +
     '<span class="pill"><span class="pill-label">' + t("最高") + '</span><span class="pill-value">' + formatTokens(maxTokens, true) + "</span></span>" +
     "</div>" +
-    '<div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);font-weight:600"><span>' + t("少") + '</span>' + ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"].map(function (c) { return '<span style="width:12px;height:12px;border-radius:3px;background:' + c + '"></span>'; }).join("") + '<span>' + t("多") + '</span></div>'
+    '<div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:12px;color:var(--muted);font-weight:600"><span>' + t("少") + '</span>' + legendVals.map(function (v) { return '<span style="width:12px;height:12px;border-radius:3px;background:' + contributionColor(v, goal) + '"></span>'; }).join("") + '<span>' + t("多") + '</span></div>'
   );
 }
 
