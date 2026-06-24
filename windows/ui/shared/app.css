@@ -505,7 +505,7 @@ body {
   left: 0;
   right: 0;
   height: 1px;
-  background: var(--mutedFaint);
+  background: var(--muted-faint);
   opacity: 0.55;
   pointer-events: none;
 }
