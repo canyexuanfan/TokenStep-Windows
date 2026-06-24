@@ -112,7 +112,9 @@ pub fn estimate_cost(
         return openai_cost_by_parts(usage, 2.5, 0.25, 15.0);
     }
     if lower.contains("opus") {
-        return cost_by_parts(usage, 15.0, 75.0, 18.75, 1.5);
+        // Port of macOS v0.1.43 "Fix Claude Opus cost estimate" (Backtthefuture/TokenStep ee08afb).
+        // Rates dropped to ~1/3: input 15→5, output 75→25, cacheCreation 18.75→6.25, cacheRead 1.5→0.5.
+        return cost_by_parts(usage, 5.0, 25.0, 6.25, 0.5);
     }
     if lower.contains("sonnet") {
         return cost_by_parts(usage, 3.0, 15.0, 3.75, 0.3);
