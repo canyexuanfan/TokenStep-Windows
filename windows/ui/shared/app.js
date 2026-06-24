@@ -1901,7 +1901,7 @@ function rhythmMetrics(rhythm) {
 // raw data as CSV/JSON.
 // ---- Contribution wall (port of Components.swift ContributionWallView) ----
 // GitHub-style activity heatmap: weeks as columns, days as rows.
-function contributionWallHTML(rows, goal, weeks = 34) {
+function contributionWallHTML(rows, goal, weeks = 53) {
   const byDate = {};
   rows.forEach((d) => { byDate[d.date] = d; });
   const today = new Date();
@@ -1983,7 +1983,11 @@ function orderedToolEntries(tools) {
 }
 
 // ---- Stacked activity bars (port of StackedActivityBarsView) ----
-// Each day is one vertical bar, split into colored segments per tool.
+// Each day is one vertical bar, split into colored segments per tool. The
+// .activity container is a fixed-height track (96px, like macOS frame:84+
+// breathing room); every bar is absolutely pinned to the bottom (bottom:0) so
+// all bars share one baseline regardless of height — this is what makes the
+// bottoms line up (was broken when bars relied on flex percentages).
 function stackedActivityBarsHTML(rows, goal) {
   if (!rows || !rows.length) return '<div class="empty">' + t("暂无活动数据") + "</div>";
   const maxTokens = Math.max.apply(
@@ -1997,40 +2001,39 @@ function stackedActivityBarsHTML(rows, goal) {
     '<div class="goal-line" style="bottom:' + goalPct + '%"></div>' +
     rows
       .map((d) => {
-        const totalHeight = Math.max(4, (d.total_tokens / maxTokens) * 100);
+        // Bar height as a fraction of the 96px track.
+        const totalPct = (d.total_tokens / maxTokens) * 100;
         if (d.total_tokens <= 0) {
-          // Empty day → 4pt track-colored placeholder (macOS behavior; CSS
-          // default background is --track, so just keep the min-height).
+          // Empty day → 4px track-colored placeholder pinned to the bottom.
           return '<div class="bar" style="height:4px"></div>';
         }
         const segments = orderedToolEntries(d.tools || {});
         if (!segments.length) {
           return (
             '<div class="bar" style="height:' +
-            totalHeight +
+            totalPct +
             "%;background:" +
             contributionColor(d.total_tokens, goal) +
             '"></div>'
           );
         }
-        // Stack segments bottom-up (preferred tool on top visually). The
-        // outer .bar has overflow:hidden+border-radius, so the whole stack
-        // is clipped to one rounded shape (matches macOS clipShape).
+        // Segments stacked bottom-up: each segment's height is its share of
+        // total_tokens *relative to the bar* (so the segments sum to exactly
+        // 100% of the bar height — no overflow/underflow, bottoms always flush).
+        // column-reverse stacks the first segment at the bottom.
         const segHtml = segments
-          .slice()
-          .reverse()
           .map((s) => {
-            const h = Math.max(1, (totalHeight * s.tokens) / Math.max(d.total_tokens, 1));
+            const sharePct = (s.tokens / Math.max(d.total_tokens, 1)) * 100;
             return (
               '<div style="width:100%;height:' +
-              h +
+              sharePct +
               "%;background:" +
               tokenToolColor(s.name) +
               '"></div>'
             );
           })
           .join("");
-        return '<div class="bar" style="height:' + totalHeight + "%;background:transparent;" + '" title="' + d.date + " " + formatTokens(d.total_tokens) + '">' + segHtml + "</div>";
+        return '<div class="bar" style="height:' + totalPct + "%;display:flex;flex-direction:column-reverse\">" + segHtml + "</div>";
       })
       .join("") +
     "</div>"
