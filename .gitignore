@@ -30,3 +30,8 @@ _secrets/
 *.p12
 TokenStep-codesign.cer
 node_modules/
+
+# Local dev-only artifacts (share-card preview tool, build logs, screenshot assets)
+windows/ui/share_card_preview.html
+_build_align*.log
+pictures/
