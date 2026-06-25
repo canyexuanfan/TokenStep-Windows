@@ -17,7 +17,7 @@ function t(zh) {
 // %d (integer) / %@ (anything) placeholders; the translated value keeps the
 // same placeholders and we substitute in order.
 //   tf('第 %d 圈', 3)        → en 'Lap %d' → 'Lap 3'
-//   tf('TokenStep %@ 可用', '0.1.3') → en 'TokenStep %@ Available' → 'TokenStep 0.1.3 Available'
+//   tf('TokenStep %@ 可用', '0.1.4') → en 'TokenStep %@ Available' → 'TokenStep 0.1.4 Available'
 function tf(zh) {
   var lang = window.__tsLang || 'zhHans';
   var s = zh;
@@ -1323,6 +1323,13 @@ function renderRhythmCard(canvas, opts) {
   const tag = rhythm.primary_tag || "quiet_day";
   const palette = rhythmPalette(tag);
 
+  // 0) Rounded-corner clip (matches Mac .clipShape(RoundedRectangle(cornerRadius: 22))).
+  //    Everything below is drawn inside the rounded card; outside stays transparent.
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(0, 0, W, H, 22);
+  ctx.clip();
+
   // 1) Neon backdrop: linear 3-stop + accent radial (bottomLeading) +
   //    secondary radial (topTrailing) + decorative slanted shape + grid.
   ctx.save();
@@ -1406,9 +1413,24 @@ function renderRhythmCard(canvas, opts) {
   ctx.font = "800 31px 'Segoe UI', sans-serif";
   ctx.fillText(t("昨日 AI 节奏"), W / 2, y + 24);
   const tagY = y + 24 + 56;
-  // Laurel branches flanking the tag.
-  drawLaurel(ctx, W / 2 - 150, tagY - 8, -1, palette.accent, 0.78);
-  drawLaurel(ctx, W / 2 + 150, tagY - 8, 1, palette.accent, 0.78);
+  // Laurel branches flank the tag — laid out as a centered HStack
+  // [laurel 38] --12-- [tag text] --12-- [laurel 38], matching the Mac
+  // `HStack(spacing: 12)`. Position each laurel by measuring the actual tag
+  // text width so it hugs the label regardless of label length (the old code
+  // hard-coded ±150px, which left the laurels detached from long/short labels).
+  // drawLaurel draws its 38×56 frame with the translate point at the stem BASE:
+  //   • dir -1 (left)  → frame occupies x-38 .. x  (mirrored), stem base at x
+  //   • dir  1 (right) → frame occupies x    .. x+38,          stem base at x
+  // so the left laurel's right edge (x) sits at center - tagHalfW - gap, and
+  // the right laurel's left edge (x) sits at center + tagHalfW + gap.
+  ctx.font = "800 43px 'Segoe UI', sans-serif";
+  const tagTitle = rhythmTagTitle(tag);
+  const tagHalfW = ctx.measureText(tagTitle).width / 2;
+  const laurelGap = 12; // HStack spacing
+  const leftLaurelX = W / 2 - tagHalfW - laurelGap;
+  const rightLaurelX = W / 2 + tagHalfW + laurelGap;
+  drawLaurel(ctx, leftLaurelX, tagY - 8, -1, palette.accent, 0.78);
+  drawLaurel(ctx, rightLaurelX, tagY - 8, 1, palette.accent, 0.78);
   // Tag text with accent→secondary gradient + accent glow shadow.
   ctx.save();
   ctx.shadowColor = hexA(palette.accent, 0.34);
@@ -1441,8 +1463,59 @@ function renderRhythmCard(canvas, opts) {
 
   y = axisY + 30;
 
+  // 5b) Peak capsule (port of Mac `peakCapsule`). Scope glyph + peak window
+  //     (left) | peak tokens (right), on a panel-gradient capsule with a
+  //     secondary-tinted border. Only shown when a peak hour exists.
+  if (rhythm.peak_hour != null) {
+    var capH = 56;
+    var capX = padX, capW = W - padX * 2;
+    // Panel-gradient fill (panel@0.96 → panel@0.62, leading → trailing).
+    var capGrad = ctx.createLinearGradient(capX, y, capX + capW, y);
+    capGrad.addColorStop(0, hexA(palette.panel, 0.96));
+    capGrad.addColorStop(1, hexA(palette.panel, 0.62));
+    ctx.fillStyle = capGrad;
+    ctx.beginPath();
+    ctx.roundRect(capX, y, capW, capH, 16);
+    ctx.fill();
+    ctx.strokeStyle = hexA(palette.secondary, 0.35);
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(capX, y, capW, capH, 16);
+    ctx.stroke();
+    // Scope / crosshair glyph inside an accent-tinted circle (SF "scope").
+    var ghX = capX + 18 + 18, ghY = y + capH / 2;
+    ctx.fillStyle = hexA(palette.accent, 0.12);
+    ctx.beginPath();
+    ctx.arc(ghX, ghY, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(ghX, ghY, 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(ghX - 14, ghY); ctx.lineTo(ghX - 9, ghY);
+    ctx.moveTo(ghX + 9, ghY); ctx.lineTo(ghX + 14, ghY);
+    ctx.moveTo(ghX, ghY - 14); ctx.lineTo(ghX, ghY - 9);
+    ctx.moveTo(ghX, ghY + 9); ctx.lineTo(ghX, ghY + 14);
+    ctx.stroke();
+    // Peak window text (left, white, headline-black weight).
+    var ph = rhythm.peak_hour;
+    var peakWindow = t("峰值") + " " + String(ph).padStart(2, "0") + ":00-" + String((ph + 1) % 24).padStart(2, "0") + ":00";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 18px 'Segoe UI', sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(peakWindow, ghX + 18 + 12, ghY);
+    // Peak tokens (right, white@0.72, heavy callout).
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.font = "800 15px 'Segoe UI', sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText(t("峰值") + " " + formatTokens(rhythm.peak_tokens || 0), capX + capW - 18, ghY);
+    ctx.textBaseline = "alphabetic";
+    y += capH + 14;
+  }
+
   // 6) Token console: dark capsule with chevron clusters + big gradient number.
-  const consoleH = 80;
+  const consoleH = 90;
   drawChevronCluster(ctx, padX + 8, y + consoleH / 2, -1, palette);
   drawChevronCluster(ctx, W - padX - 8, y + consoleH / 2, 1, palette);
   // Dark capsule background.
@@ -1468,15 +1541,15 @@ function renderRhythmCard(canvas, opts) {
   numGrad.addColorStop(0, palette.accent);
   numGrad.addColorStop(1, "#ffffff");
   ctx.fillStyle = numGrad;
-  ctx.font = "800 42px 'Segoe UI', sans-serif";
-  ctx.fillText(formatTokens(rhythm.total_tokens || 0), W / 2, y + consoleH - 12);
+  ctx.font = "800 49px 'Segoe UI', sans-serif";
+  ctx.fillText(formatTokens(rhythm.total_tokens || 0), W / 2, y + consoleH - 14);
   ctx.restore();
 
   y += consoleH + 14;
 
   // 7) Three metrics row with vertical dividers.
   const metrics = rhythmMetrics(rhythm);
-  const mRowH = 64;
+  const mRowH = 70;
   const mW = (W - padX * 2) / metrics.length;
   metrics.forEach(function (m, i) {
     const mx = padX + i * mW;
@@ -1532,6 +1605,8 @@ function renderRhythmCard(canvas, opts) {
   ctx.textAlign = "left";
   ctx.fillText(footerText, lockX + 10, footerY + 1);
 
+  // Release the rounded-corner clip applied at the top of the function.
+  ctx.restore();
   return canvas;
 }
 
@@ -1632,6 +1707,14 @@ function rhythmPalette(tag) {
 // Neon waveform (port of RhythmNeonWavePanel). x,y = top-left of the chart box,
 // w×h = chart area. Draws: grid, area fill, blurred glow line, crisp gradient
 // line, and a dashed peak marker with a white dot + colored ring.
+//
+// Smoothness notes (aligned with the Mac SwiftUI original):
+//   • y-mapping uses Mac's exact formula  y = (y+h-20) - v*(h-42)
+//   • the glow halo is rendered on an offscreen canvas with a real Gaussian
+//     blur (ctx.filter = 'blur(10px)') — not a hard canvas shadow — so the neon
+//     band looks as soft as SwiftUI's .blur(radius:10).
+//   • the area, glow and crisp layers all share one Catmull-Rom Path2D so the
+//     three curves overlay perfectly.
 function drawRhythmWave(ctx, rhythm, x, y, w, h, palette) {
   const buckets = rhythm.buckets || [];
   if (!buckets.length) return;
@@ -1639,46 +1722,69 @@ function drawRhythmWave(ctx, rhythm, x, y, w, h, palette) {
   const values = smoothRhythmValues(buckets);
   const max = Math.max.apply(null, values.concat([0.001]));
   const stepX = w / (values.length - 1);
-  // Chart y-mapping (Mac: maxY - 20 - v*(height-42), here scaled to h).
-  const topPad = h * 0.10;
-  const botPad = 16;
+  // Chart y-mapping — Mac's exact: maxY - 20 - v*(height-42).
   const points = values.map(function (v, i) {
     const norm = Math.max(v / max, 0.04);
     return {
       x: x + i * stepX,
-      y: y + h - botPad - norm * (h - topPad - botPad),
+      y: (y + h - 20) - norm * (h - 42),
       v: v,
     };
   });
+  const baselineY = y + h - 8;
+
+  // Build the shared Catmull-Rom line path once (used by glow + crisp line).
+  const linePath = new Path2D();
+  linePath.moveTo(points[0].x, points[0].y);
+  catmullRomPath(linePath, points, 1);
+  // Shared area path (line closed down to baseline).
+  const areaPath = new Path2D();
+  areaPath.moveTo(points[0].x, baselineY);
+  areaPath.lineTo(points[0].x, points[0].y);
+  catmullRomPath(areaPath, points, 1);
+  areaPath.lineTo(points[points.length - 1].x, baselineY);
+  areaPath.closePath();
 
   // Area fill under the curve.
   ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, y + h - 8);
-  catmullRomPath(ctx, points, 1 / 6);
-  ctx.lineTo(points[points.length - 1].x, y + h - 8);
-  ctx.closePath();
   const areaGrad = ctx.createLinearGradient(0, y, 0, y + h);
   areaGrad.addColorStop(0, hexA(palette.accent, 0.48));
   areaGrad.addColorStop(0.5, hexA(palette.secondary, 0.22));
   areaGrad.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = areaGrad;
-  ctx.fill();
+  ctx.fill(areaPath);
   ctx.restore();
 
-  // Blurred glow line (secondary @ 0.38, wide, blurred).
-  ctx.save();
-  ctx.shadowColor = hexA(palette.secondary, 0.5);
-  ctx.shadowBlur = 10;
-  ctx.strokeStyle = hexA(palette.secondary, 0.38);
-  ctx.lineWidth = 14;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  catmullRomPath(ctx, points, 1 / 6);
-  ctx.stroke();
-  ctx.restore();
+  // Blurred glow line: draw the wide secondary band on an offscreen canvas,
+  // then composite it back with a real Gaussian blur for a soft neon halo
+  // (matches SwiftUI RhythmLineShape.stroke(...).blur(radius:10)).
+  var glowOK = false;
+  try {
+    const off = document.createElement("canvas");
+    off.width = ctx.canvas.width; off.height = ctx.canvas.height;
+    const oc = off.getContext("2d");
+    _ensureRoundRect(oc);
+    oc.lineCap = "round"; oc.lineJoin = "round";
+    oc.strokeStyle = hexA(palette.secondary, 0.50);
+    oc.lineWidth = 14;
+    oc.stroke(linePath);
+    ctx.save();
+    ctx.filter = "blur(10px)";
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+    glowOK = true;
+  } catch (e) { glowOK = false; }
+  // Fallback (non-browser / no filter support): hard shadow.
+  if (!glowOK) {
+    ctx.save();
+    ctx.shadowColor = hexA(palette.secondary, 0.5);
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = hexA(palette.secondary, 0.38);
+    ctx.lineWidth = 14;
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.stroke(linePath);
+    ctx.restore();
+  }
 
   // Crisp line (accent → secondary → night gradient).
   ctx.save();
@@ -1690,10 +1796,7 @@ function drawRhythmWave(ctx, rhythm, x, y, w, h, palette) {
   ctx.lineWidth = 5;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.beginPath();
-  ctx.moveTo(points[0].x, points[0].y);
-  catmullRomPath(ctx, points, 1 / 6);
-  ctx.stroke();
+  ctx.stroke(linePath);
   ctx.restore();
 
   // Peak marker: dashed vertical line + white dot + colored ring.
@@ -1707,12 +1810,29 @@ function drawRhythmWave(ctx, rhythm, x, y, w, h, palette) {
       ctx.setLineDash([5, 7]);
       ctx.beginPath();
       ctx.moveTo(peak.x, peak.y + 4);
-      ctx.lineTo(peak.x, y + h - 8);
+      ctx.lineTo(peak.x, baselineY);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Glow ring.
-      ctx.shadowColor = hexA(palette.secondary, 0.8);
-      ctx.shadowBlur = 14;
+      // Soft glow ring (offscreen blur for a diffuse halo).
+      var ringOK = false;
+      try {
+        const ro = document.createElement("canvas");
+        ro.width = ctx.canvas.width; ro.height = ctx.canvas.height;
+        const rc = ro.getContext("2d");
+        rc.fillStyle = hexA(palette.secondary, 0.8);
+        rc.beginPath();
+        rc.arc(peak.x, peak.y, 5.5, 0, Math.PI * 2);
+        rc.fill();
+        ctx.save();
+        ctx.filter = "blur(14px)";
+        ctx.drawImage(ro, 0, 0);
+        ctx.restore();
+        ringOK = true;
+      } catch (e) { ringOK = false; }
+      if (!ringOK) {
+        ctx.shadowColor = hexA(palette.secondary, 0.8);
+        ctx.shadowBlur = 14;
+      }
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
       ctx.arc(peak.x, peak.y, 5.5, 0, Math.PI * 2);
@@ -1796,17 +1916,23 @@ function rhythmShareLine(tag) {
 }
 
 // Append a Catmull-Rom spline through the points to the current path.
+// Append a Catmull-Rom spline through the points to the current path.
+// `tension` = 1 reproduces the standard Catmull-Rom → cubic-Bézier mapping used
+// by the Mac SwiftUI original (control points p1+(p2-p0)/6, p2-(p3-p1)/6).
+// Accepts either a CanvasRenderingContext2D or a Path2D (both expose
+// bezierCurveTo), so the wave's area/glow/crisp layers can share one path.
 function catmullRomPath(ctx, pts, tension) {
   if (pts.length < 2) return;
+  var t = tension == null ? 1 : tension;
   for (var i = 0; i < pts.length - 1; i++) {
     var p0 = pts[i - 1] || pts[i];
     var p1 = pts[i];
     var p2 = pts[i + 1];
     var p3 = pts[i + 2] || p2;
-    var cp1x = p1.x + ((p2.x - p0.x) * tension) / 6;
-    var cp1y = p1.y + ((p2.y - p0.y) * tension) / 6;
-    var cp2x = p2.x - ((p3.x - p1.x) * tension) / 6;
-    var cp2y = p2.y - ((p3.y - p1.y) * tension) / 6;
+    var cp1x = p1.x + ((p2.x - p0.x) * t) / 6;
+    var cp1y = p1.y + ((p2.y - p0.y) * t) / 6;
+    var cp2x = p2.x - ((p3.x - p1.x) * t) / 6;
+    var cp2y = p2.y - ((p3.y - p1.y) * t) / 6;
     ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
   }
 }
