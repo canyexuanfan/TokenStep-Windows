@@ -23,6 +23,11 @@ nul
 /TokenStep_*.exe
 /TokenStep*.dmg
 /TokenStep*.zip
+# sign.bat / build-release.bat also leave versioned setup exes under windows/
+# (intermediate, before deploy to repo root) — ignore those too.
+/windows/*_x64-setup.exe
+/windows/TokenStep.exe
+/windows/TokenStep_v*.exe
 
 # Code signing secrets (self-signed cert + private key) — NEVER commit
 _secrets/
