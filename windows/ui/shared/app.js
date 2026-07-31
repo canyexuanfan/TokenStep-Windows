@@ -2077,6 +2077,12 @@ function tokenToolColor(tool) {
     case "Hermes":
     case "Hermes Agent":
       return "rgb(128,71,235)"; // violet
+    case "ZCode":
+      return "rgb(51,133,235)"; // blue (port of upstream v0.1.44)
+    case "Codex via CC Switch":
+    case "Claude Code via CC Switch":
+    case "Gemini via CC Switch":
+      return "rgb(26,163,184)"; // teal (CC Switch variants)
     default:
       // CC Switch variants → blue family so they're visually grouped.
       if (tool.indexOf("CC Switch") >= 0) {
@@ -2095,7 +2101,7 @@ function orderedToolEntries(tools) {
   // tools: { name: tokens } map (or array of DailyUsage-shaped rows for the
   // legend helper). Normalize to an array of {name, tokens} sorted by the
   // preferred list first, then by token count.
-  const preferred = ["Codex", "Claude Code", "Hermes", "Hermes Agent"];
+  const preferred = ["Codex", "Claude Code", "ZCode", "Hermes", "Hermes Agent", "Codex via CC Switch", "Claude Code via CC Switch"];
   const entries = [];
   for (const name of preferred) {
     const v = Number(tools[name] || 0);
@@ -2420,6 +2426,133 @@ function applyTheme(name) {
   themeColors.ring4 = v["--ring4"];
 }
 
+// ---- Agent Work card (port of upstream TodayAgentWorkCard) ----
+// Renders the "Agent 工作强度" card HTML. Data comes from snapshot.agent_work.
+function agentWorkCardHTML(snapshot, settings) {
+  var agentWork = snapshot.agent_work || [];
+  var todayKey = todayKey();
+  var today = agentWork.filter(function (w) { return w.date === todayKey; })[0]
+    || agentWork[agentWork.length - 1]
+    || { total_tokens: 0, active_hours: 0, input_tokens: 0, cached_input_tokens: 0, cache_coverage_complete: false, hourly_buckets: [], sources: [], unbucketed_tokens: 0 };
+
+  // 7-day average: sum of last 7 entries / 7.
+  var last7 = agentWork.slice(-7);
+  var sevenDayAvg = last7.length ? Math.round(last7.reduce(function (a, w) { return a + (w.total_tokens || 0); }, 0) / 7) : 0;
+
+  // Cache hit rate.
+  var cacheRate = "--";
+  if (today.cache_coverage_complete && today.input_tokens > 0 && today.cached_input_tokens <= today.input_tokens) {
+    cacheRate = formatPercent((today.cached_input_tokens / today.input_tokens) * 100);
+  }
+
+  // Build the 24-hour chart data from today's hourly_buckets.
+  var chartHTML = renderAgentWorkChart(today);
+
+  var card =
+    '<div class="card" id="agentWorkCard">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
+        '<div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + t("Agent 工作强度") + '</div>' +
+        '<div style="font-size:14px;font-weight:600;color:var(--muted);margin-top:4px">' + t("只统计 token 数量，不读取对话") + '</div></div>' +
+      '</div>' +
+      // Metric strip: 4 tiles.
+      '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px">' +
+        agentWorkMetricTile(t("Agent Token"), formatTokens(today.total_tokens || 0, true), t("今日")) +
+        agentWorkMetricTile(t("有记录小时"), (today.active_hours || 0) + "/24", t("有 Token 记录，非工时")) +
+        agentWorkMetricTile(t("近 7 日均"), formatTokens(sevenDayAvg, true), t("按 7 个日历日折算")) +
+        agentWorkMetricTile(t("缓存命中率"), cacheRate, today.cache_coverage_complete ? t("仅展示完整口径") : t("口径不完整")) +
+      '</div>' +
+      chartHTML +
+    '</div>';
+  return card;
+}
+
+function agentWorkMetricTile(label, value, detail) {
+  return '<div style="background:var(--canvas);border-radius:14px;padding:12px 14px">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:4px">' + label + '</div>' +
+    '<div style="font-size:22px;font-weight:800;color:var(--ink);line-height:1.1">' + value + '</div>' +
+    '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:2px">' + detail + '</div>' +
+  '</div>';
+}
+
+// Render the 24-hour stacked bar chart for agent work (SVG).
+function renderAgentWorkChart(work) {
+  var buckets = work.hourly_buckets || [];
+  if (!buckets.length && !(work.unbucketed_tokens > 0)) {
+    return '<div style="padding:30px;text-align:center;color:var(--muted);font-weight:600">' + t("暂无 Agent 工作记录") + '</div>';
+  }
+  if (!buckets.length) {
+    return '<div style="padding:20px;text-align:center;color:var(--muted);font-weight:600">' + t("有 Token 记录但无分时段数据") + '</div>';
+  }
+
+  // Build 24-slot array (pad missing hours with empty).
+  var slots = [];
+  for (var h = 0; h < 24; h++) {
+    var found = buckets.filter(function (b) { return b.hour === h; })[0];
+    slots.push(found || { hour: h, sources: [] });
+  }
+
+  // Find max tokens across all hours for scaling.
+  var maxTokens = Math.max.apply(null, slots.map(function (s) {
+    return s.sources.reduce(function (a, src) { return a + src.tokens; }, 0);
+  }).concat([1]));
+
+  // Chart dimensions.
+  var chartW = 500, chartH = 80, barGap = 2;
+  var barW = (chartW - barGap * 23) / 24;
+
+  // Build stacked bars.
+  var bars = '';
+  slots.forEach(function (slot, i) {
+    var x = i * (barW + barGap);
+    var slotTotal = slot.sources.reduce(function (a, s) { return a + s.tokens; }, 0);
+    if (slotTotal <= 0) return;
+    var y = chartH;
+    slot.sources.forEach(function (src) {
+      var segH = (src.tokens / maxTokens) * chartH;
+      bars += '<rect x="' + x.toFixed(1) + '" y="' + (y - segH).toFixed(1) +
+        '" width="' + barW.toFixed(1) + '" height="' + segH.toFixed(1) +
+        '" fill="' + tokenToolColor(src.source) + '" rx="1"/>';
+      y -= segH;
+    });
+  });
+
+  // Legend: top 4 sources.
+  var sourceTotals = {};
+  buckets.forEach(function (b) {
+    b.sources.forEach(function (s) {
+      sourceTotals[s.source] = (sourceTotals[s.source] || 0) + s.tokens;
+    });
+  });
+  var topSources = Object.keys(sourceTotals).sort(function (a, b) { return sourceTotals[b] - sourceTotals[a]; }).slice(0, 4);
+  var legend = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px">' +
+    topSources.map(function (name) {
+      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);font-weight:600">' +
+        '<span style="width:9px;height:9px;border-radius:50%;background:' + tokenToolColor(name) + '"></span>' + name + '</span>';
+    }).join('') + '</div>';
+
+  // Unbucketed notice.
+  var unbucketedNotice = '';
+  if (work.unbucketed_tokens > 0) {
+    unbucketedNotice = '<div style="margin-top:6px;font-size:12px;color:#ca8a04;font-weight:600">' +
+      t("另有") + ' ' + formatTokens(work.unbucketed_tokens, true) + ' ' + t("无分时段记录") + '</div>';
+  }
+
+  return '<div style="margin-top:4px">' +
+    '<div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:6px">' + t("24 小时 Token 记录") + '</div>' +
+    '<svg width="' + chartW + '" height="' + chartH + '" viewBox="0 0 ' + chartW + ' ' + chartH + '">' + bars + '</svg>' +
+    legend + unbucketedNotice +
+  '</div>';
+}
+
+// ---- Recalibration notice banner ----
+function recalibrationNoticeHTML() {
+  return '<div id="recalibrationNotice" style="display:flex;align-items:flex-start;gap:10px;padding:11px 14px;margin-bottom:16px;background:color-mix(in srgb,var(--mint) 20%,transparent);border:1px solid color-mix(in srgb,var(--green) 18%,transparent);border-radius:12px">' +
+    '<span style="color:var(--green);font-size:16px;margin-top:1px">✓</span>' +
+    '<span style="font-size:14px;font-weight:600;color:var(--ink);opacity:.82;flex:1">' + t("TokenStep 已按真实增量重新校准历史 Token。数字可能变小，但历史记录没有丢失。") + '</span>' +
+    '<button id="dismissRecalibrationBtn" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px">✕</button>' +
+  '</div>';
+}
+
 // ---- Expose to the page ----
 window.TS = {
   invoke,
@@ -2454,4 +2587,6 @@ window.TS = {
   renderRhythmCard,
   rhythmMetrics,
   comparisonText,
+  agentWorkCardHTML,
+  recalibrationNoticeHTML,
 };

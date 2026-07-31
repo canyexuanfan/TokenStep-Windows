@@ -124,6 +124,34 @@ fn set_require_verified_updates(enabled: bool) -> Result<TokenStepSettings, Stri
     Ok(settings::load())
 }
 
+/// Toggle experimental agent sources (ZCode / Hermes / WorkBuddy). Mirrors
+/// upstream `setExperimentalAgentSourcesVisible`. When enabled, the next
+/// refresh will include those sources in the collection.
+#[tauri::command]
+fn set_experimental_agent_sources(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.show_experimental_agent_sources = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+/// Check whether a usage recalibration notice is pending (the marker file
+/// exists). Returns true when the user should see the "Token 已重新校准" banner.
+#[tauri::command]
+fn get_recalibration_notice() -> bool {
+    paths::usage_recalibration_notice_marker().exists()
+}
+
+/// Dismiss the recalibration notice by deleting the marker file.
+#[tauri::command]
+fn dismiss_recalibration_notice() -> bool {
+    let marker = paths::usage_recalibration_notice_marker();
+    if marker.exists() {
+        let _ = std::fs::remove_file(&marker);
+    }
+    true
+}
+
 /// Toggle launch-on-startup by writing/removing the HKCU Run key. Uses the
 /// current executable path so the entry stays correct after updates.
 #[tauri::command]
@@ -361,7 +389,24 @@ fn run_refresh(app: &tauri::AppHandle) {
     let _ = app.emit("refresh-started", ());
 
     std::thread::spawn(move || {
-        let snapshot = collector::collect();
+        let snapshot = {
+            let settings = settings::load();
+            collector::collect(settings.show_experimental_agent_sources)
+        };
+        // Check for Codex accounting recalibration: if the snapshot's Codex
+        // source has a revision below current, write the recalibration notice
+        // marker so the UI shows the green banner.
+        if let Some(codex) = snapshot.sources.get("Codex") {
+            let stored_rev = codex.accounting_revision
+                .unwrap_or(collector::LEGACY_CODEX_ACCOUNTING_REVISION);
+            if stored_rev < collector::CODEX_ACCOUNTING_REVISION && codex.records.unwrap_or(0) > 0 {
+                let marker = paths::usage_recalibration_notice_marker();
+                if let Some(parent) = marker.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&marker, collector::CODEX_ACCOUNTING_REVISION.to_string());
+            }
+        }
         let state: tauri::State<'_, Arc<AppState>> = app.state();
         *state.snapshot.lock() = Some(snapshot.clone());
         *state.last_error.lock() = None;
@@ -704,6 +749,9 @@ pub fn run() {
             set_auto_update_enabled,
             set_ask_before_downloading_updates,
             set_require_verified_updates,
+            set_experimental_agent_sources,
+            get_recalibration_notice,
+            dismiss_recalibration_notice,
             set_theme,
             set_language,
             set_show_codex_quota,
@@ -730,7 +778,7 @@ pub fn run() {
 /// Public shim used by the `check` example to run a collection pass without
 /// booting the full Tauri app.
 pub fn collect_for_check() -> models::UsageSnapshot {
-    collector::collect()
+    collector::collect(false)
 }
 
 /// Tray-menu "检查更新" handler. Runs the check off the UI thread, then:

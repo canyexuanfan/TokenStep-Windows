@@ -89,3 +89,29 @@ pub fn token_rank_cache_json() -> PathBuf {
         .join("cache")
         .join("token-rank-cache.json")
 }
+
+// ── Experimental agent source paths (port of upstream v0.1.44) ──────────
+
+/// `~/.zcode/cli/db/db.sqlite` — ZCode agent usage database.
+pub fn zcode_db_path() -> PathBuf {
+    home_dir().join(".zcode").join("cli").join("db").join("db.sqlite")
+}
+
+/// `~/.hermes/state.db` — Hermes agent usage database.
+pub fn hermes_db_path() -> PathBuf {
+    home_dir().join(".hermes").join("state.db")
+}
+
+/// Directories to probe for WorkBuddy presence (no usage extracted yet).
+pub fn workbuddy_roots() -> Vec<PathBuf> {
+    vec![home_dir().join(".workbuddy")]
+}
+
+/// `config/usage-recalibration-v6-pending` — marker file written when a
+/// Codex accounting recalibration occurred. Its presence triggers the green
+/// "Token 已重新校准" notice banner on the dashboard.
+pub fn usage_recalibration_notice_marker() -> PathBuf {
+    app_support_root()
+        .join("config")
+        .join("usage-recalibration-v6-pending")
+}

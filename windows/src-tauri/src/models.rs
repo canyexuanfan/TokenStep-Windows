@@ -49,6 +49,15 @@ pub struct SourceInfo {
     pub files: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub records: Option<i64>,
+    /// Token accounting revision used to collect this source. Mirrors macOS
+    /// `SourceInfo.accountingRevision`; the current revision is 8. Legacy
+    /// snapshots (pre-rev8) default to 5.
+    #[serde(rename = "accounting_revision", default, skip_serializing_if = "Option::is_none")]
+    pub accounting_revision: Option<i64>,
+    /// When a recalibration occurred, this holds the *previous* revision the
+    /// user's data was collected with. Drives the "Token 已重新校准" notice.
+    #[serde(rename = "recalibrated_from_revision", default, skip_serializing_if = "Option::is_none")]
+    pub recalibrated_from_revision: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -146,6 +155,87 @@ pub struct DailyRhythm {
     pub companion_tag: RhythmTag,
 }
 
+// ── Agent Work data models (port of upstream DailyAgentWork) ─────────────
+
+/// Per-tool, per-hour agent work breakdown.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentWorkHourlySource {
+    pub source: String,
+    pub tokens: i64,
+    #[serde(rename = "input_tokens", default)]
+    pub input_tokens: i64,
+    #[serde(rename = "cached_input_tokens", default)]
+    pub cached_input_tokens: i64,
+    #[serde(rename = "output_tokens", default)]
+    pub output_tokens: i64,
+    #[serde(rename = "cache_coverage_complete", default)]
+    pub cache_coverage_complete: bool,
+}
+
+/// One hour bucket (0-23) in the agent work chart.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentWorkHourBucket {
+    pub hour: i64,
+    pub sources: Vec<AgentWorkHourlySource>,
+}
+
+impl AgentWorkHourBucket {
+    pub fn total_tokens(&self) -> i64 {
+        self.sources.iter().map(|s| s.tokens).sum()
+    }
+}
+
+/// Per-tool aggregate for the day.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AgentWorkSource {
+    pub source: String,
+    pub tokens: i64,
+    #[serde(rename = "model_request_count", default)]
+    pub model_request_count: i64,
+    #[serde(rename = "tool_call_count", default)]
+    pub tool_call_count: i64,
+}
+
+/// A day's agent work profile: token/input/output/cache breakdown + hourly
+/// distribution + per-source aggregates. Port of upstream `DailyAgentWork`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DailyAgentWork {
+    pub date: String,
+    #[serde(rename = "total_tokens")]
+    pub total_tokens: i64,
+    #[serde(rename = "input_tokens", default)]
+    pub input_tokens: i64,
+    #[serde(rename = "cached_input_tokens", default)]
+    pub cached_input_tokens: i64,
+    #[serde(rename = "output_tokens", default)]
+    pub output_tokens: i64,
+    #[serde(rename = "cache_coverage_complete", default)]
+    pub cache_coverage_complete: bool,
+    #[serde(rename = "active_hours", default)]
+    pub active_hours: i64,
+    #[serde(rename = "model_request_count", default)]
+    pub model_request_count: i64,
+    #[serde(rename = "tool_call_count", default)]
+    pub tool_call_count: i64,
+    #[serde(default)]
+    pub sources: Vec<AgentWorkSource>,
+    #[serde(default)]
+    pub hourly_buckets: Vec<AgentWorkHourBucket>,
+    #[serde(rename = "unbucketed_tokens", default)]
+    pub unbucketed_tokens: i64,
+}
+
+impl DailyAgentWork {
+    /// Cache hit rate — only valid when coverage is complete and input > 0.
+    pub fn cache_hit_rate(&self) -> Option<f64> {
+        if self.cache_coverage_complete && self.input_tokens > 0 && self.cached_input_tokens <= self.input_tokens {
+            Some(self.cached_input_tokens as f64 / self.input_tokens as f64)
+        } else {
+            None
+        }
+    }
+}
+
 /// The full aggregated snapshot, written to `data/usage.json`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageSnapshot {
@@ -157,6 +247,8 @@ pub struct UsageSnapshot {
     pub daily: Vec<DailyUsage>,
     #[serde(default)]
     pub rhythms: Vec<DailyRhythm>,
+    #[serde(default, rename = "agent_work")]
+    pub agent_work: Vec<DailyAgentWork>,
     pub tools: Vec<ToolUsage>,
     pub models: Vec<ModelUsage>,
     pub sources: std::collections::BTreeMap<String, SourceInfo>,
@@ -170,6 +262,7 @@ impl UsageSnapshot {
             totals: UsageTotals::default(),
             daily: vec![],
             rhythms: vec![],
+            agent_work: vec![],
             tools: vec![],
             models: vec![],
             sources: std::collections::BTreeMap::new(),
@@ -229,6 +322,11 @@ pub struct TokenStepSettings {
     /// `has_update: false` so the user isn't nagged about it again.
     #[serde(rename = "skipped_update_version", default, skip_serializing_if = "Option::is_none")]
     pub skipped_update_version: Option<String>,
+    /// Whether experimental agent sources (ZCode / Hermes / WorkBuddy) are
+    /// collected and shown. Default off. Mirrors upstream
+    /// `showExperimentalAgentSources`.
+    #[serde(rename = "show_experimental_agent_sources", default)]
+    pub show_experimental_agent_sources: bool,
 }
 
 fn default_lang() -> String {
@@ -261,6 +359,7 @@ impl Default for TokenStepSettings {
             show_codex_quota: false,
             show_token_rank: false,
             token_rank_user_id: None,
+            show_experimental_agent_sources: false,
         }
     }
 }

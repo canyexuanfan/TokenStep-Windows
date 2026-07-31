@@ -10,7 +10,7 @@
 //! on Windows.
 
 use crate::models::{
-    DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, RhythmTag, SourceInfo,
+    DailyAgentWork, DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, RhythmTag, SourceInfo,
     TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
 };
 use crate::paths;
@@ -48,17 +48,41 @@ struct UsageRecord {
 /// Public entry point: collect from all sources, aggregate, return a snapshot.
 /// Mirrors upstream macOS `UsageCollector.collect()`: Codex + Claude Code +
 /// CC Switch records are summed (the sources are treated as additive — this
-/// matches the upstream behavior exactly).
-pub fn collect() -> UsageSnapshot {
+/// matches the upstream behavior exactly). Experimental agent sources
+/// (ZCode / Hermes / WorkBuddy) are only collected when
+/// `include_experimental` is true.
+pub fn collect(include_experimental: bool) -> UsageSnapshot {
     let pricing_data = pricing::load();
 
     let (codex_records, mut codex_source) = collect_codex();
     let (claude_records, mut claude_source) = collect_claude_code();
     let (ccswitch_records, mut ccswitch_source) = collect_ccswitch();
 
+    // Stamp accounting revision on Codex source (forward compat with macOS).
+    codex_source.accounting_revision = Some(CODEX_ACCOUNTING_REVISION);
+
     let mut records: Vec<UsageRecord> = codex_records;
     records.extend(claude_records.iter().cloned());
     records.extend(ccswitch_records.iter().cloned());
+
+    // Experimental agent sources (only when enabled in settings).
+    let (zcode_records, zcode_source) = if include_experimental {
+        collect_zcode()
+    } else {
+        (vec![], SourceInfo { status: Some("disabled".into()), ..Default::default() })
+    };
+    let (hermes_records, hermes_source) = if include_experimental {
+        collect_hermes()
+    } else {
+        (vec![], SourceInfo { status: Some("disabled".into()), ..Default::default() })
+    };
+    let workbuddy_source = if include_experimental {
+        discover_workbuddy()
+    } else {
+        SourceInfo { status: Some("disabled".into()), ..Default::default() }
+    };
+    records.extend(zcode_records.iter().cloned());
+    records.extend(hermes_records.iter().cloned());
 
     // Stamp per-source record counts (recount precisely per tool, since the
     // CC Switch source name differs from its record `tool` strings — e.g.
@@ -81,6 +105,9 @@ pub fn collect() -> UsageSnapshot {
     sources.insert("Codex".to_string(), codex_source);
     sources.insert("Claude Code".to_string(), claude_source);
     sources.insert("CC Switch Proxy".to_string(), ccswitch_source);
+    sources.insert("ZCode".to_string(), zcode_source);
+    sources.insert("Hermes Agent".to_string(), hermes_source);
+    sources.insert("WorkBuddy".to_string(), workbuddy_source);
 
     aggregate(records, &pricing_data, sources)
 }
@@ -106,6 +133,7 @@ fn collect_codex() -> (Vec<UsageRecord>, SourceInfo) {
                 status: Some("ok".to_string()),
                 files: Some(files),
                 records: None,
+                ..Default::default()
             },
         );
     }
@@ -119,6 +147,7 @@ fn collect_codex() -> (Vec<UsageRecord>, SourceInfo) {
                     status: Some("fallback_threads".to_string()),
                     files: Some(files as i64),
                     records: None,
+                    ..Default::default()
                 },
             );
         }
@@ -130,6 +159,7 @@ fn collect_codex() -> (Vec<UsageRecord>, SourceInfo) {
             status: Some("missing".to_string()),
             files: Some(files),
             records: None,
+            ..Default::default()
         },
     )
 }
@@ -462,6 +492,7 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
             status: Some(status.to_string()),
             files: Some(all_paths.len() as i64),
             records: None,
+            ..Default::default()
         },
     )
 }
@@ -507,6 +538,7 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
                 status: Some(status.to_string()),
                 files: Some(0),
                 records: Some(0),
+                ..Default::default()
             },
         )
     };
@@ -528,6 +560,7 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
                     status: Some("unreadable_db".to_string()),
                     files: Some(1),
                     records: Some(0),
+                    ..Default::default()
                 },
             )
         }
@@ -641,6 +674,7 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
             status: Some(status.to_string()),
             files: Some(1),
             records: Some(count as i64),
+            ..Default::default()
         },
     )
 }
@@ -764,6 +798,7 @@ fn aggregate(
         },
         daily: daily_rows,
         rhythms: rhythm_rows,
+        agent_work: aggregate_agent_work(&records),
         tools: tool_rows,
         models: model_rows,
         sources,
@@ -992,7 +1027,16 @@ fn share(part: i64, whole: i64) -> f64 {
 }
 
 /// Extract the local hour-of-day (0-23) from an ISO timestamp. Port of
-/// upstream `hour(fromISO:)`. Uses the same local-tz conversion as
+/// Current collector cache version. Bump on schema changes to force a full
+/// rebuild from source. v5 = agent work aggregation + accounting revision tracking.
+const COLLECTOR_CACHE_VERSION: i32 = 5;
+
+/// Current Codex accounting revision (mirrors macOS `codexAccountingRevision`).
+/// The Win port does not yet implement the rev6-8 incremental accounting, but
+/// stamps this value on the Codex SourceInfo for forward compatibility.
+pub const CODEX_ACCOUNTING_REVISION: i64 = 8;
+/// Legacy revision assumed for old snapshots lacking an explicit value.
+pub const LEGACY_CODEX_ACCOUNTING_REVISION: i64 = 5;
 /// `day_string_from_iso`.
 fn hour_from_iso(ts: &str) -> Option<u32> {
     parse_iso(ts).map(|dt| dt.hour())
@@ -1217,7 +1261,7 @@ struct CollectorCache {
 impl Default for CollectorCache {
     fn default() -> Self {
         CollectorCache {
-            version: 4,
+            version: COLLECTOR_CACHE_VERSION,
             files: BTreeMap::new(),
         }
     }
@@ -1229,7 +1273,7 @@ fn load_cache() -> CollectorCache {
     };
     match serde_json::from_str::<CollectorCache>(&text) {
         // Bump on schema change; old caches are rebuilt from source.
-        Ok(c) if c.version == 4 => c,
+        Ok(c) if c.version == COLLECTOR_CACHE_VERSION => c,
         _ => CollectorCache::default(),
     }
 }
@@ -1307,4 +1351,381 @@ fn update_cache(
             records: records.iter().map(CachedRecord::from).collect(),
         },
     );
+}
+
+// ---------------------------------------------------------------------------
+// Experimental agent sources (port of upstream v0.1.44)
+// ---------------------------------------------------------------------------
+
+/// Read ZCode agent usage from `~/.zcode/cli/db/db.sqlite`.
+/// ZCode's `input_tokens` already includes cached tokens.
+fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
+    let db_path = paths::zcode_db_path();
+    if !db_path.exists() {
+        return (vec![], SourceInfo {
+            status: Some("missing_db".into()),
+            ..Default::default()
+        });
+    }
+    let conn = match rusqlite::Connection::open_with_flags(
+        &db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(c) => c,
+        Err(_) => return (vec![], SourceInfo {
+            status: Some("unreadable_db".into()),
+            ..Default::default()
+        }),
+    };
+    // Verify schema: table model_usage must exist with key columns.
+    let has_table = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='model_usage'")
+        .and_then(|mut s| Ok(s.exists([])?))
+        .unwrap_or(false);
+    if !has_table {
+        return (vec![], SourceInfo {
+            status: Some("missing_table".into()),
+            ..Default::default()
+        });
+    }
+    let sql = r#"SELECT
+        started_at, model_id, input_tokens, output_tokens, reasoning_tokens,
+        cache_creation_input_tokens, cache_read_input_tokens,
+        computed_total_tokens, provider_total_tokens, tool_call_count
+        FROM model_usage
+        WHERE status = 'completed'
+        AND (coalesce(computed_total_tokens,0) > 0
+             OR coalesce(provider_total_tokens,0) > 0
+             OR coalesce(input_tokens,0) + coalesce(output_tokens,0) > 0)
+        ORDER BY started_at"#;
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(_) => return (vec![], SourceInfo {
+            status: Some("schema_mismatch".into()),
+            ..Default::default()
+        }),
+    };
+    let rows = stmt.query_map([], |row| {
+        let started_at: f64 = row.get(0)?;
+        let model: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+        let input: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
+        let output: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
+        let reasoning: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or(0);
+        let cache_create: i64 = row.get::<_, Option<i64>>(5)?.unwrap_or(0);
+        let cache_read: i64 = row.get::<_, Option<i64>>(6)?.unwrap_or(0);
+        let computed_total: i64 = row.get::<_, Option<i64>>(7)?.unwrap_or(0);
+        let provider_total: i64 = row.get::<_, Option<i64>>(8)?.unwrap_or(0);
+        let tool_calls: i64 = row.get::<_, Option<i64>>(9)?.unwrap_or(0);
+        // canonicalUsageCounts: inputIncludesCachedTokens=true for ZCode.
+        let canonical_input = (input + cache_create + cache_read).max(0);
+        let explicit_total = if computed_total > 0 { computed_total } else { provider_total };
+        let derived_total = canonical_input + output;
+        let total = if explicit_total > 0 { explicit_total } else if derived_total > 0 { derived_total } else { explicit_total };
+        let date = day_string_from_epoch(started_at);
+        let ts = iso_string_from_epoch(started_at);
+        Ok(UsageRecord {
+            date,
+            timestamp: Some(ts),
+            tool: "ZCode".to_string(),
+            model,
+            usage: TokenUsageCounts {
+                input_tokens: canonical_input,
+                output_tokens: output.max(0),
+                cache_creation_input_tokens: cache_create.max(0),
+                cache_read_input_tokens: cache_read.max(0),
+                reasoning_output_tokens: reasoning.max(0),
+                total_tokens: total.max(0),
+            },
+            cost_usd: None,
+        })
+    });
+    let mut records = Vec::new();
+    if let Ok(iter) = rows {
+        for r in iter.flatten() {
+            records.push(r);
+        }
+    }
+    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let count = records.len() as i64;
+    (records, SourceInfo {
+        status: Some(status.into()),
+        files: Some(1),
+        records: Some(count),
+        ..Default::default()
+    })
+}
+
+/// Read Hermes agent usage from `~/.hermes/state.db`.
+/// Hermes has cache tokens SEPARATE from input (inputIncludesCachedTokens=false).
+fn collect_hermes() -> (Vec<UsageRecord>, SourceInfo) {
+    let db_path = paths::hermes_db_path();
+    if !db_path.exists() {
+        return (vec![], SourceInfo {
+            status: Some("missing_db".into()),
+            ..Default::default()
+        });
+    }
+    let conn = match rusqlite::Connection::open_with_flags(
+        &db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(c) => c,
+        Err(_) => return (vec![], SourceInfo {
+            status: Some("unreadable_db".into()),
+            ..Default::default()
+        }),
+    };
+    let has_table = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
+        .and_then(|mut s| Ok(s.exists([])?))
+        .unwrap_or(false);
+    if !has_table {
+        return (vec![], SourceInfo {
+            status: Some("missing_table".into()),
+            ..Default::default()
+        });
+    }
+    let sql = r#"SELECT
+        id, started_at, model,
+        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+        reasoning_tokens
+        FROM sessions
+        WHERE coalesce(input_tokens,0) + coalesce(output_tokens,0)
+            + coalesce(cache_read_tokens,0) + coalesce(cache_write_tokens,0) > 0
+        ORDER BY started_at, id"#;
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(_) => return (vec![], SourceInfo {
+            status: Some("schema_mismatch".into()),
+            ..Default::default()
+        }),
+    };
+    let rows = stmt.query_map([], |row| {
+        let started_at: f64 = row.get(1)?;
+        let model: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+        let input: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
+        let output: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or(0);
+        let cache_read: i64 = row.get::<_, Option<i64>>(5)?.unwrap_or(0);
+        let cache_write: i64 = row.get::<_, Option<i64>>(6)?.unwrap_or(0);
+        let reasoning: i64 = row.get::<_, Option<i64>>(7)?.unwrap_or(0);
+        // canonicalUsageCounts: inputIncludesCachedTokens=false for Hermes.
+        // input stays as-is, cache tokens are separate.
+        let canonical_input = input.max(0);
+        let derived_total = canonical_input + output.max(0);
+        let date = day_string_from_epoch(started_at);
+        let ts = iso_string_from_epoch(started_at);
+        Ok(UsageRecord {
+            date,
+            timestamp: Some(ts),
+            tool: "Hermes Agent".to_string(),
+            model,
+            usage: TokenUsageCounts {
+                input_tokens: canonical_input,
+                output_tokens: output.max(0),
+                cache_creation_input_tokens: cache_write.max(0),
+                cache_read_input_tokens: cache_read.max(0),
+                reasoning_output_tokens: reasoning.max(0),
+                total_tokens: derived_total.max(0),
+            },
+            cost_usd: None,
+        })
+    });
+    let mut records = Vec::new();
+    if let Ok(iter) = rows {
+        for r in iter.flatten() {
+            records.push(r);
+        }
+    }
+    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let count = records.len() as i64;
+    (records, SourceInfo {
+        status: Some(status.into()),
+        files: Some(1),
+        records: Some(count),
+        ..Default::default()
+    })
+}
+
+/// Probe for WorkBuddy presence (no usage extracted). Returns source status only.
+fn discover_workbuddy() -> SourceInfo {
+    let roots = paths::workbuddy_roots();
+    let found = roots.iter().filter(|r| r.exists()).count();
+    SourceInfo {
+        status: Some(if found > 0 { "discovered_no_usage" } else { "missing" }.into()),
+        files: Some(found as i64),
+        records: Some(0),
+        ..Default::default()
+    }
+}
+
+/// Convert epoch seconds (or milliseconds if > 10^10) to a "YYYY-MM-DD" day
+/// string in Asia/Shanghai.
+fn day_string_from_epoch(seconds: f64) -> String {
+    let secs = if seconds > 10_000_000_000.0 { seconds / 1000.0 } else { seconds };
+    let tz = local_tz();
+    let dt = tz.timestamp_opt(secs as i64, 0).single().unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());
+    dt.format("%Y-%m-%d").to_string()
+}
+
+/// Convert epoch seconds (or milliseconds) to an ISO-8601 string in Asia/Shanghai.
+fn iso_string_from_epoch(seconds: f64) -> String {
+    let secs = if seconds > 10_000_000_000.0 { seconds / 1000.0 } else { seconds };
+    let tz = local_tz();
+    let dt = tz.timestamp_opt(secs as i64, 0).single().unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());
+    dt.format("%Y-%m-%dT%H:%M:%S%:z").to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Agent Work aggregation (port of upstream AgentWorkAccumulator)
+// ---------------------------------------------------------------------------
+
+/// Accumulator for agent-work per-date aggregation.
+#[derive(Default)]
+struct AgentWorkAccumulator {
+    total_tokens: i64,
+    input_tokens: i64,
+    cached_input_tokens: i64,
+    output_tokens: i64,
+    cache_coverage_complete: bool,
+    active_hours: BTreeSet<i64>,
+    model_request_count: i64,
+    tool_call_count: i64,
+    /// Per-source, per-hour rollup: (source, hour) → (tokens, input, cached, output, coverage_complete)
+    hourly: BTreeMap<(String, i64), (i64, i64, i64, i64, bool)>,
+    unbucketed_tokens: i64,
+}
+
+impl AgentWorkAccumulator {
+    fn new() -> Self {
+        // Start with coverage complete = true; AND across all records.
+        Self { cache_coverage_complete: true, ..Default::default() }
+    }
+
+    fn add(&mut self, rec: &UsageRecord, hour: Option<i64>) {
+        self.total_tokens += rec.usage.total_tokens;
+        self.input_tokens += rec.usage.input_tokens;
+        self.cached_input_tokens += rec.usage.cache_read_input_tokens;
+        self.output_tokens += rec.usage.output_tokens;
+        self.model_request_count += 1;
+        // cache_coverage_complete: AND of the per-record formula
+        let coverage = is_cache_coverage_complete(&rec.usage);
+        self.cache_coverage_complete &= coverage;
+        match hour {
+            Some(h) => {
+                self.active_hours.insert(h);
+                let key = (rec.tool.clone(), h);
+                let entry = self.hourly.entry(key).or_insert((0, 0, 0, 0, true));
+                entry.0 += rec.usage.total_tokens;
+                entry.1 += rec.usage.input_tokens;
+                entry.2 += rec.usage.cache_read_input_tokens;
+                entry.3 += rec.usage.output_tokens;
+                entry.4 &= coverage;
+            }
+            None => {
+                self.unbucketed_tokens += rec.usage.total_tokens;
+            }
+        }
+    }
+
+    fn finalize(self, date: &str) -> DailyAgentWork {
+        use crate::models::{AgentWorkHourBucket, AgentWorkHourlySource, AgentWorkSource};
+        // Build 24-hour buckets.
+        let mut hourly_buckets: Vec<AgentWorkHourBucket> = Vec::new();
+        for h in 0..24 {
+            let mut hour_sources: Vec<AgentWorkHourlySource> = Vec::new();
+            // Collect all sources for this hour.
+            let mut source_map: BTreeMap<String, (i64, i64, i64, i64, bool)> = BTreeMap::new();
+            for ((src, hr), (tokens, inp, cached, outp, cov)) in &self.hourly {
+                if *hr == h {
+                    let e = source_map.entry(src.clone()).or_insert((0, 0, 0, 0, true));
+                    e.0 += tokens; e.1 += inp; e.2 += cached; e.3 += outp; e.4 &= cov;
+                }
+            }
+            for (src, (tokens, inp, cached, outp, cov)) in source_map {
+                hour_sources.push(AgentWorkHourlySource {
+                    source: src,
+                    tokens,
+                    input_tokens: inp,
+                    cached_input_tokens: cached,
+                    output_tokens: outp,
+                    cache_coverage_complete: cov,
+                });
+            }
+            if !hour_sources.is_empty() {
+                hourly_buckets.push(AgentWorkHourBucket { hour: h, sources: hour_sources });
+            }
+        }
+        // Pad to 24 buckets if fewer (Mac always normalizes to 24).
+        // (We already iterate 0..24, but only add non-empty hours. The Mac
+        // version pads with empty entries — here we leave them out since the
+        // UI can handle sparse buckets.)
+
+        // Build per-source aggregates.
+        let mut source_map: BTreeMap<String, (i64, i64, i64)> = BTreeMap::new();
+        for ((src, _), (tokens, _, _, _, _)) in &self.hourly {
+            let e = source_map.entry(src.clone()).or_insert((0, 0, 0));
+            e.0 += tokens;
+            e.1 += 1; // model request count proxy
+        }
+        // Also count unbucketed tokens per source.
+        // (approximate: attribute unbucketed to tool from records)
+        let sources: Vec<AgentWorkSource> = source_map
+            .into_iter()
+            .map(|(src, (tokens, reqs, _))| AgentWorkSource {
+                source: src,
+                tokens,
+                model_request_count: reqs,
+                tool_call_count: 0,
+            })
+            .collect();
+
+        let unbucketed = if self.unbucketed_tokens > 0 {
+            self.unbucketed_tokens
+        } else {
+            (self.total_tokens - self.hourly.values().map(|(t, _, _, _, _)| t).sum::<i64>()).max(0)
+        };
+
+        DailyAgentWork {
+            date: date.to_string(),
+            total_tokens: self.total_tokens,
+            input_tokens: self.input_tokens,
+            cached_input_tokens: self.cached_input_tokens,
+            output_tokens: self.output_tokens,
+            cache_coverage_complete: self.cache_coverage_complete,
+            active_hours: self.active_hours.len() as i64,
+            model_request_count: self.model_request_count,
+            tool_call_count: self.tool_call_count,
+            sources,
+            hourly_buckets,
+            unbucketed_tokens: unbucketed,
+        }
+    }
+}
+
+/// Check if a record's token breakdown is internally consistent (cache
+/// coverage complete). Mirrors macOS's validation formula.
+fn is_cache_coverage_complete(u: &TokenUsageCounts) -> bool {
+    u.input_tokens >= 0
+        && u.output_tokens >= 0
+        && u.cache_creation_input_tokens >= 0
+        && u.cache_read_input_tokens >= 0
+        && u.reasoning_output_tokens >= 0
+        && u.total_tokens == u.input_tokens + u.output_tokens
+        && u.cache_creation_input_tokens + u.cache_read_input_tokens <= u.input_tokens
+        && u.reasoning_output_tokens <= u.output_tokens
+}
+
+/// Aggregate records into agent-work data, keyed by date.
+fn aggregate_agent_work(records: &[UsageRecord]) -> Vec<DailyAgentWork> {
+    let mut accs: BTreeMap<String, AgentWorkAccumulator> = BTreeMap::new();
+    for rec in records {
+        // Agent work includes all records that have timestamps (sub-day resolution).
+        let hour = rec.timestamp.as_ref().and_then(|ts| hour_from_iso(ts)).map(|h| h as i64);
+        let acc = accs.entry(rec.date.clone()).or_insert_with(AgentWorkAccumulator::new);
+        acc.add(rec, hour);
+    }
+    accs.into_iter()
+        .filter(|(_, a)| a.total_tokens > 0)
+        .map(|(date, a)| a.finalize(&date))
+        .collect()
 }

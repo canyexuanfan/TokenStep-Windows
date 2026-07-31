@@ -422,7 +422,7 @@
           ? '<div class="card" id="tokenRankCard"><div class="card-title">' + window.TS.t('Token 榜单') + '</div><div id="tokenRankContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
           : '';
 
-        return hero + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + activityCard + rhythmCard + distCards;
+        return hero + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + window.TS.agentWorkCardHTML(snapshot, settings) + activityCard + rhythmCard + distCards;
       }
       function distributionInner(title, rows, showTodayBadge) {
         var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
@@ -576,6 +576,9 @@
         var rankChecked = settings.show_token_rank ? ' checked' : '';
         var rankUid = settings.token_rank_user_id || '';
         html += '<div class="card"><div class="card-title">' + window.TS.t('Token 榜单') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('显示 Token 榜单卡片') + '</div><div class="setting-hint">' + window.TS.t('在「今日」页面显示生财 Token 榜单的榜首和我的排名') + '</div></div><label class="switch"><input type="checkbox" id="showRankToggle"' + rankChecked + '/><span class="slider"></span></label></div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('我的榜单 ID') + '</div><div class="setting-hint">' + window.TS.t('填写后可在榜单卡片看到自己的排名（在 scys.com/tokenrank 个人页获取）') + '</div></div><input type="text" id="rankUidInput" value="' + rankUid + '" placeholder="数字 ID" style="width:160px;padding:6px 10px;border:1px solid var(--track);border-radius:8px"/></div></div>';
+        // Experimental agent sources card.
+        var expAgentChecked = settings.show_experimental_agent_sources ? ' checked' : '';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('实验 Agent 来源') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('启用 ZCode / Hermes') + '</div><div class="setting-hint">' + window.TS.t('只读取本地 usage 字段，不读取对话正文。') + '</div></div><label class="switch"><input type="checkbox" id="expAgentToggle"' + expAgentChecked + '/><span class="slider"></span></label></div></div>';
         // Update check card.
         var updHint = latestUpdate && latestUpdate.has_update
           ? '<div style="margin-top:10px;padding:10px;background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:10px;font-weight:700;color:var(--green-dark)">🎉 ' + window.TS.tf('发现新版本 v%@', latestUpdate.latest_version) + ' · <a id="updDownloadLink" href="#" style="color:var(--green-dark);text-decoration:underline;cursor:pointer">' + window.TS.t('立即安装') + '</a></div>'
@@ -597,6 +600,17 @@
         document.getElementById('pageTitle').textContent = window.TS.t(section.title);
         document.getElementById('pageSubtitle').textContent = window.TS.t(section.sub);
         var view = document.getElementById('view');
+        // Recalibration notice banner (checked once per render cycle).
+        invoke('get_recalibration_notice').then(function (show) {
+          var eb = document.getElementById('errorBanner');
+          if (show && eb) {
+            eb.innerHTML = window.TS.recalibrationNoticeHTML();
+            var btn = document.getElementById('dismissRecalibrationBtn');
+            if (btn) btn.addEventListener('click', function () {
+              invoke('dismiss_recalibration_notice').then(function () { eb.innerHTML = ''; });
+            });
+          }
+        }).catch(function () {});
         if (current === 'today') {
           view.innerHTML = viewToday();
           loadCodexQuota();
@@ -690,6 +704,11 @@
           var rankUidInput = document.getElementById('rankUidInput');
           if (rankUidInput) rankUidInput.addEventListener('change', function () {
             invoke('set_token_rank_user_id', { userId: rankUidInput.value }).then(function (s) { settings = s; });
+          });
+          // Experimental agent sources toggle.
+          var expAgentToggle = document.getElementById('expAgentToggle');
+          if (expAgentToggle) expAgentToggle.addEventListener('change', function () {
+            invoke('set_experimental_agent_sources', { enabled: expAgentToggle.checked }).then(function (s) { settings = s; });
           });
           // Update check button + download link.
           // Auto-update + ask-before-download toggles.

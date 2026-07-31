@@ -70,5 +70,6 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
             .as_deref()
             .map(|v| crate::token_rank::clean_user_id(v))
             .filter(|v| !v.is_empty()),
+        show_experimental_agent_sources: s.show_experimental_agent_sources,
     }
 }
