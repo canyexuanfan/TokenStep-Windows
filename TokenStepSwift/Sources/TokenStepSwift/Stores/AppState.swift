@@ -21,16 +21,18 @@ final class AppState: ObservableObject {
     @Published private(set) var lastUpdateCheckAt: Date?
     @Published private(set) var updateDownloadedURL: URL?
     @Published private(set) var tokenIslandAvailable = TokenIslandDisplayDetector.isAvailable
+    @Published private(set) var showsUsageRecalibrationNotice = false
     @Published var lastError: String?
 
     private var timer: Timer?
+    private var pendingRefreshAfterCurrent = false
 
     init() {
         load()
+        refreshIfSnapshotIsStale()
         applyDefaultAutostartIfNeeded()
         configureTimer()
         refreshCodexQuota()
-        refreshIfSnapshotIsStale()
         scheduleDeferredUpdateCheck()
     }
 
@@ -41,8 +43,16 @@ final class AppState: ObservableObject {
     var today: DailyUsage {
         let key = DateFormatter.tokenStepDay.string(from: Date())
         return snapshot.daily.last(where: { $0.date == key })
-            ?? snapshot.daily.last
             ?? DailyUsage(date: key, tools: [:], totalTokens: 0, cost: 0)
+    }
+
+    var todayAgentWork: DailyAgentWork {
+        let key = DateFormatter.tokenStepDay.string(from: Date())
+        return agentWork(for: key)
+    }
+
+    var sevenDayAgentAverage: Int {
+        sevenDayAgentAverage(endingAt: DateFormatter.tokenStepDay.string(from: Date()))
     }
 
     var progress: Double {
@@ -55,9 +65,17 @@ final class AppState: ObservableObject {
     }
 
     var monthAverage: Int {
-        let rows = Array(snapshot.daily.suffix(30))
-        guard !rows.isEmpty else { return 0 }
-        return rows.map(\.totalTokens).reduce(0, +) / rows.count
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let endDate = calendar.startOfDay(for: Date())
+        let values = (0..<30).map { offset -> Int in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: endDate) else {
+                return 0
+            }
+            let key = DateFormatter.tokenStepDay.string(from: date)
+            return snapshot.daily.last(where: { $0.date == key })?.totalTokens ?? 0
+        }
+        return values.reduce(0, +) / 30
     }
 
     var goalDays: Int {
@@ -107,6 +125,7 @@ final class AppState: ObservableObject {
         TokenStepThemeRuntime.apply(loadedSettings.theme)
         settings = loadedSettings
         snapshot = (try? DataService.loadSnapshot()) ?? .empty
+        showsUsageRecalibrationNotice = DataService.hasPendingUsageRecalibrationNotice
         if !loadedSettings.showCodexQuota {
             codexQuota = .unavailable
             claudeQuota = .unavailable
@@ -118,7 +137,10 @@ final class AppState: ObservableObject {
     }
 
     func refresh() {
-        guard !isRefreshing else { return }
+        guard !isRefreshing else {
+            pendingRefreshAfterCurrent = true
+            return
+        }
         isRefreshing = true
         lastError = nil
         let historyDays = settings.historyDays
@@ -134,6 +156,10 @@ final class AppState: ObservableObject {
             isRefreshing = false
             refreshCodexQuota()
             refreshTokenRank(force: true)
+            if pendingRefreshAfterCurrent {
+                pendingRefreshAfterCurrent = false
+                refresh()
+            }
         }
     }
 
@@ -182,8 +208,39 @@ final class AppState: ObservableObject {
         }
     }
 
+    func agentWork(for date: String) -> DailyAgentWork {
+        snapshot.agentWork(for: date)
+            ?? DailyAgentWork(
+                date: date,
+                totalTokens: 0,
+                activeHours: 0,
+                modelRequestCount: 0,
+                toolCallCount: 0,
+                sources: []
+            )
+    }
+
+    func sevenDayAgentAverage(endingAt dateKey: String) -> Int {
+        guard let endDate = DateFormatter.tokenStepDay.date(from: dateKey) else { return 0 }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let total = (0..<7).reduce(0) { partial, offset in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: endDate) else {
+                return partial
+            }
+            let key = DateFormatter.tokenStepDay.string(from: date)
+            return partial + agentWork(for: key).totalTokens
+        }
+        return total / 7
+    }
+
     func clearError() {
         lastError = nil
+    }
+
+    func dismissUsageRecalibrationNotice() {
+        DataService.acknowledgeUsageRecalibrationNotice()
+        showsUsageRecalibrationNotice = false
     }
 
     func refreshTokenIslandAvailability() {
@@ -253,6 +310,12 @@ final class AppState: ObservableObject {
         if settings.showTokenRank, tokenRank == nil {
             refreshTokenRank(force: true)
         }
+    }
+
+    func setExperimentalAgentSourcesVisible(_ visible: Bool) {
+        settings.showExperimentalAgentSources = visible
+        saveSettingsAndReload()
+        refresh()
     }
 
     func refreshTokenRank(force: Bool = false) {
@@ -436,25 +499,23 @@ final class AppState: ObservableObject {
     }
 
     private func refreshIfSnapshotIsStale() {
-        if snapshot.daily.contains(where: { $0.totalTokens > 0 && $0.models.isEmpty }) {
-            refresh()
+        guard let reason = UsageSnapshotRefreshPolicy.reason(
+            snapshot: snapshot,
+            refreshIntervalSeconds: settings.refreshIntervalSeconds,
+            now: Date()
+        ) else {
             return
         }
-        guard settings.refreshIntervalSeconds > 0 else {
-            if snapshot.generatedAt == nil {
-                refresh()
-            }
-            return
+
+        if reason == .accountingRevision {
+            let storedRevision = snapshot.sources["Codex"]?.accountingRevision
+                .map(String.init) ?? "legacy"
+            LifecycleLogger.log(
+                "Codex accounting revision \(storedRevision) is older than "
+                    + "\(UsageCollector.codexAccountingRevision); starting immediate recalibration."
+            )
         }
-        guard let generatedAt = snapshot.generatedAt,
-              let generatedDate = Self.parseGeneratedAt(generatedAt)
-        else {
-            refresh()
-            return
-        }
-        if Date().timeIntervalSince(generatedDate) >= TimeInterval(settings.refreshIntervalSeconds) {
-            refresh()
-        }
+        refresh()
     }
 
     private func scheduleDeferredUpdateCheck() {
@@ -511,6 +572,40 @@ final class AppState: ObservableObject {
             withIntermediateDirectories: true
         )
         try Data("applied\n".utf8).write(to: AppPaths.autostartDefaultMarker, options: .atomic)
+    }
+}
+
+enum UsageSnapshotRefreshReason: Equatable {
+    case accountingRevision
+    case missingModelBreakdown
+    case missingSnapshotTimestamp
+    case stale
+}
+
+enum UsageSnapshotRefreshPolicy {
+    static func reason(
+        snapshot: UsageSnapshot,
+        refreshIntervalSeconds: Int,
+        now: Date
+    ) -> UsageSnapshotRefreshReason? {
+        if DataService.requiresImmediateCodexRecalibration(snapshot) {
+            return .accountingRevision
+        }
+        if snapshot.daily.contains(where: { $0.totalTokens > 0 && $0.models.isEmpty }) {
+            return .missingModelBreakdown
+        }
+        guard refreshIntervalSeconds > 0 else {
+            return snapshot.generatedAt == nil ? .missingSnapshotTimestamp : nil
+        }
+        guard let generatedAt = snapshot.generatedAt,
+              let generatedDate = parseGeneratedAt(generatedAt)
+        else {
+            return .missingSnapshotTimestamp
+        }
+        if now.timeIntervalSince(generatedDate) >= TimeInterval(refreshIntervalSeconds) {
+            return .stale
+        }
+        return nil
     }
 
     private static func parseGeneratedAt(_ value: String) -> Date? {
