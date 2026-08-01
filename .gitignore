@@ -40,3 +40,15 @@ node_modules/
 windows/ui/share_card_preview.html
 _build_align*.log
 pictures/
+
+# === Closed-source dual-leaderboard reporter component ===
+# reporter/ is an OPTIONAL, SEPARATE, CLOSED-SOURCE component that uploads to
+# scys.com + zhenganhuo.com leaderboards. It is NOT part of the open-source
+# TokenStep app and must NEVER be committed (keeps the open main exe provably
+# upload-free; see docs/PRIVACY.md and docs/溯源分析-TokenRank-EXE来源.md).
+reporter/
+reporter_*/
+
+# Local investigation notes (contain token-rank/opentoken reverse-engineering
+# findings, credentials paths, uninstall scripts) — kept local only.
+questions/

@@ -2430,8 +2430,7 @@ function applyTheme(name) {
 // Renders the "Agent 工作强度" card HTML. Data comes from snapshot.agent_work.
 function agentWorkCardHTML(snapshot, settings) {
   var agentWork = snapshot.agent_work || [];
-  var todayKey = todayKey();
-  var today = agentWork.filter(function (w) { return w.date === todayKey; })[0]
+  var today = agentWork.filter(function (w) { return w.date === todayKey(); })[0]
     || agentWork[agentWork.length - 1]
     || { total_tokens: 0, active_hours: 0, input_tokens: 0, cached_input_tokens: 0, cache_coverage_complete: false, hourly_buckets: [], sources: [], unbucketed_tokens: 0 };
 

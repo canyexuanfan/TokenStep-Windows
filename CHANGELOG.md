@@ -10,6 +10,52 @@
 
 （开发中。参见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。）
 
+## [0.1.5] - Agent 工作强度 + 计量校准 rev8 + 实验来源
+
+移植上游 macOS v0.1.44/v0.1.45 的全部新功能，并修复移植引入的启动白屏问题。
+
+### 新增
+
+- **Agent 工作强度卡片**（今日页）：4 个指标格（Agent Token / 有记录小时 / 近 7 日均 / 缓存命中率）+ 24 小时堆叠柱状图（按来源着色）。
+- **Token 计量校准 rev8**：`SourceInfo` 新增 `accounting_revision` 字段；Codex 来源标记为 rev8（对齐 macOS），缓存版本 4 → 5；启动时检测旧口径并显示校准通知横幅。
+- **实验 Agent 来源采集器**（设置页开关，默认关闭）：读取 ZCode（`~/.zcode/cli/db/db.sqlite` 的 `model_usage` 表）、Hermes（`~/.hermes/state.db` 的 `sessions` 表）、WorkBuddy（`~/.workbuddy` 目录探测）。只读 usage 字段，不读对话正文。
+- 新增 `set_experimental_agent_sources` / `get_recalibration_notice` / `dismiss_recalibration_notice` 三个 Tauri 命令。
+- `tokenToolColor` 扩展 ZCode（蓝色）与 CC Switch 变体配色；`orderedToolEntries` 偏好列表扩展。
+
+### 修复
+
+- **修复启动白屏**：`agentWorkCardHTML()` 内 `var todayKey = todayKey()` 触发变量提升，遮蔽了全局函数 `todayKey()`，导致 `render()` 抛 `TypeError: todayKey is not a function`，整页白屏。改为内联调用。
+
+### 国际化
+
+- 补齐 Agent 工作强度卡片的 en / zhHant 翻译（`Agent Token`、`近 7 日均`、`昨日来源` 等 3 个此前漏入翻译表的 key）；`今日来源` 英文用词对齐上游（`Today by source` → `Today Sources`）。
+
+### 已知限制
+
+- ZCode / Hermes / WorkBuddy 默认不采集，需在「设置 → 实验 Agent 来源」手动开启（与 macOS 上游一致）。
+- 安装包仍使用自签名证书，首次运行会触发 SmartScreen 警告。
+
+### 致谢
+
+基于原 macOS **TokenStep**（作者 Chaoqiang Huang / 黄叔）移植，本次同步上游 v0.1.44/v0.1.45 源码镜像。
+
+## [0.1.4] - 节奏分享卡对齐 macOS
+
+### 新增
+
+- **分享卡改用 Canvas 自绘**：截图导出走 `renderShareDailyCard` / `renderTodayOverview` / `renderRhythmCard` 的 Canvas 渲染管线，与 HTML 显示分离，确保导出图与屏幕一致。
+- 节奏分享卡对齐 macOS 原生样式：圆角裁剪、峰值胶囊、高斯发光、footer 署名注明 tokenstep.app 是原作者官网。
+
+### 修复
+
+- 最近 30 天柱状图对齐 macOS `StackedActivityBarsView`：底部对齐（`column-reverse` + 纯比例百分比）、堆叠顺序与导出图统一（`.slice().reverse()`）、目标参考线 CSS 变量名修正（`--mutedFaint` → `--muted-faint`）、空数据占位用 `--track` 色。
+- 活动墙默认滚动到最右（显示今天），恢复被误删的 53 周历史宽度。
+- Win 端 Opus 定价同步上游 v0.1.43（15/75/18.75/1.5 → 5/25/6.25/0.5）。
+
+### 致谢
+
+同步上游 TokenStepSwift v0.1.43 源码镜像（Opus 定价 + SIGPIPE + Codex 配额健壮性）。
+
 ## [0.1.0] - Windows 移植首发
 
 TokenStep Windows 版的首个公开发布版本。基于原 macOS 版（TokenStepSwift）移植至 **Tauri 2 + Rust**，驻留在 Windows 系统托盘。
@@ -51,6 +97,52 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), adhere
 ## [Unreleased]
 
 (In development. See [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md).)
+
+## [0.1.5] - Agent Work Intensity + Calibration rev8 + Experimental Sources
+
+Ports all new features from upstream macOS v0.1.44/v0.1.45, and fixes a startup white-screen regression introduced by the port.
+
+### Added
+
+- **Agent Work Intensity card** (Today page): 4 metric tiles (Agent Token / Hours with records / 7-day avg / Cache hit rate) + a 24-hour stacked bar chart colored by source.
+- **Token calibration rev8**: `SourceInfo` gains `accounting_revision`; Codex source stamped at rev8 (aligned with macOS); cache version bumped 4 → 5; recalibration notice banner shown on startup when stale calibration is detected.
+- **Experimental agent source collectors** (Settings toggle, off by default): reads ZCode (`~/.zcode/cli/db/db.sqlite`, `model_usage`), Hermes (`~/.hermes/state.db`, `sessions`), and WorkBuddy (`~/.workbuddy` directory probe). Usage fields only; no message content.
+- Three new Tauri commands: `set_experimental_agent_sources` / `get_recalibration_notice` / `dismiss_recalibration_notice`.
+- `tokenToolColor` extended with ZCode (blue) and CC Switch variants; `orderedToolEntries` preferred list extended.
+
+### Fixed
+
+- **Fixed startup white-screen**: `agentWorkCardHTML()` used `var todayKey = todayKey()`, which hoisted a local `todayKey` that shadowed the global `todayKey()` function, throwing `TypeError: todayKey is not a function` inside `render()` and blanking the whole view. Switched to an inline call.
+
+### Internationalization
+
+- Backfilled en / zhHant translations for the Agent Work card (`Agent Token`, `7-day avg`, `Yesterday Sources` were missing from the table); `Today Sources` aligned with upstream wording.
+
+### Known limitations
+
+- ZCode / Hermes / WorkBuddy are not collected by default; enable them under Settings → Experimental Agent Sources (matches macOS upstream).
+- Installer remains self-signed; first run triggers a SmartScreen warning.
+
+### Acknowledgements
+
+Ported from the original macOS **TokenStep** by Chaoqiang Huang. This release mirrors upstream v0.1.44/v0.1.45 source.
+
+## [0.1.4] - Rhythm Share Card aligned with macOS
+
+### Added
+
+- **Share card switched to Canvas rendering**: screenshot export now goes through `renderShareDailyCard` / `renderTodayOverview` / `renderRhythmCard` Canvas pipelines, decoupled from on-screen HTML so exported images match the display.
+- Rhythm share card aligned with native macOS styling: rounded clipping, peak capsule, gaussian glow, footer credits tokenstep.app as the original author's site.
+
+### Fixed
+
+- Last-30-days bar chart aligned with macOS `StackedActivityBarsView`: bottom alignment (`column-reverse` + pure proportional percentages), stacking order unified with export (`.slice().reverse()`), goal reference line CSS variable fixed (`--mutedFaint` → `--muted-faint`), empty-data placeholder uses `--track` color.
+- Contribution wall scrolls to the rightmost (today) by default; restored the 53-week history width that was accidentally truncated.
+- Windows Opus pricing synced with upstream v0.1.43 (15/75/18.75/1.5 → 5/25/6.25/0.5).
+
+### Acknowledgements
+
+Mirrored upstream TokenStepSwift v0.1.43 source (Opus pricing + SIGPIPE + Codex quota robustness).
 
 ## [0.1.0] - Initial Windows port
 
