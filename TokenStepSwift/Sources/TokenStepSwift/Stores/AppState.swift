@@ -13,6 +13,7 @@ final class AppState: ObservableObject {
     @Published private(set) var claudeQuota: CodexQuotaSnapshot = .unavailable
     @Published private(set) var isRefreshingTokenRank = false
     @Published private(set) var tokenRank: TokenRankLeaderboard?
+    @Published private(set) var agentWorkRankIdentity: AgentWorkRankIdentity?
     @Published private(set) var tokenRankError: String?
     @Published private(set) var isDownloadingUpdate = false
     @Published private(set) var updateDownloadProgress = 0.0
@@ -23,21 +24,38 @@ final class AppState: ObservableObject {
     @Published private(set) var tokenIslandAvailable = TokenIslandDisplayDetector.isAvailable
     @Published private(set) var showsUsageRecalibrationNotice = false
     @Published var lastError: String?
+    // G-V1 / V1-T01：统一新鲜度状态（六态），采集与两家额度分别呈现。
+    @Published private(set) var collectionFreshness = UsageFreshness(kind: .neverSucceeded)
+    @Published private(set) var codexQuotaFreshness = UsageFreshness(kind: .neverSucceeded)
+    @Published private(set) var claudeQuotaFreshness = UsageFreshness(kind: .neverSucceeded)
+
+    private var freshnessState = FreshnessState()
 
     private var timer: Timer?
+    private var foregroundTimer: Timer?
+    private var foregroundRefreshSurfaces = Set<String>()
     private var pendingRefreshAfterCurrent = false
+    private var pendingForcedRefresh = false
+    private var lastQuotaRefreshAttemptAt: Date?
+    private var lastRankRefreshAttemptAt: Date?
+    private var lastAutomaticUsageRefreshAttemptAt: Date?
+    private var lastUsageObservedAt: Date?
 
     init() {
+        loadFreshnessState()
+        recomputeFreshness()
         load()
         refreshIfSnapshotIsStale()
         applyDefaultAutostartIfNeeded()
         configureTimer()
         refreshCodexQuota()
+        refreshTokenRank()
         scheduleDeferredUpdateCheck()
     }
 
     deinit {
         timer?.invalidate()
+        foregroundTimer?.invalidate()
     }
 
     var today: DailyUsage {
@@ -118,6 +136,10 @@ final class AppState: ObservableObject {
         "\(settings.theme.id)-\(settings.language.resolved.id)"
     }
 
+    var shouldShowAgentWorkRank: Bool {
+        settings.agentWorkRankVisibility.shouldShow(hasLocalIdentity: agentWorkRankIdentity != nil)
+    }
+
     func load() {
         defer { MemoryPressure.relieveAllocatorPressure() }
         let loadedSettings = DataService.loadSettings()
@@ -130,73 +152,241 @@ final class AppState: ObservableObject {
             codexQuota = .unavailable
             claudeQuota = .unavailable
         }
-        if !loadedSettings.showTokenRank {
+        if !loadedSettings.agentWorkRankVisibility.readsLocalIdentity {
             clearTokenRankState()
+        } else {
+            agentWorkRankIdentity = AgentWorkRankService.loadLocalIdentity()
+            if loadedSettings.agentWorkRankVisibility == .automatic,
+               agentWorkRankIdentity == nil {
+                clearTokenRankState()
+            }
         }
         autostartEnabled = AutostartService.isEnabled
+        // 升级/首跑迁移：无采集记录但仓库已有快照时，从 generated_at 继承最后成功时间，
+        // 避免"数据明明存在却显示暂无数据"。
+        if freshnessState.collection.lastSucceededAt == nil,
+           let generatedAt = snapshot.generatedAt,
+           let generatedDate = UsageSnapshotRefreshPolicy.generatedDate(generatedAt) {
+            freshnessState.collection.lastSucceededAt = generatedDate
+        }
+        // 快照重载后来源级状态可能变化；把采集尝试信息同步到内存快照并重算新鲜度。
+        snapshot.sourceAttempt = freshnessState.collection
+        recomputeFreshness()
     }
 
-    func refresh() {
+    func refresh(forceCollection: Bool = true) {
         guard !isRefreshing else {
-            pendingRefreshAfterCurrent = true
+            if forceCollection {
+                pendingRefreshAfterCurrent = true
+                pendingForcedRefresh = true
+            }
             return
+        }
+        let refreshStartedAt = Date()
+        if !forceCollection,
+           EnergyRefreshPolicy.isFresh(
+               lastAttemptAt: lastAutomaticUsageRefreshAttemptAt,
+               ttl: EnergyRefreshPolicy.automaticRetryTTL(
+                   requestedSeconds: settings.refreshIntervalSeconds
+               ),
+               now: refreshStartedAt
+           ) {
+            return
+        }
+        if !forceCollection {
+            lastAutomaticUsageRefreshAttemptAt = refreshStartedAt
         }
         isRefreshing = true
         lastError = nil
+        freshnessState.collection = freshnessState.collection.attempting(at: refreshStartedAt)
+        recomputeFreshness(now: refreshStartedAt)
         let historyDays = settings.historyDays
         Task {
+            var outcome: CollectionRunOutcome = .unchanged
+            var collectionSucceeded = false
             do {
-                try await Task.detached(priority: .utility) {
-                    try DataService.runCollectorInHelper(historyDays: historyDays)
+                outcome = try await Task.detached(priority: .utility) {
+                    try DataService.runCollectorInHelper(
+                        historyDays: historyDays,
+                        force: forceCollection
+                    )
                 }.value
+                collectionSucceeded = true
             } catch {
-                lastError = error.localizedDescription
+                let kind = FreshnessPolicy.classify(error: error)
+                freshnessState.collection = freshnessState.collection.failing(kind: kind, at: Date())
+                // 用户可见错误使用安全分类文案，不透出原始错误正文。
+                lastError = kind.localizedSummary
             }
-            load()
+            if outcome != .unchanged {
+                load()
+            }
+            if collectionSucceeded {
+                if outcome != .updatedWhileSourcesChanged {
+                    lastUsageObservedAt = Date()
+                }
+                // 只要 helper 未抛错即视为成功（快照已持久化）；
+                // updatedWhileSourcesChanged 的口径警示保留在 source diagnostics，
+                // 不影响"最后成功时间"的判定。
+                freshnessState.collection = freshnessState.collection.succeeding(at: Date())
+            }
+            recomputeFreshness()
+            persistFreshnessState()
             isRefreshing = false
-            refreshCodexQuota()
-            refreshTokenRank(force: true)
             if pendingRefreshAfterCurrent {
+                let force = pendingForcedRefresh
                 pendingRefreshAfterCurrent = false
-                refresh()
+                pendingForcedRefresh = false
+                refresh(forceCollection: force)
             }
         }
     }
 
-    func refreshCodexQuota() {
+    func refreshForForeground(now: Date = Date()) {
+        let snapshotDate = UsageSnapshotRefreshPolicy.generatedDate(snapshot.generatedAt)
+        let freshestObservation = [snapshotDate, lastUsageObservedAt]
+            .compactMap { $0 }
+            .max()
+        if EnergyRefreshPolicy.shouldRefreshForForeground(
+            generatedAt: freshestObservation,
+            requestedSeconds: settings.refreshIntervalSeconds,
+            now: now
+        ) {
+            refresh(forceCollection: false)
+        }
+        refreshCodexQuota(now: now)
+        refreshTokenRank()
+    }
+
+    func setForegroundRefreshSurface(_ identifier: String, visible: Bool) {
+        if visible {
+            foregroundRefreshSurfaces.insert(identifier)
+            refreshForForeground()
+        } else {
+            foregroundRefreshSurfaces.remove(identifier)
+        }
+        configureForegroundTimer()
+    }
+
+    func refreshCodexQuota(force: Bool = false, now: Date = Date()) {
         guard settings.showCodexQuota else {
             codexQuota = .unavailable
             claudeQuota = .unavailable
             isRefreshingCodexQuota = false
+            recomputeFreshness(now: now)
             return
         }
         guard !isRefreshingCodexQuota else { return }
+        if !force,
+           EnergyRefreshPolicy.isFresh(
+               lastAttemptAt: lastQuotaRefreshAttemptAt,
+               ttl: EnergyRefreshPolicy.quotaTTL,
+               now: now
+           ) {
+            return
+        }
+        lastQuotaRefreshAttemptAt = now
         isRefreshingCodexQuota = true
+        // Codex 与 Claude 分别记录尝试，成功/失败互不掩盖（V1-T01）。
+        freshnessState.codexQuota = freshnessState.codexQuota.attempting(at: now)
+        freshnessState.claudeQuota = freshnessState.claudeQuota.attempting(at: now)
+        recomputeFreshness(now: now)
         Task {
             let quotas = await Task.detached(priority: .utility) {
                 let codex = Result { try CodexQuotaService.read() }
                 let claude = Result { try ClaudeQuotaService.read() }
-                return (try? codex.get(), try? claude.get())
+                return (codex, claude)
             }.value
 
-            if let quota = quotas.0 {
+            let finishedAt = Date()
+            // Codex 已取消 5 小时额度（2026-08-13）：读取恢复（周额度仍在），
+            // UI 仅展示 7 天窗口；5 小时数据即使返回也不展示。
+            switch quotas.0 {
+            case .success(let quota):
                 codexQuota = quota
-            } else if !codexQuota.isAvailable {
-                codexQuota = .unavailable
+                freshnessState.codexQuota = freshnessState.codexQuota.succeeding(at: finishedAt)
+            case .failure(let error):
+                if !codexQuota.isAvailable {
+                    codexQuota = .unavailable
+                }
+                freshnessState.codexQuota = freshnessState.codexQuota.failing(
+                    kind: FreshnessPolicy.classify(error: error),
+                    at: finishedAt
+                )
             }
 
-            if let quota = quotas.1 {
+            switch quotas.1 {
+            case .success(let quota):
                 claudeQuota = quota
-            } else if !claudeQuota.isAvailable {
-                claudeQuota = .unavailable
+                freshnessState.claudeQuota = freshnessState.claudeQuota.succeeding(at: finishedAt)
+            case .failure(let error):
+                if !claudeQuota.isAvailable {
+                    claudeQuota = .unavailable
+                }
+                freshnessState.claudeQuota = freshnessState.claudeQuota.failing(
+                    kind: FreshnessPolicy.classify(error: error),
+                    at: finishedAt
+                )
             }
 
+            recomputeFreshness(now: finishedAt)
+            persistFreshnessState()
             isRefreshingCodexQuota = false
         }
     }
 
     var hasAnyQuota: Bool {
         codexQuota.isAvailable || claudeQuota.isAvailable
+    }
+
+    // MARK: - Freshness（G-V1 / V1-T01）
+
+    /// 用集中策略重算三通道新鲜度；来源级 partial 依赖当前快照的 source diagnostics。
+    private func recomputeFreshness(now: Date = Date()) {
+        let collectionTTL = FreshnessPolicy.collectionNormalTTL(
+            refreshIntervalSeconds: settings.refreshIntervalSeconds
+        )
+        let sourceStatuses = snapshot.sources.reduce(into: [String: String]()) { result, entry in
+            result[entry.key] = entry.value.status
+        }
+        collectionFreshness = FreshnessPolicy.classify(
+            enabled: true,
+            record: freshnessState.collection,
+            normalTTL: collectionTTL,
+            now: now,
+            sourceStatuses: sourceStatuses
+        )
+        codexQuotaFreshness = FreshnessPolicy.classify(
+            enabled: settings.showCodexQuota,
+            record: freshnessState.codexQuota,
+            normalTTL: FreshnessPolicy.quotaNormalTTL,
+            now: now
+        )
+        claudeQuotaFreshness = FreshnessPolicy.classify(
+            enabled: settings.showCodexQuota,
+            record: freshnessState.claudeQuota,
+            normalTTL: FreshnessPolicy.quotaNormalTTL,
+            now: now
+        )
+    }
+
+    private func loadFreshnessState() {
+        guard let data = try? Data(contentsOf: AppPaths.freshnessStateJSON),
+              let state = try? JSONDecoder().decode(FreshnessState.self, from: data)
+        else { return }
+        freshnessState = state
+    }
+
+    private func persistFreshnessState() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(freshnessState) else { return }
+        let url = AppPaths.freshnessStateJSON
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: url, options: .atomic)
     }
 
     func quota(for tool: String) -> CodexQuotaSnapshot {
@@ -256,6 +446,7 @@ final class AppState: ObservableObject {
         settings.refreshIntervalSeconds = seconds
         saveSettingsAndReload()
         configureTimer()
+        configureForegroundTimer()
     }
 
     func setTheme(_ theme: TokenStepTheme) {
@@ -286,7 +477,7 @@ final class AppState: ObservableObject {
         settings.showCodexQuota = visible
         saveSettingsAndReload()
         if visible {
-            refreshCodexQuota()
+            refreshCodexQuota(force: true)
         } else {
             codexQuota = .unavailable
             claudeQuota = .unavailable
@@ -294,21 +485,13 @@ final class AppState: ObservableObject {
         }
     }
 
-    func setTokenRankVisible(_ visible: Bool) {
-        settings.showTokenRank = visible
+    func setAgentWorkRankVisibility(_ visibility: AgentWorkRankVisibility) {
+        settings.agentWorkRankVisibility = visibility
         saveSettingsAndReload()
-        if settings.showTokenRank {
+        if shouldShowAgentWorkRank {
             refreshTokenRank(force: true)
         } else {
             clearTokenRankState()
-        }
-    }
-
-    func setTokenRankUserID(_ userID: String) {
-        settings.tokenRankUserID = TokenStepSettings.cleanedTokenRankUserID(userID)
-        saveSettingsAndReload()
-        if settings.showTokenRank, tokenRank == nil {
-            refreshTokenRank(force: true)
         }
     }
 
@@ -318,33 +501,65 @@ final class AppState: ObservableObject {
         refresh()
     }
 
-    func refreshTokenRank(force: Bool = false) {
-        guard settings.showTokenRank else {
+    /// G-A1：T1 新源逐源开关（仅主开关开启时生效）。
+    /// 列表为 nil（自动纳入态）时先物化当前有效集合，避免误关其他自动源。
+    func setExperimentalAgentSource(_ sourceID: String, enabled: Bool) {
+        var list = AgentSourceRegistry.enabledIDs(
+            masterEnabled: settings.showExperimentalAgentSources,
+            perSource: settings.experimentalAgentSources
+        )
+        if enabled, !list.contains(sourceID) {
+            list.append(sourceID)
+        } else if !enabled {
+            list.removeAll { $0 == sourceID }
+        }
+        settings.experimentalAgentSources = list
+        saveSettingsAndReload()
+        refresh()
+    }
+
+    func refreshTokenRank(force: Bool = false, now: Date = Date()) {
+        guard settings.agentWorkRankVisibility.readsLocalIdentity else {
+            clearTokenRankState()
+            return
+        }
+        agentWorkRankIdentity = AgentWorkRankService.loadLocalIdentity()
+        guard shouldShowAgentWorkRank else {
             clearTokenRankState()
             return
         }
         guard !isRefreshingTokenRank else { return }
-        if !force,
-           let fetchedAt = tokenRank?.fetchedAt,
-           Date().timeIntervalSince(fetchedAt) < TokenRankService.cacheTTL {
-            return
+        if !force {
+            if EnergyRefreshPolicy.isFresh(
+                lastAttemptAt: lastRankRefreshAttemptAt,
+                ttl: EnergyRefreshPolicy.rankTTL,
+                now: now
+            ) {
+                return
+            }
+            if let fetchedAt = tokenRank?.fetchedAt,
+               now.timeIntervalSince(fetchedAt) < AgentWorkRankService.cacheTTL {
+                return
+            }
         }
+        lastRankRefreshAttemptAt = now
 
+        agentWorkRankIdentity = AgentWorkRankService.loadLocalIdentity()
         isRefreshingTokenRank = true
         Task {
             defer {
                 isRefreshingTokenRank = false
             }
             do {
-                let leaderboard = try await TokenRankService.fetchLeaderboard()
-                guard settings.showTokenRank else {
+                let leaderboard = try await AgentWorkRankService.fetchLeaderboard()
+                guard shouldShowAgentWorkRank else {
                     clearTokenRankState()
                     return
                 }
                 tokenRank = leaderboard
                 tokenRankError = nil
             } catch {
-                guard settings.showTokenRank else {
+                guard shouldShowAgentWorkRank else {
                     clearTokenRankState()
                     return
                 }
@@ -358,15 +573,11 @@ final class AppState: ObservableObject {
     }
 
     func openTokenRankLeaderboardPage() {
-        NSWorkspace.shared.open(TokenRankService.leaderboardPageURL)
+        NSWorkspace.shared.open(AgentWorkRankService.leaderboardPageURL)
     }
 
     func openTokenRankUserPage() {
-        guard let url = TokenRankService.userPageURL(userID: settings.tokenRankUserID) else {
-            openTokenRankLeaderboardPage()
-            return
-        }
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(AgentWorkRankService.myPageURL)
     }
 
     func setAutoUpdateEnabled(_ enabled: Bool) {
@@ -482,6 +693,7 @@ final class AppState: ObservableObject {
 
     private func clearTokenRankState() {
         tokenRank = nil
+        agentWorkRankIdentity = nil
         tokenRankError = nil
         isRefreshingTokenRank = false
     }
@@ -489,13 +701,46 @@ final class AppState: ObservableObject {
     private func configureTimer() {
         timer?.invalidate()
         timer = nil
-        guard settings.refreshIntervalSeconds > 0 else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(settings.refreshIntervalSeconds), repeats: true) { [weak self] _ in
+        guard let interval = EnergyRefreshPolicy.backgroundInterval(
+            requestedSeconds: settings.refreshIntervalSeconds,
+            powerSource: TokenStepPowerState.source,
+            lowPowerMode: TokenStepPowerState.lowPowerModeEnabled
+        ) else {
+            return
+        }
+        timer = Timer.scheduledTimer(withTimeInterval: TimeInterval(interval), repeats: false) { [weak self] _ in
             Task { @MainActor in
-                self?.refresh()
+                guard let self else { return }
+                self.refresh(forceCollection: false)
+                self.refreshCodexQuota()
+                self.refreshTokenRank()
+                self.configureTimer()
             }
         }
-        timer?.tolerance = min(TimeInterval(settings.refreshIntervalSeconds) * 0.1, 30)
+        timer?.tolerance = min(TimeInterval(interval) * 0.1, 60)
+    }
+
+    private func configureForegroundTimer() {
+        foregroundTimer?.invalidate()
+        foregroundTimer = nil
+        guard !foregroundRefreshSurfaces.isEmpty,
+              let interval = EnergyRefreshPolicy.foregroundTickInterval(
+                  requestedSeconds: settings.refreshIntervalSeconds
+              )
+        else {
+            return
+        }
+        foregroundTimer = Timer.scheduledTimer(
+            withTimeInterval: TimeInterval(interval),
+            repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.refreshForForeground()
+                self.configureForegroundTimer()
+            }
+        }
+        foregroundTimer?.tolerance = min(TimeInterval(interval) * 0.1, 10)
     }
 
     private func refreshIfSnapshotIsStale() {
@@ -515,7 +760,7 @@ final class AppState: ObservableObject {
                     + "\(UsageCollector.codexAccountingRevision); starting immediate recalibration."
             )
         }
-        refresh()
+        refresh(forceCollection: reason != .stale)
     }
 
     private func scheduleDeferredUpdateCheck() {
@@ -597,8 +842,7 @@ enum UsageSnapshotRefreshPolicy {
         guard refreshIntervalSeconds > 0 else {
             return snapshot.generatedAt == nil ? .missingSnapshotTimestamp : nil
         }
-        guard let generatedAt = snapshot.generatedAt,
-              let generatedDate = parseGeneratedAt(generatedAt)
+        guard let generatedDate = generatedDate(snapshot.generatedAt)
         else {
             return .missingSnapshotTimestamp
         }
@@ -608,7 +852,8 @@ enum UsageSnapshotRefreshPolicy {
         return nil
     }
 
-    private static func parseGeneratedAt(_ value: String) -> Date? {
+    static func generatedDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
         if let date = generatedAtISOWithFractional.date(from: value) {
             return date
         }

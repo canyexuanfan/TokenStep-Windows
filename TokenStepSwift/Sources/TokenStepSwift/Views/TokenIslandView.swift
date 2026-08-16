@@ -305,7 +305,8 @@ private struct TokenIslandQuotaMiniView: View {
                 .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.tokenGreen)
             if codexQuota.isAvailable {
-                quotaBlock(title: "Codex", quota: codexQuota)
+                // Codex 已取消 5 小时额度：只显示 7 天窗口（2026-08-13）。
+                quotaBlock(title: "Codex", quota: codexQuota, showsFiveHourWindow: false)
             }
             if codexQuota.isAvailable, claudeQuota.isAvailable {
                 Divider().frame(height: 15).overlay(Color.black.opacity(0.10))
@@ -320,14 +321,20 @@ private struct TokenIslandQuotaMiniView: View {
         .background(Color.tokenTrack.opacity(0.38), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 
-    private func quotaBlock(title: String, quota: CodexQuotaSnapshot) -> some View {
+    private func quotaBlock(
+        title: String,
+        quota: CodexQuotaSnapshot,
+        showsFiveHourWindow: Bool = true
+    ) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
                 .font(.system(size: 9, weight: .heavy, design: .rounded))
                 .foregroundStyle(Color.tokenInk.opacity(0.48))
                 .lineLimit(1)
             HStack(spacing: 6) {
-                quotaText(quota.fiveHour, fallback: L("5 小时"))
+                if showsFiveHourWindow {
+                    quotaText(quota.fiveHour, fallback: L("5 小时"))
+                }
                 quotaText(quota.sevenDay, fallback: L("7 天"))
             }
         }

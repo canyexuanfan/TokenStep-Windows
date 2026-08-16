@@ -10,6 +10,10 @@ struct UsageSnapshot: Codable {
     var tools: [ToolUsage]
     var models: [ModelUsage]
     var sources: [String: SourceInfo]
+    /// 生成该快照的采集尝试信息（G-V1）。旧快照缺失时按 nil 解码。
+    var sourceAttempt: RefreshAttemptRecord?
+    /// 项目维度聚合（G-B1，按末级目录名脱敏）。旧快照缺失时按空数组解码。
+    var projects: [ProjectUsage]
 
     enum CodingKeys: String, CodingKey {
         case generatedAt = "generated_at"
@@ -21,6 +25,8 @@ struct UsageSnapshot: Codable {
         case tools
         case models
         case sources
+        case sourceAttempt = "source_attempt"
+        case projects
     }
 
     init(
@@ -32,7 +38,9 @@ struct UsageSnapshot: Codable {
         agentWork: [DailyAgentWork] = [],
         tools: [ToolUsage],
         models: [ModelUsage],
-        sources: [String: SourceInfo]
+        sources: [String: SourceInfo],
+        sourceAttempt: RefreshAttemptRecord? = nil,
+        projects: [ProjectUsage] = []
     ) {
         self.generatedAt = generatedAt
         self.timezone = timezone
@@ -43,6 +51,8 @@ struct UsageSnapshot: Codable {
         self.tools = tools
         self.models = models
         self.sources = sources
+        self.sourceAttempt = sourceAttempt
+        self.projects = projects
     }
 
     init(from decoder: Decoder) throws {
@@ -56,6 +66,8 @@ struct UsageSnapshot: Codable {
         tools = try container.decodeIfPresent([ToolUsage].self, forKey: .tools) ?? []
         models = try container.decodeIfPresent([ModelUsage].self, forKey: .models) ?? []
         sources = try container.decodeIfPresent([String: SourceInfo].self, forKey: .sources) ?? [:]
+        sourceAttempt = try container.decodeIfPresent(RefreshAttemptRecord.self, forKey: .sourceAttempt)
+        projects = try container.decodeIfPresent([ProjectUsage].self, forKey: .projects) ?? []
     }
 
     func rhythm(for date: String) -> DailyRhythm? {
@@ -98,6 +110,8 @@ struct DailyUsage: Codable, Identifiable {
     var models: [String: Int]
     var totalTokens: Int
     var cost: Double
+    /// 项目维度（G-B1）。name 为末级目录名；空串表示未命名（UI 层本地化）。旧快照按 nil 解码。
+    var projects: [ProjectUsage]?
 
     enum CodingKeys: String, CodingKey {
         case date
@@ -105,14 +119,16 @@ struct DailyUsage: Codable, Identifiable {
         case models
         case totalTokens = "total_tokens"
         case cost
+        case projects
     }
 
-    init(date: String, tools: [String: Int], models: [String: Int] = [:], totalTokens: Int, cost: Double) {
+    init(date: String, tools: [String: Int], models: [String: Int] = [:], totalTokens: Int, cost: Double, projects: [ProjectUsage]? = nil) {
         self.date = date
         self.tools = tools
         self.models = models
         self.totalTokens = totalTokens
         self.cost = cost
+        self.projects = projects
     }
 
     init(from decoder: Decoder) throws {
@@ -122,7 +138,20 @@ struct DailyUsage: Codable, Identifiable {
         models = try container.decodeIfPresent([String: Int].self, forKey: .models) ?? [:]
         totalTokens = try container.decode(Int.self, forKey: .totalTokens)
         cost = try container.decode(Double.self, forKey: .cost)
+        projects = try container.decodeIfPresent([ProjectUsage].self, forKey: .projects)
     }
+}
+
+/// 项目维度聚合（G-B1）。name 是末级目录名（脱敏）；空串 = 未命名项目。
+struct ProjectUsage: Codable, Equatable, Identifiable {
+    var id: String { name }
+    var name: String
+    var tokens: Int
+    var cost: Double
+    /// Agent（客户端显示名）→ tokens。
+    var tools: [String: Int]
+    /// 模型 → tokens。
+    var models: [String: Int]
 }
 
 struct DailyRhythm: Codable, Identifiable {
@@ -581,92 +610,124 @@ struct CodexQuotaWindow: Equatable, Identifiable, Codable {
 
 struct TokenRankLeaderboard: Equatable {
     var fetchedAt: Date
-    var board: String
     var range: String
+    var client: String
+    var usageMode: String
+    var totalTokens: Int
+    var totalRankedUsers: Int
+    var topLimit: Int
     var entries: [TokenRankEntry]
 
     var topEntry: TokenRankEntry? {
         entries.first
     }
 
-    func entry(matching userID: String) -> TokenRankEntry? {
-        let normalizedID = TokenStepSettings.cleanedTokenRankUserID(userID)
-        guard !normalizedID.isEmpty else { return nil }
-        return entries.first { $0.userID == normalizedID }
+    func entry(matching userID: Int) -> TokenRankEntry? {
+        entries.first { $0.userID == userID }
     }
 }
 
 struct TokenRankEntry: Decodable, Equatable, Identifiable {
-    var id: String { userID }
+    var id: Int { userID }
     var rank: Int
-    var userID: String
+    var userID: Int
     var name: String
-    var avatar: String?
-    var score: Int
-    var cost: Double
-    var byTool: [String: Int]
+    var avatarURL: String?
+    var totalTokens: Int
+    var callCount: Int
+    var sessionCount: Int
+    var clients: [String: Int]
+    var models: [String: Int]
 
     enum CodingKeys: String, CodingKey {
         case rank
-        case userID = "userId"
-        case name
-        case avatar
-        case score
-        case cost
-        case byTool
+        case user
+        case totalTokens = "total_tokens"
+        case callCount = "call_count"
+        case sessionCount = "session_count"
+        case clients
+        case models
     }
 
     init(
         rank: Int,
-        userID: String,
+        userID: Int,
         name: String,
-        avatar: String?,
-        score: Int,
-        cost: Double,
-        byTool: [String: Int]
+        avatarURL: String?,
+        totalTokens: Int,
+        callCount: Int,
+        sessionCount: Int,
+        clients: [String: Int],
+        models: [String: Int]
     ) {
         self.rank = rank
         self.userID = userID
         self.name = name
-        self.avatar = avatar
-        self.score = score
-        self.cost = cost
-        self.byTool = byTool
+        self.avatarURL = avatarURL
+        self.totalTokens = totalTokens
+        self.callCount = callCount
+        self.sessionCount = sessionCount
+        self.clients = clients
+        self.models = models
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let user = try container.decode(TokenRankPublicUser.self, forKey: .user)
         rank = try container.decode(Int.self, forKey: .rank)
-        userID = try Self.decodeFlexibleString(from: container, forKey: .userID)
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? L("匿名用户")
-        avatar = try container.decodeIfPresent(String.self, forKey: .avatar)
-        score = try container.decode(Int.self, forKey: .score)
-        cost = try container.decodeIfPresent(Double.self, forKey: .cost) ?? 0
-        byTool = try container.decodeIfPresent([String: Int].self, forKey: .byTool) ?? [:]
+        userID = user.id
+        name = user.name
+        avatarURL = user.avatarURL
+        totalTokens = try container.decodeIfPresent(Int.self, forKey: .totalTokens) ?? 0
+        callCount = try container.decodeIfPresent(Int.self, forKey: .callCount) ?? 0
+        sessionCount = try container.decodeIfPresent(Int.self, forKey: .sessionCount) ?? 0
+        clients = try container.decodeIfPresent([String: Int].self, forKey: .clients) ?? [:]
+        models = try container.decodeIfPresent([String: Int].self, forKey: .models) ?? [:]
     }
+}
 
-    private static func decodeFlexibleString(
-        from container: KeyedDecodingContainer<CodingKeys>,
-        forKey key: CodingKeys
-    ) throws -> String {
-        if let value = try? container.decode(String.self, forKey: key) {
-            return value
-        }
-        if let value = try? container.decode(Int.self, forKey: key) {
-            return String(value)
-        }
-        if let value = try? container.decode(Int64.self, forKey: key) {
-            return String(value)
-        }
-        return ""
+private struct TokenRankPublicUser: Decodable {
+    var id: Int
+    var name: String
+    var avatarURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case avatarURL = "avatar_url"
     }
 }
 
 struct TokenRankLeaderboardResponse: Decodable {
-    var status: Int?
-    var board: String
+    var success: Bool
+    var data: TokenRankLeaderboardPayload
+}
+
+struct TokenRankLeaderboardPayload: Decodable {
     var range: String
-    var entries: [TokenRankEntry]
+    var client: String
+    var usageMode: String
+    var totalTokens: Int
+    var totalRankedUsers: Int
+    var topLimit: Int
+    var rows: [TokenRankEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case range
+        case client
+        case usageMode = "usage_mode"
+        case totalTokens = "total_tokens"
+        case totalRankedUsers = "total_ranked_users"
+        case topLimit = "top_limit"
+        case rows
+    }
+}
+
+struct AgentWorkRankIdentity: Equatable, Identifiable {
+    var id: Int
+    var name: String
+    var avatarURL: String?
+    var lastSyncedAt: Date?
 }
 
 enum TokenIslandDisplayPlacement: String, CaseIterable, Identifiable, Codable {
@@ -753,6 +814,29 @@ enum TokenStepLanguage: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum AgentWorkRankVisibility: String, Codable, CaseIterable, Identifiable {
+    case automatic
+    case visible
+    case hidden
+
+    var id: String { rawValue }
+
+    var readsLocalIdentity: Bool {
+        self != .hidden
+    }
+
+    func shouldShow(hasLocalIdentity: Bool) -> Bool {
+        switch self {
+        case .automatic:
+            return hasLocalIdentity
+        case .visible:
+            return true
+        case .hidden:
+            return false
+        }
+    }
+}
+
 struct TokenStepSettings: Codable {
     var dailyGoalTokens: Int
     var refreshIntervalSeconds: Int
@@ -764,9 +848,16 @@ struct TokenStepSettings: Codable {
     var tokenIslandEnabled: Bool
     var tokenIslandPlacement: TokenIslandDisplayPlacement
     var showCodexQuota: Bool
-    var showTokenRank: Bool
+    var agentWorkRankVisibility: AgentWorkRankVisibility
     var showExperimentalAgentSources: Bool
-    var tokenRankUserID: String
+    /// G-A1：逐源启用的实验 Agent 源（显示名）。nil = 主开关即旧三源语义；
+    /// 显式列表决定 T1 新源是否参与采集，新源永不因 legacy 布尔迁移被开启。
+    var experimentalAgentSources: [String]?
+    /// G-S1：多设备同步（默认关闭；服务端契约冻结前不提供启用入口）。
+    var deviceSyncEnabled: Bool = false
+    var mergeTodayAllDevices: Bool = false
+    var mergeHistoryAllDevices: Bool = false
+    var hiddenDeviceIDs: [String] = []
     var language: TokenStepLanguage
     var skippedUpdateVersion: String?
 
@@ -781,9 +872,14 @@ struct TokenStepSettings: Codable {
         case tokenIslandEnabled = "token_island_enabled"
         case tokenIslandPlacement = "token_island_placement"
         case showCodexQuota = "show_codex_quota"
-        case showTokenRank = "show_token_rank"
+        case agentWorkRankVisibility = "agent_work_rank_visibility"
+        case legacyShowAgentWorkRank = "show_agent_work_rank"
         case showExperimentalAgentSources = "show_experimental_agent_sources"
-        case tokenRankUserID = "token_rank_user_id"
+        case experimentalAgentSources = "experimental_agent_sources"
+        case deviceSyncEnabled = "device_sync_enabled"
+        case mergeTodayAllDevices = "merge_today_all_devices"
+        case mergeHistoryAllDevices = "merge_history_all_devices"
+        case hiddenDeviceIDs = "hidden_device_ids"
         case language
         case skippedUpdateVersion = "skipped_update_version"
     }
@@ -799,9 +895,9 @@ struct TokenStepSettings: Codable {
         tokenIslandEnabled: false,
         tokenIslandPlacement: .menuBar,
         showCodexQuota: false,
-        showTokenRank: false,
+        agentWorkRankVisibility: .hidden,
         showExperimentalAgentSources: false,
-        tokenRankUserID: "",
+        experimentalAgentSources: nil,
         language: .system,
         skippedUpdateVersion: nil
     )
@@ -817,9 +913,9 @@ struct TokenStepSettings: Codable {
         tokenIslandEnabled: Bool,
         tokenIslandPlacement: TokenIslandDisplayPlacement,
         showCodexQuota: Bool,
-        showTokenRank: Bool,
+        agentWorkRankVisibility: AgentWorkRankVisibility,
         showExperimentalAgentSources: Bool,
-        tokenRankUserID: String,
+        experimentalAgentSources: [String]? = nil,
         language: TokenStepLanguage,
         skippedUpdateVersion: String?
     ) {
@@ -833,17 +929,11 @@ struct TokenStepSettings: Codable {
         self.tokenIslandEnabled = tokenIslandEnabled
         self.tokenIslandPlacement = tokenIslandPlacement
         self.showCodexQuota = showCodexQuota
-        self.showTokenRank = showTokenRank
+        self.agentWorkRankVisibility = agentWorkRankVisibility
         self.showExperimentalAgentSources = showExperimentalAgentSources
-        self.tokenRankUserID = Self.cleanedTokenRankUserID(tokenRankUserID)
+        self.experimentalAgentSources = experimentalAgentSources
         self.language = language
         self.skippedUpdateVersion = skippedUpdateVersion
-    }
-
-    static func cleanedTokenRankUserID(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .filter(\.isNumber)
     }
 
     init(from decoder: Decoder) throws {
@@ -867,11 +957,45 @@ struct TokenStepSettings: Codable {
             tokenIslandPlacement = defaults.tokenIslandPlacement
         }
         showCodexQuota = try container.decodeIfPresent(Bool.self, forKey: .showCodexQuota) ?? defaults.showCodexQuota
-        showTokenRank = try container.decodeIfPresent(Bool.self, forKey: .showTokenRank) ?? defaults.showTokenRank
+        if let visibility = try container.decodeIfPresent(AgentWorkRankVisibility.self, forKey: .agentWorkRankVisibility) {
+            agentWorkRankVisibility = visibility
+        } else if let legacyVisible = try container.decodeIfPresent(Bool.self, forKey: .legacyShowAgentWorkRank) {
+            // Opt-in contract (docs/PRIVACY.md): legacy absence/false must never
+            // silently enable local identity reads or leaderboard requests.
+            agentWorkRankVisibility = legacyVisible ? .visible : .hidden
+        } else {
+            agentWorkRankVisibility = defaults.agentWorkRankVisibility
+        }
         showExperimentalAgentSources = try container.decodeIfPresent(Bool.self, forKey: .showExperimentalAgentSources) ?? defaults.showExperimentalAgentSources
-        let decodedTokenRankUserID = try container.decodeIfPresent(String.self, forKey: .tokenRankUserID) ?? defaults.tokenRankUserID
-        tokenRankUserID = Self.cleanedTokenRankUserID(decodedTokenRankUserID)
+        experimentalAgentSources = try container.decodeIfPresent([String].self, forKey: .experimentalAgentSources) ?? defaults.experimentalAgentSources
+        deviceSyncEnabled = try container.decodeIfPresent(Bool.self, forKey: .deviceSyncEnabled) ?? false
+        mergeTodayAllDevices = try container.decodeIfPresent(Bool.self, forKey: .mergeTodayAllDevices) ?? false
+        mergeHistoryAllDevices = try container.decodeIfPresent(Bool.self, forKey: .mergeHistoryAllDevices) ?? false
+        hiddenDeviceIDs = try container.decodeIfPresent([String].self, forKey: .hiddenDeviceIDs) ?? []
         language = try container.decodeIfPresent(TokenStepLanguage.self, forKey: .language) ?? defaults.language
         skippedUpdateVersion = try container.decodeIfPresent(String.self, forKey: .skippedUpdateVersion)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(dailyGoalTokens, forKey: .dailyGoalTokens)
+        try container.encode(refreshIntervalSeconds, forKey: .refreshIntervalSeconds)
+        try container.encode(historyDays, forKey: .historyDays)
+        try container.encode(theme, forKey: .theme)
+        try container.encode(autoUpdateEnabled, forKey: .autoUpdateEnabled)
+        try container.encode(askBeforeDownloadingUpdates, forKey: .askBeforeDownloadingUpdates)
+        try container.encode(requireVerifiedUpdates, forKey: .requireVerifiedUpdates)
+        try container.encode(tokenIslandEnabled, forKey: .tokenIslandEnabled)
+        try container.encode(tokenIslandPlacement, forKey: .tokenIslandPlacement)
+        try container.encode(showCodexQuota, forKey: .showCodexQuota)
+        try container.encode(agentWorkRankVisibility, forKey: .agentWorkRankVisibility)
+        try container.encode(showExperimentalAgentSources, forKey: .showExperimentalAgentSources)
+        try container.encodeIfPresent(experimentalAgentSources, forKey: .experimentalAgentSources)
+        try container.encode(deviceSyncEnabled, forKey: .deviceSyncEnabled)
+        try container.encode(mergeTodayAllDevices, forKey: .mergeTodayAllDevices)
+        try container.encode(mergeHistoryAllDevices, forKey: .mergeHistoryAllDevices)
+        try container.encode(hiddenDeviceIDs, forKey: .hiddenDeviceIDs)
+        try container.encode(language, forKey: .language)
+        try container.encodeIfPresent(skippedUpdateVersion, forKey: .skippedUpdateVersion)
     }
 }

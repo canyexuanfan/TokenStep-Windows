@@ -3,12 +3,84 @@ import SwiftUI
 struct TodayView: View {
     @EnvironmentObject private var appState: AppState
 
+    private var hasNoData: Bool {
+        appState.collectionFreshness.kind == .neverSucceeded
+    }
+
     var body: some View {
         VStack(spacing: 22) {
+            HStack {
+                Spacer()
+                // G-V1：主窗口与浮层共用同一套新鲜度术语。
+                FreshnessBadge(
+                    freshness: appState.collectionFreshness,
+                    showsLastSucceeded: appState.collectionFreshness.needsAttention
+                )
+            }
             hero
             todayBreakdownStrip
+            todayProjectsCard
             TodayAgentWorkCard()
             metricStrip
+        }
+    }
+
+    /// G-B1：今日项目卡——"今天你的 token 走了这些路"。
+    @ViewBuilder
+    private var todayProjectsCard: some View {
+        let projects = appState.today.projects ?? []
+        if !projects.isEmpty {
+            TokenCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(L("今日项目"))
+                            .font(.title3.weight(.heavy))
+                            .foregroundStyle(Color.tokenInk)
+                        Spacer()
+                        Text(L("今天你的 token 走了这些路"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    let total = max(1, projects.reduce(0) { $0 + $1.tokens })
+                    ForEach(projects.prefix(4)) { project in
+                        HStack(spacing: 14) {
+                            Text(TokenStepProject.displayName(project.name))
+                                .font(.callout.weight(.heavy))
+                                .foregroundStyle(Color.tokenInk)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(width: 250, alignment: .leading)
+                            GeometryReader { proxy in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.tokenTrack.opacity(0.5))
+                                    Capsule()
+                                        .fill(Color.tokenGreen.opacity(0.85))
+                                        .frame(width: max(4, proxy.size.width * CGFloat(project.tokens) / CGFloat(total)))
+                                }
+                            }
+                            .frame(height: 8)
+                            Text("\(TokenStepFormat.tokens(project.tokens, compact: true)) · \(TokenStepFormat.percent(Double(project.tokens) * 100 / Double(total)))")
+                                .font(.callout.weight(.bold))
+                                .monospacedDigit()
+                                .frame(width: 150, alignment: .trailing)
+                            Text(TokenStepProject.agentSummary(project.tools))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .frame(minWidth: 160, alignment: .leading)
+                        }
+                    }
+                    if projects.count > 4 {
+                        Text(LFormat("还有 %d 个项目", projects.count - 4))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(L("只显示项目目录名；完整路径仅保存在本机。"))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 
@@ -19,11 +91,20 @@ struct TodayView: View {
                 ZStack {
                     ProgressRingView(progress: lap.currentLapProgress, lineWidth: 20, color: lap.color)
                     VStack(spacing: 6) {
-                        Text(TokenStepFormat.tokens(appState.today.totalTokens))
-                            .font(.system(size: 42, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Color.tokenInk)
-                            .minimumScaleFactor(0.42)
-                            .lineLimit(1)
+                        if hasNoData {
+                            // 从未成功：显示"暂无数据"，不显示 0（G-V1）。
+                            Text(L("暂无数据"))
+                                .font(.title3.weight(.heavy))
+                                .foregroundStyle(.secondary)
+                                .minimumScaleFactor(0.5)
+                                .lineLimit(1)
+                        } else {
+                            Text(TokenStepFormat.tokens(appState.today.totalTokens))
+                                .font(.system(size: 42, weight: .heavy, design: .rounded))
+                                .foregroundStyle(Color.tokenInk)
+                                .minimumScaleFactor(0.42)
+                                .lineLimit(1)
+                        }
                         Text(LFormat("/ %@ 每圈", TokenStepFormat.tokens(appState.settings.dailyGoalTokens, compact: true)))
                             .font(.headline.weight(.bold))
                             .foregroundStyle(.secondary)
@@ -54,7 +135,11 @@ struct TodayView: View {
                     }
 
                     HStack(spacing: 10) {
-                        MetricPill(label: L("消耗金额"), value: TokenStepFormat.money(appState.today.cost))
+                        MetricPill(
+                            label: L("消耗金额（估算）"),
+                            value: hasNoData ? "—" : TokenStepFormat.money(appState.today.cost)
+                        )
+                        .help(L("按 API 列表价估算，不代表订阅或实际账单。"))
                         MetricPill(label: L("本月均值"), value: TokenStepFormat.tokens(appState.monthAverage, compact: true))
                     }
                 }
@@ -86,7 +171,8 @@ struct TodayView: View {
     private var todayToolRows: [TodayBreakdownRow] {
         let total = appState.today.totalTokens
         guard total > 0 else { return [] }
-        let primaryTools = ["Codex", "Claude Code"]
+        // 主力工具仅在有数据时置顶；0 token 的行不显示，避免挤掉更大的来源。
+        let primaryTools = ["Codex", "Claude Code"].filter { (appState.today.tools[$0] ?? 0) > 0 }
         let primaryRows = primaryTools.map { name in
             TodayBreakdownRow(
                 name: name,
@@ -106,11 +192,21 @@ struct TodayView: View {
                     color: tokenToolColor(name)
                 )
             }
-        return primaryRows + extraRows
+        return hideNegligibleRows(primaryRows + extraRows)
     }
 
     private var todayModelRows: [TodayBreakdownRow] {
-        breakdownRows(from: appState.today.models) { _ in nil }
+        hideNegligibleRows(breakdownRows(from: appState.today.models) { _ in nil })
+    }
+
+    /// 展示占比不足 0.1%（渲染为 0%，看着像没数据）的行隐藏；保底保留前两名。
+    private func hideNegligibleRows(_ rows: [TodayBreakdownRow]) -> [TodayBreakdownRow] {
+        guard rows.count > 2 else { return rows }
+        return rows.enumerated()
+            .filter { index, row in
+                index < 2 || row.percent >= 0.1
+            }
+            .map(\.element)
     }
 
     private func breakdownRows(from values: [String: Int], color: (String) -> Color?) -> [TodayBreakdownRow] {

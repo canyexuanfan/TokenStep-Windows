@@ -70,7 +70,9 @@ struct SettingsView: View {
                 SettingsAutostartCard()
             }
             HStack(alignment: .top, spacing: 18) {
-                SettingsExperimentalAgentSourcesCard()
+                SettingsAgentSourcesCard()
+            }
+            HStack(alignment: .top, spacing: 18) {
                 SettingsPrivacyCard()
             }
         }
@@ -164,8 +166,7 @@ struct SettingsView: View {
                 appState.setRequireVerifiedUpdates(TokenStepSettings.defaults.requireVerifiedUpdates)
                 appState.setTokenIslandPlacement(TokenStepSettings.defaults.tokenIslandPlacement)
                 appState.setCodexQuotaVisible(TokenStepSettings.defaults.showCodexQuota)
-                appState.setTokenRankVisible(TokenStepSettings.defaults.showTokenRank)
-                appState.setTokenRankUserID(TokenStepSettings.defaults.tokenRankUserID)
+                appState.setAgentWorkRankVisibility(TokenStepSettings.defaults.agentWorkRankVisibility)
                 appState.setExperimentalAgentSourcesVisible(TokenStepSettings.defaults.showExperimentalAgentSources)
                 appState.setAutostart(true)
             } label: {
