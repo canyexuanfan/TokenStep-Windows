@@ -933,6 +933,40 @@ pub fn run() {
                 // else: let the window close normally → app exits (no tray
                 // window left). The tray icon itself stays until process exit.
             }
+            // Upstream refreshForForeground (EnergyRefreshPolicy): when the
+            // dashboard regains focus/visibility after sitting in the tray on
+            // the slow background cadence (AC 15 min / battery 30 min floor),
+            // refresh immediately if the snapshot is older than the requested
+            // interval — otherwise the freshness badge would show
+            // "同步失败" (stale) for up to a full tick after reopening.
+            let foreground_now = matches!(event, tauri::WindowEvent::Focused(true));
+            if foreground_now {
+                let app = window.app_handle();
+                let state: tauri::State<'_, Arc<AppState>> = app.state();
+                if !*state.refreshing.lock() {
+                    let requested = settings::load()
+                        .refresh_interval_seconds
+                        .max(1);
+                    let now_epoch = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs() as i64)
+                        .unwrap_or(0);
+                    let last_generated = state
+                        .snapshot
+                        .lock()
+                        .as_ref()
+                        .and_then(|s| s.generated_at.as_deref())
+                        .and_then(freshness::iso_to_epoch);
+                    if energy::should_refresh_for_foreground(
+                        last_generated,
+                        None,
+                        requested,
+                        now_epoch,
+                    ) {
+                        run_refresh(app);
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_snapshot,
