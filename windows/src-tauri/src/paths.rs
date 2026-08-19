@@ -115,3 +115,64 @@ pub fn usage_recalibration_notice_marker() -> PathBuf {
         .join("config")
         .join("usage-recalibration-v6-pending")
 }
+
+// ── Freshness state (port of upstream v0.2.0 G-V1) ───────────────────────
+
+/// `cache/freshness-state.json` — per-channel refresh-attempt records.
+pub fn freshness_state_json() -> PathBuf {
+    app_support_root().join("cache").join("freshness-state.json")
+}
+
+// ── T1 experimental agent source paths (port of upstream v0.2.0 G-A1) ────
+
+/// `~/.gemini/tmp` — Gemini CLI session dumps (session-*.json / .jsonl).
+pub fn gemini_tmp_dir() -> PathBuf {
+    home_dir().join(".gemini").join("tmp")
+}
+
+/// `~/.qwen/tmp` or `~/.qwen/projects` — Qwen Code usage JSONL roots.
+pub fn qwen_roots() -> Vec<PathBuf> {
+    let home = home_dir();
+    vec![
+        home.join(".qwen").join("tmp"),
+        home.join(".qwen").join("projects"),
+    ]
+}
+
+/// `~/.kimi-code/sessions` — Kimi Code wire.jsonl sessions (the `.kimi`
+/// legacy dir has no usage events, so collection reads only this one).
+pub fn kimi_sessions_dir() -> PathBuf {
+    home_dir().join(".kimi-code").join("sessions")
+}
+
+/// `~/.local/share/opencode/opencode.db` — OpenCode usage database.
+pub fn opencode_db_path() -> PathBuf {
+    home_dir()
+        .join(".local")
+        .join("share")
+        .join("opencode")
+        .join("opencode.db")
+}
+
+/// `~/.local/share/amp/threads` — Amp thread JSONL root.
+pub fn amp_threads_dir() -> PathBuf {
+    home_dir().join(".local").join("share").join("amp").join("threads")
+}
+
+/// `~/.factory/sessions` — Droid session JSONL root.
+pub fn droid_sessions_dir() -> PathBuf {
+    home_dir().join(".factory").join("sessions")
+}
+
+/// `~/.grok/sessions` — Grok Build updates.jsonl root.
+pub fn grok_sessions_dir() -> PathBuf {
+    home_dir().join(".grok").join("sessions")
+}
+
+// ── Agent-work-rank identity (port of upstream v0.2.0) ───────────────────
+
+/// `~/.token-rank/client-state.json` — written by the Token Rank CLI; holds
+/// the local identity `{user:{id,...}}` used to locate "my" leaderboard row.
+pub fn token_rank_client_state_json() -> PathBuf {
+    home_dir().join(".token-rank").join("client-state.json")
+}

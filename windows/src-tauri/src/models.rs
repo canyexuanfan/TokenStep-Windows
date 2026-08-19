@@ -80,6 +80,22 @@ pub struct DailyUsage {
     #[serde(rename = "total_tokens")]
     pub total_tokens: i64,
     pub cost: f64,
+    /// Per-project breakdown for this day (upstream B1-lite). Older
+    /// snapshots decode as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projects: Option<Vec<ProjectUsage>>,
+}
+
+/// A sanitized project aggregate (upstream `ProjectUsage`, B1-lite). The name
+/// is the last path segment of the working directory — never a full path.
+/// An empty name means "unassigned" (records without a project context).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProjectUsage {
+    pub name: String,
+    pub tokens: i64,
+    pub cost: f64,
+    pub tools: std::collections::BTreeMap<String, i64>,
+    pub models: std::collections::BTreeMap<String, i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -252,6 +268,14 @@ pub struct UsageSnapshot {
     pub tools: Vec<ToolUsage>,
     pub models: Vec<ModelUsage>,
     pub sources: std::collections::BTreeMap<String, SourceInfo>,
+    /// Info about the collection attempt that produced this snapshot
+    /// (upstream G-V1 freshness). Older snapshots decode as `None`.
+    #[serde(default, rename = "source_attempt", skip_serializing_if = "Option::is_none")]
+    pub source_attempt: Option<crate::freshness::RefreshAttemptRecord>,
+    /// Project-dimension aggregates (upstream B1-lite, sanitized last path
+    /// segment only). Older snapshots decode as empty.
+    #[serde(default)]
+    pub projects: Vec<ProjectUsage>,
 }
 
 impl UsageSnapshot {
@@ -266,6 +290,8 @@ impl UsageSnapshot {
             tools: vec![],
             models: vec![],
             sources: std::collections::BTreeMap::new(),
+            source_attempt: None,
+            projects: vec![],
         }
     }
 }
@@ -309,14 +335,29 @@ pub struct TokenStepSettings {
     /// only appears when the user opts in.
     #[serde(rename = "show_codex_quota", default)]
     pub show_codex_quota: bool,
-    /// Whether the TokenRank leaderboard card is shown on the Today view.
-    /// Default off. Mirrors upstream `showTokenRank`.
-    #[serde(rename = "show_token_rank", default)]
-    pub show_token_rank: bool,
-    /// The user's scys.com TokenRank user id (digits only), used to locate
-    /// their own entry in the leaderboard. Empty when unset.
-    #[serde(rename = "token_rank_user_id", default, skip_serializing_if = "Option::is_none")]
-    pub token_rank_user_id: Option<String>,
+    /// Agent-work-rank card visibility (upstream `AgentWorkRankVisibility`):
+    /// "automatic" (show when a local Token Rank identity is detected),
+    /// "visible" (always show), or "hidden" (zero identity reads, zero
+    /// network). Default "hidden" — absence must never silently enable.
+    #[serde(rename = "agent_work_rank_visibility", default = "default_rank_visibility")]
+    pub agent_work_rank_visibility: String,
+    /// Per-source experimental agent toggles (source display names). `None`
+    /// = master switch alone (legacy ZCode/Hermes/WorkBuddy semantics, and
+    /// auto-enroll detected T1 sources); an explicit list decides which T1
+    /// sources participate. New sources are never enabled by legacy
+    /// boolean migration.
+    #[serde(rename = "experimental_agent_sources", default, skip_serializing_if = "Option::is_none")]
+    pub experimental_agent_sources: Option<Vec<String>>,
+    /// G-S1 device sync — default off, no enablement surface until the
+    /// server contract ships (mirrors upstream v0.2.0 dead-code state).
+    #[serde(rename = "device_sync_enabled", default)]
+    pub device_sync_enabled: bool,
+    #[serde(rename = "merge_today_all_devices", default)]
+    pub merge_today_all_devices: bool,
+    #[serde(rename = "merge_history_all_devices", default)]
+    pub merge_history_all_devices: bool,
+    #[serde(rename = "hidden_device_ids", default)]
+    pub hidden_device_ids: Vec<String>,
     /// A version string the user chose to skip via the update dialog.
     /// When the latest release matches this, the update check reports
     /// `has_update: false` so the user isn't nagged about it again.
@@ -341,6 +382,10 @@ fn default_theme() -> String {
     "green".to_string()
 }
 
+fn default_rank_visibility() -> String {
+    "hidden".to_string()
+}
+
 impl Default for TokenStepSettings {
     fn default() -> Self {
         Self {
@@ -357,8 +402,12 @@ impl Default for TokenStepSettings {
             language: "zhHans".to_string(),
             skipped_update_version: None,
             show_codex_quota: false,
-            show_token_rank: false,
-            token_rank_user_id: None,
+            agent_work_rank_visibility: "hidden".to_string(),
+            experimental_agent_sources: None,
+            device_sync_enabled: false,
+            merge_today_all_devices: false,
+            merge_history_all_devices: false,
+            hidden_device_ids: vec![],
             show_experimental_agent_sources: false,
         }
     }

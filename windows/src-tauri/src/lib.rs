@@ -6,9 +6,12 @@
 //!   - Tauri commands the frontend calls to fetch data & update settings
 //!   - a background refresh timer driven by the user's refresh interval
 
+mod agent_sources;
 mod collector;
 mod claude_quota;
 mod codex_quota;
+mod energy;
+mod freshness;
 mod models;
 mod paths;
 mod pricing;
@@ -214,31 +217,155 @@ fn read_claude_quota() -> codex_quota::CodexQuotaSnapshot {
     claude_quota::read()
 }
 
-/// Read the TokenRank leaderboard (today's top users) and locate the user's
-/// own entry when a user id is configured.
+/// Read the Agent-work-rank leaderboard (zhenganhuo.com, upstream v0.2.0).
+/// Hidden mode performs ZERO identity reads and ZERO network requests —
+/// returns an empty snapshot instead (privacy contract).
 #[tauri::command]
 fn read_token_rank() -> token_rank::TokenRankSnapshot {
     let s = settings::load();
-    let user_id = s.token_rank_user_id.unwrap_or_default();
-    token_rank::read(&user_id, "total", "today")
+    let visibility = token_rank::RankVisibility::from_str(&s.agent_work_rank_visibility);
+    if !visibility.reads_local_identity() {
+        return token_rank::TokenRankSnapshot::default();
+    }
+    let identity = token_rank::load_local_identity();
+    if !visibility.should_show(identity.is_some()) {
+        return token_rank::TokenRankSnapshot::default();
+    }
+    token_rank::read(identity.as_ref())
 }
 
-/// Toggle whether the TokenRank leaderboard card is shown on the Today view.
+/// Set the Agent-work-rank card visibility ("automatic" / "visible" /
+/// "hidden"). Replaces the retired boolean toggle.
 #[tauri::command]
-fn set_show_token_rank(enabled: bool) -> Result<TokenStepSettings, String> {
+fn set_agent_work_rank_visibility(visibility: String) -> Result<TokenStepSettings, String> {
+    let v = token_rank::RankVisibility::from_str(&visibility);
     let mut s = settings::load();
-    s.show_token_rank = enabled;
+    s.agent_work_rank_visibility = v.as_str().to_string();
     settings::save(&s).map_err(|e| e.to_string())?;
     Ok(settings::load())
 }
 
-/// Set the user's scys.com TokenRank user id (digits only).
+/// Probe agent-source detection statuses for the Settings data-source grid
+/// (legacy 3 + T1 7): returns {name: "installed"/"missing"}.
 #[tauri::command]
-fn set_token_rank_user_id(user_id: String) -> Result<TokenStepSettings, String> {
+fn agent_source_detection() -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    // Legacy three: ZCode reads a db, Hermes a db, WorkBuddy a directory.
+    out.insert(
+        "ZCode".into(),
+        if paths::zcode_db_path().is_file() { "installed".into() } else { "missing".into() },
+    );
+    out.insert(
+        "Hermes Agent".into(),
+        if paths::hermes_db_path().is_file() { "installed".into() } else { "missing".into() },
+    );
+    out.insert(
+        "WorkBuddy".into(),
+        if paths::workbuddy_roots().iter().any(|p| p.is_dir()) {
+            "installed".into()
+        } else {
+            "missing".into()
+        },
+    );
+    for id in agent_sources::ALL_SOURCE_IDS {
+        out.insert(id.to_string(), agent_sources::detector_status(id).to_string());
+    }
+    out
+}
+
+/// Toggle ONE experimental agent source (upstream materialization logic):
+/// first snapshot the currently-effective set (auto-enrolled sources), then
+/// add/remove the target, and persist the explicit list.
+#[tauri::command]
+fn set_experimental_agent_source(
+    source_id: String,
+    enabled: bool,
+) -> Result<TokenStepSettings, String> {
     let mut s = settings::load();
-    s.token_rank_user_id = Some(token_rank::clean_user_id(&user_id));
+    // Start from the effective set (auto-enroll result when no list saved).
+    let mut effective: Vec<String> = agent_sources::enabled_ids(
+        s.show_experimental_agent_sources,
+        s.experimental_agent_sources.as_ref(),
+    );
+    // Keep legacy names the settings grid may toggle even though their
+    // collection keys off the master switch alone.
+    for legacy in agent_sources::LEGACY_SOURCE_IDS {
+        if s.show_experimental_agent_sources && !effective.contains(&legacy.to_string()) {
+            // Only include legacy ids when they were previously in the list.
+            if let Some(list) = &s.experimental_agent_sources {
+                if list.contains(&legacy.to_string()) {
+                    effective.push(legacy.to_string());
+                }
+            }
+        }
+    }
+    if enabled {
+        if !effective.contains(&source_id) {
+            effective.push(source_id);
+        }
+    } else {
+        effective.retain(|x| *x != source_id);
+    }
+    s.experimental_agent_sources = Some(effective);
     settings::save(&s).map_err(|e| e.to_string())?;
     Ok(settings::load())
+}
+
+/// Read the freshness state of all three channels (collection / codex quota /
+/// claude quota) plus the computed six-state classification, for the UI
+/// badges (upstream G-V1). Reads the CACHED snapshot — never triggers a
+/// collection pass.
+#[tauri::command]
+fn get_freshness(state: tauri::State<'_, std::sync::Arc<AppState>>) -> serde_json::Value {
+    let s = settings::load();
+    let fresh = freshness::FreshnessState::load();
+    let now_epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let snapshot_sources: Vec<(String, String)> = state
+        .snapshot
+        .lock()
+        .as_ref()
+        .map(|snap| {
+            snap.sources
+                .iter()
+                .map(|(k, v)| (k.clone(), v.status.clone().unwrap_or_default()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let collection_ttl = energy::automatic_retry_ttl(s.refresh_interval_seconds.max(1));
+    let collection = freshness::classify(
+        true,
+        &fresh.collection,
+        &snapshot_sources,
+        collection_ttl,
+        now_epoch,
+    );
+    let codex = freshness::classify(
+        s.show_codex_quota,
+        &fresh.codex_quota,
+        &[],
+        energy::QUOTA_TTL_SECS,
+        now_epoch,
+    );
+    let claude = freshness::classify(
+        s.show_codex_quota,
+        &fresh.claude_quota,
+        &[],
+        energy::QUOTA_TTL_SECS,
+        now_epoch,
+    );
+    serde_json::json!({
+        "collection": {
+            "kind": collection.as_str(),
+            "last_attempted_at": fresh.collection.last_attempted_at,
+            "last_succeeded_at": fresh.collection.last_succeeded_at,
+            "last_error_kind": fresh.collection.last_error_kind.map(|k| k.as_str()),
+        },
+        "codex_quota": { "kind": codex.as_str() },
+        "claude_quota": { "kind": claude.as_str() },
+    })
 }
 
 /// Save a PNG screenshot SILENTLY (no dialog) to `<exe_dir>/share/` or the
@@ -389,10 +516,24 @@ fn run_refresh(app: &tauri::AppHandle) {
     let _ = app.emit("refresh-started", ());
 
     std::thread::spawn(move || {
+        // Freshness: mark the collection attempt before it runs (G-V1).
+        let mut fresh = freshness::FreshnessState::load();
+        fresh.collection.attempting(freshness::now_iso());
+        fresh.save();
         let snapshot = {
             let settings = settings::load();
-            collector::collect(settings.show_experimental_agent_sources)
+            collector::collect(
+                settings.show_experimental_agent_sources,
+                settings.experimental_agent_sources.as_ref(),
+            )
         };
+        // Record success (failures keep the attempt timestamp; the Windows
+        // collector degrades per-source instead of erroring wholesale).
+        {
+            let mut fresh = freshness::FreshnessState::load();
+            fresh.collection.succeeding(freshness::now_iso());
+            fresh.save();
+        }
         // Check for Codex accounting recalibration: if the snapshot's Codex
         // source has a revision below current, write the recalibration notice
         // marker so the UI shows the green banner.
@@ -709,11 +850,28 @@ pub fn run() {
                 }
             });
 
-            // Background refresh timer.
+            // Background refresh timer (v0.2.0 energy policy): the effective
+            // interval never drops below the power-source floor — AC 15 min,
+            // battery/battery-saver 30 min — even if the user requests faster.
+            // A visible dashboard window counts as foreground: tick at the
+            // user's interval capped at 60s so the open window stays live.
             let app_handle = app.handle().clone();
             std::thread::spawn(move || loop {
-                let interval = settings::load().refresh_interval_seconds;
-                let sleep_secs = if interval > 0 { interval } else { 60 };
+                let requested = settings::load().refresh_interval_seconds;
+                if requested <= 0 {
+                    // Refresh disabled: idle-poll cheaply until re-enabled.
+                    std::thread::sleep(std::time::Duration::from_secs(60));
+                    continue;
+                }
+                let foreground = app_handle
+                    .get_webview_window("dashboard")
+                    .map(|w| w.is_visible().unwrap_or(false))
+                    .unwrap_or(false);
+                let sleep_secs = if foreground {
+                    energy::foreground_tick_interval(requested)
+                } else {
+                    energy::background_interval(requested, energy::power_source())
+                };
                 std::thread::sleep(std::time::Duration::from_secs(sleep_secs as u64));
                 if settings::load().refresh_interval_seconds > 0 {
                     run_refresh(&app_handle);
@@ -767,8 +925,10 @@ pub fn run() {
             read_codex_quota,
             read_claude_quota,
             read_token_rank,
-            set_show_token_rank,
-            set_token_rank_user_id,
+            set_agent_work_rank_visibility,
+            agent_source_detection,
+            set_experimental_agent_source,
+            get_freshness,
             refresh,
         ])
         .run(tauri::generate_context!())
@@ -778,7 +938,7 @@ pub fn run() {
 /// Public shim used by the `check` example to run a collection pass without
 /// booting the full Tauri app.
 pub fn collect_for_check() -> models::UsageSnapshot {
-    collector::collect(false)
+    collector::collect(false, None)
 }
 
 /// Tray-menu "检查更新" handler. Runs the check off the UI thread, then:

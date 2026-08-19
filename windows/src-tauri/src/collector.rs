@@ -10,8 +10,8 @@
 //! on Windows.
 
 use crate::models::{
-    DailyAgentWork, DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, RhythmTag, SourceInfo,
-    TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
+    DailyAgentWork, DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, ProjectUsage, RhythmTag,
+    SourceInfo, TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
 };
 use crate::paths;
 use crate::pricing;
@@ -30,28 +30,35 @@ fn local_tz() -> FixedOffset {
 
 /// A single parsed usage record before aggregation.
 #[derive(Debug, Clone)]
-struct UsageRecord {
-    date: String,
+pub struct UsageRecord {
+    pub date: String,
     /// Original ISO timestamp (when available). Used to bucket tokens by hour
     /// for the rhythm feature. `None` for sources without sub-day resolution
     /// (e.g. Codex SQLite `threads` table) — those records skip rhythm.
-    timestamp: Option<String>,
-    tool: String,
-    model: String,
-    usage: TokenUsageCounts,
+    pub timestamp: Option<String>,
+    pub tool: String,
+    pub model: String,
+    pub usage: TokenUsageCounts,
     /// Direct USD cost from sources that report it (e.g. CC Switch proxy logs),
     /// bypassing the pricing table. `None` → estimate from usage via pricing.
     #[allow(dead_code)]
-    cost_usd: Option<f64>,
+    pub cost_usd: Option<f64>,
+    /// Sanitized project display name (upstream B1-lite): last path segment
+    /// of the working directory, never a full path. `None` = unassigned.
+    pub project_name: Option<String>,
+    /// Stable per-record identity (e.g. `gemini:<session>:<idx>`) used for
+    /// idempotent rescans by the T1 agent sources. Underscore-prefixed
+    /// because mainline collectors don't set it yet.
+    pub _request_id: String,
 }
 
 /// Public entry point: collect from all sources, aggregate, return a snapshot.
-/// Mirrors upstream macOS `UsageCollector.collect()`: Codex + Claude Code +
-/// CC Switch records are summed (the sources are treated as additive — this
-/// matches the upstream behavior exactly). Experimental agent sources
-/// (ZCode / Hermes / WorkBuddy) are only collected when
-/// `include_experimental` is true.
-pub fn collect(include_experimental: bool) -> UsageSnapshot {
+/// Mirrors upstream macOS `UsageCollector.collect()` (v0.2.0): Codex + Claude
+/// Code + CC Switch records are summed; legacy experimental sources
+/// (ZCode / Hermes / WorkBuddy) key off the master switch alone; T1 agent
+/// sources (Gemini CLI / Qwen / Kimi / OpenCode / Amp / Droid / Grok) follow
+/// the per-source list semantics of `agent_sources::enabled_ids`.
+pub fn collect(include_experimental: bool, experimental_source_ids: Option<&Vec<String>>) -> UsageSnapshot {
     let pricing_data = pricing::load();
 
     let (codex_records, mut codex_source) = collect_codex();
@@ -84,6 +91,14 @@ pub fn collect(include_experimental: bool) -> UsageSnapshot {
     records.extend(zcode_records.iter().cloned());
     records.extend(hermes_records.iter().cloned());
 
+    // T1 experimental agent sources (upstream G-A1): master switch + explicit
+    // per-source list; auto-enroll installed sources when no list was saved.
+    let enabled_t1 = crate::agent_sources::enabled_ids(include_experimental, experimental_source_ids);
+    let agent_source_results = crate::agent_sources::collect(&enabled_t1);
+    for result in agent_source_results.values() {
+        records.extend(result.records.iter().cloned());
+    }
+
     // Stamp per-source record counts (recount precisely per tool, since the
     // CC Switch source name differs from its record `tool` strings — e.g.
     // "Claude Code via CC Switch" — we count by source prefix instead).
@@ -108,6 +123,10 @@ pub fn collect(include_experimental: bool) -> UsageSnapshot {
     sources.insert("ZCode".to_string(), zcode_source);
     sources.insert("Hermes Agent".to_string(), hermes_source);
     sources.insert("WorkBuddy".to_string(), workbuddy_source);
+    // Merge T1 source infos (each keyed by its display name).
+    for (id, result) in agent_source_results {
+        sources.insert(id, result.source);
+    }
 
     aggregate(records, &pricing_data, sources)
 }
@@ -210,6 +229,8 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
             model: model_key(&sqlite_value_as_string(&model)),
             usage,
             cost_usd: None,
+            project_name: None,
+            _request_id: String::new(),
         });
     }
 
@@ -245,6 +266,7 @@ fn collect_codex_jsonl(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
         let mut current_model = String::from("unknown");
+        let mut session_project: Option<String> = None;
         let mut event_index = 0i64;
 
         // Stream the file line-by-line instead of read_to_string, so a 9.7 GB
@@ -272,6 +294,14 @@ fn collect_codex_jsonl(
                     if !id.is_empty() {
                         session_id = id.to_string();
                     }
+                }
+                // Upstream B1-lite: remember the session's working directory so
+                // every token_count record in this file can carry a project.
+                if session_project.is_none() {
+                    session_project = payload
+                        .and_then(|p| p.get("cwd"))
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| crate::agent_sources::project_display_name(Some(s)));
                 }
             }
             if ev_type == "turn_context" {
@@ -313,6 +343,8 @@ fn collect_codex_jsonl(
                 model: current_model.clone(),
                 usage,
                 cost_usd: None,
+                project_name: session_project.clone(),
+                _request_id: String::new(),
             });
         }
 
@@ -367,6 +399,8 @@ struct ClaudeCandidate {
     usage: TokenUsageCounts,
     has_stop_reason: bool,
     line_no: usize,
+    /// Sanitized project from the row's top-level `cwd` (upstream B1-lite).
+    project_name: Option<String>,
 }
 
 impl ClaudeCandidate {
@@ -458,6 +492,10 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
                 usage: usage.clone(),
                 has_stop_reason,
                 line_no,
+                project_name: obj
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| crate::agent_sources::project_display_name(Some(s))),
             };
             if let Some(existing) = responses.get(&response_key) {
                 if !candidate.is_preferred_over(existing) {
@@ -475,6 +513,8 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
                 model: c.model.clone(),
                 usage: c.usage.clone(),
                 cost_usd: None,
+                project_name: c.project_name.clone(),
+                _request_id: String::new(),
             })
             .collect();
 
@@ -663,6 +703,8 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
                 total_tokens: total,
             },
             cost_usd,
+            project_name: None,
+            _request_id: String::new(),
         });
     }
 
@@ -691,6 +733,9 @@ fn aggregate(
     let mut rhythms: BTreeMap<String, RhythmAccumulator> = BTreeMap::new();
     let mut tools: BTreeMap<String, UsageAccumulator> = BTreeMap::new();
     let mut models: BTreeMap<(String, String), UsageAccumulator> = BTreeMap::new();
+    // Project-dimension totals (upstream B1-lite `ProjectUsageAccumulator`);
+    // "" groups records without a project context.
+    let mut project_totals: BTreeMap<String, ProjectUsageAccumulator> = BTreeMap::new();
 
     for record in &records {
         // Sources that report a direct USD cost (CC Switch proxy logs) bypass
@@ -716,6 +761,22 @@ fn aggregate(
             .or_insert(0) += record.usage.total_tokens;
         daily_entry.total_tokens += record.usage.total_tokens;
         daily_entry.cost += cost;
+
+        // Project dimension: fold into both the daily and global accumulators.
+        let record_project = record.project_name.clone().unwrap_or_default();
+        let daily_project = daily_entry
+            .projects
+            .entry(record_project.clone())
+            .or_default();
+        daily_project.tokens += record.usage.total_tokens;
+        daily_project.cost += cost;
+        *daily_project.tools.entry(record.tool.clone()).or_insert(0) += record.usage.total_tokens;
+        *daily_project.models.entry(record.model.clone()).or_insert(0) += record.usage.total_tokens;
+        let global_entry = project_totals.entry(record_project).or_default();
+        global_entry.tokens += record.usage.total_tokens;
+        global_entry.cost += cost;
+        *global_entry.tools.entry(record.tool.clone()).or_insert(0) += record.usage.total_tokens;
+        *global_entry.models.entry(record.model.clone()).or_insert(0) += record.usage.total_tokens;
 
         // Rhythm: bucket this record's tokens into its hour-of-day (0-23),
         // but only when we have a sub-day timestamp. Mirrors upstream
@@ -748,12 +809,21 @@ fn aggregate(
 
     let mut daily_rows: Vec<DailyUsage> = daily
         .into_values()
-        .map(|d| DailyUsage {
-            date: d.date,
-            tools: d.tools,
-            models: d.models,
-            total_tokens: d.total_tokens,
-            cost: round(d.cost, 4),
+        .map(|d| {
+            let mut projects: Vec<ProjectUsage> = d
+                .projects
+                .into_iter()
+                .map(|(name, acc)| acc.into_project_usage(name))
+                .collect();
+            projects.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+            DailyUsage {
+                date: d.date,
+                tools: d.tools,
+                models: d.models,
+                total_tokens: d.total_tokens,
+                cost: round(d.cost, 4),
+                projects: Some(projects),
+            }
         })
         .collect();
     daily_rows.sort_by(|a, b| a.date.cmp(&b.date));
@@ -788,6 +858,13 @@ fn aggregate(
 
     let active_days = daily_rows.iter().filter(|d| d.total_tokens > 0).count() as i64;
 
+    // Global project aggregates, tokens-descending (upstream B1-lite).
+    let mut project_rows: Vec<ProjectUsage> = project_totals
+        .into_iter()
+        .map(|(name, acc)| acc.into_project_usage(name))
+        .collect();
+    project_rows.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+
     UsageSnapshot {
         generated_at: Some(now_iso()),
         timezone: Some("Asia/Shanghai".to_string()),
@@ -802,6 +879,8 @@ fn aggregate(
         tools: tool_rows,
         models: model_rows,
         sources,
+        source_attempt: None,
+        projects: project_rows,
     }
 }
 
@@ -812,8 +891,34 @@ struct DailyAccumulator {
     /// Per-model token breakdown for this day (mirrors upstream
     /// DailyAccumulator.models). Drives the Today view's model split.
     models: BTreeMap<String, i64>,
+    /// Per-project accumulators keyed by sanitized name ("" = unassigned).
+    projects: BTreeMap<String, ProjectUsageAccumulator>,
     total_tokens: i64,
     cost: f64,
+}
+
+/// Port of upstream `ProjectUsageAccumulator`: sums tokens/cost and
+/// per-tool / per-model breakdowns for one project on one day (or globally).
+#[derive(Default, Clone)]
+struct ProjectUsageAccumulator {
+    tokens: i64,
+    cost: f64,
+    tools: BTreeMap<String, i64>,
+    models: BTreeMap<String, i64>,
+}
+
+impl ProjectUsageAccumulator {
+    /// Round cost to 4 decimals (upstream `(cost * 10_000).rounded() / 10_000`)
+    /// and drop tools/models that carry no tokens.
+    fn into_project_usage(self, name: String) -> ProjectUsage {
+        ProjectUsage {
+            name,
+            tokens: self.tokens,
+            cost: (self.cost * 10_000.0).round() / 10_000.0,
+            tools: self.tools.into_iter().filter(|(_, v)| *v > 0).collect(),
+            models: self.models.into_iter().filter(|(_, v)| *v > 0).collect(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1029,7 +1134,7 @@ fn share(part: i64, whole: i64) -> f64 {
 /// Extract the local hour-of-day (0-23) from an ISO timestamp. Port of
 /// Current collector cache version. Bump on schema changes to force a full
 /// rebuild from source. v5 = agent work aggregation + accounting revision tracking.
-const COLLECTOR_CACHE_VERSION: i32 = 5;
+const COLLECTOR_CACHE_VERSION: i32 = 6;
 
 /// Current Codex accounting revision (mirrors macOS `codexAccountingRevision`).
 /// The Win port does not yet implement the rev6-8 incremental accounting, but
@@ -1161,11 +1266,11 @@ fn sqlite_value_as_epoch_day(v: &rusqlite::types::Value) -> Option<String> {
 
 /// Parse an ISO-8601 timestamp (optional fractional seconds / trailing 'Z')
 /// and bucket it into a local day string.
-fn day_string_from_iso(ts: &str) -> Option<String> {
+pub fn day_string_from_iso(ts: &str) -> Option<String> {
     parse_iso(ts).map(|dt| dt.format("%Y-%m-%d").to_string())
 }
 
-fn parse_iso(ts: &str) -> Option<DateTime<FixedOffset>> {
+pub fn parse_iso(ts: &str) -> Option<DateTime<FixedOffset>> {
     let tz = local_tz();
     // RFC3339 covers "+08:00" and "Z" offsets.
     if let Ok(dt) = DateTime::parse_from_rfc3339(ts) {
@@ -1187,7 +1292,7 @@ fn parse_iso(ts: &str) -> Option<DateTime<FixedOffset>> {
     None
 }
 
-fn now_iso() -> String {
+pub fn now_iso() -> String {
     let tz = local_tz();
     tz.from_utc_datetime(&Utc::now().naive_utc())
         .format("%Y-%m-%dT%H:%M:%S%:z")
@@ -1237,6 +1342,9 @@ struct CachedRecord {
     usage: TokenUsageCounts,
     #[serde(default)]
     cost_usd: Option<f64>,
+    /// Project dimension (v0.2.0 B1-lite); older caches decode as None.
+    #[serde(default)]
+    project_name: Option<String>,
 }
 
 impl From<&UsageRecord> for CachedRecord {
@@ -1248,6 +1356,7 @@ impl From<&UsageRecord> for CachedRecord {
             model: r.model.clone(),
             usage: r.usage.clone(),
             cost_usd: r.cost_usd,
+            project_name: r.project_name.clone(),
         }
     }
 }
@@ -1327,6 +1436,8 @@ fn cached_records(
                 model: c.model.clone(),
                 usage: c.usage.clone(),
                 cost_usd: c.cost_usd,
+                project_name: c.project_name.clone(),
+                _request_id: String::new(),
             })
             .collect(),
     )
@@ -1359,6 +1470,11 @@ fn update_cache(
 
 /// Read ZCode agent usage from `~/.zcode/cli/db/db.sqlite`.
 /// ZCode's `input_tokens` already includes cached tokens.
+///
+/// v0.2.0 (upstream 2826aac): the SQL is now *constructed conditionally* —
+/// `provider_total_tokens` may be absent on older schemas, and the optional
+/// `session` table (when present) is joined to pull `session.directory` as
+/// the project dimension.
 fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
     let db_path = paths::zcode_db_path();
     if !db_path.exists() {
@@ -1379,8 +1495,9 @@ fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
     };
     // Verify schema: table model_usage must exist with key columns.
     let has_table = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='model_usage'")
-        .and_then(|mut s| Ok(s.exists([])?))
+        .prepare("SELECT count(*) as n FROM sqlite_master WHERE type='table' AND name='model_usage'")
+        .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+        .map(|n| n > 0)
         .unwrap_or(false);
     if !has_table {
         return (vec![], SourceInfo {
@@ -1388,17 +1505,81 @@ fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
             ..Default::default()
         });
     }
-    let sql = r#"SELECT
-        started_at, model_id, input_tokens, output_tokens, reasoning_tokens,
-        cache_creation_input_tokens, cache_read_input_tokens,
-        computed_total_tokens, provider_total_tokens, tool_call_count
-        FROM model_usage
-        WHERE status = 'completed'
-        AND (coalesce(computed_total_tokens,0) > 0
-             OR coalesce(provider_total_tokens,0) > 0
-             OR coalesce(input_tokens,0) + coalesce(output_tokens,0) > 0)
-        ORDER BY started_at"#;
-    let mut stmt = match conn.prepare(sql) {
+    // Probe required columns via pragma table_info (upstream v0.2.0).
+    let available_columns: BTreeSet<String> = conn
+        .prepare("pragma table_info(model_usage)")
+        .and_then(|mut s| {
+            let mut cols = BTreeSet::new();
+            let mut rows = s.query([])?;
+            while let Some(row) = rows.next()? {
+                if let Ok(name) = row.get::<_, String>(1) {
+                    cols.insert(name);
+                }
+            }
+            Ok(cols)
+        })
+        .unwrap_or_default();
+    let required_cols = [
+        "id", "session_id", "status", "started_at", "model_id", "input_tokens",
+        "output_tokens", "reasoning_tokens", "cache_creation_input_tokens",
+        "cache_read_input_tokens", "computed_total_tokens", "tool_call_count",
+    ];
+    if required_cols.iter().any(|c| !available_columns.contains(*c)) {
+        return (vec![], SourceInfo {
+            status: Some("schema_mismatch".into()),
+            ..Default::default()
+        });
+    }
+    // Optional pieces, decided BEFORE拼接 (the v0.2.0 fix): provider totals
+    // column and the session join for project_directory.
+    let provider_total_expr = if available_columns.contains("provider_total_tokens") {
+        "coalesce(model_usage.provider_total_tokens, 0)"
+    } else {
+        "0"
+    };
+    let has_session_table = conn
+        .prepare("SELECT count(*) as n FROM sqlite_master WHERE type='table' AND name='session'")
+        .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
+        .map(|n| n > 0)
+        .unwrap_or(false);
+    let project_column = if has_session_table {
+        ",\n    coalesce(session.directory, '') as project_directory"
+    } else {
+        ""
+    };
+    let session_join = if has_session_table {
+        "left join session on session.id = model_usage.session_id\n"
+    } else {
+        ""
+    };
+    let sql = format!(
+        r#"select
+    model_usage.started_at,
+    coalesce(nullif(model_usage.model_id, ''), 'unknown') as display_model,
+    coalesce(model_usage.input_tokens, 0) as input_tokens,
+    coalesce(model_usage.output_tokens, 0) as output_tokens,
+    coalesce(model_usage.reasoning_tokens, 0) as reasoning_tokens,
+    coalesce(model_usage.cache_creation_input_tokens, 0) as cache_creation_input_tokens,
+    coalesce(model_usage.cache_read_input_tokens, 0) as cache_read_input_tokens,
+    coalesce(model_usage.computed_total_tokens, 0) as computed_total_tokens,
+    {provider_total_expr} as provider_total_tokens,
+    coalesce(model_usage.tool_call_count, 0) as tool_call_count{project_column}
+from model_usage
+{session_join}where model_usage.status = 'completed'
+    and (
+        coalesce(model_usage.computed_total_tokens, 0) > 0
+        or {provider_total_expr} > 0
+        or (
+            coalesce(model_usage.input_tokens, 0)
+            + coalesce(model_usage.output_tokens, 0)
+            + coalesce(model_usage.reasoning_tokens, 0)
+            + coalesce(model_usage.cache_creation_input_tokens, 0)
+            + coalesce(model_usage.cache_read_input_tokens, 0)
+        ) > 0
+    )
+order by model_usage.started_at, model_usage.id"#
+    );
+    let mut stmt = match conn.prepare(sql.as_str()) {
         Ok(s) => s,
         Err(_) => return (vec![], SourceInfo {
             status: Some("schema_mismatch".into()),
@@ -1407,7 +1588,7 @@ fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
     };
     let rows = stmt.query_map([], |row| {
         let started_at: f64 = row.get(0)?;
-        let model: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+        let model: String = row.get::<_, Option<String>>(1)?.unwrap_or_else(|| "unknown".into());
         let input: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
         let output: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
         let reasoning: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or(0);
@@ -1415,12 +1596,24 @@ fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
         let cache_read: i64 = row.get::<_, Option<i64>>(6)?.unwrap_or(0);
         let computed_total: i64 = row.get::<_, Option<i64>>(7)?.unwrap_or(0);
         let provider_total: i64 = row.get::<_, Option<i64>>(8)?.unwrap_or(0);
-        let tool_calls: i64 = row.get::<_, Option<i64>>(9)?.unwrap_or(0);
-        // canonicalUsageCounts: inputIncludesCachedTokens=true for ZCode.
-        let canonical_input = (input + cache_create + cache_read).max(0);
-        let explicit_total = if computed_total > 0 { computed_total } else { provider_total };
-        let derived_total = canonical_input + output;
-        let total = if explicit_total > 0 { explicit_total } else if derived_total > 0 { derived_total } else { explicit_total };
+        // tool_call_count (column 9) is read for forward compatibility with
+        // the upstream agent-work accumulator; not consumed here.
+        let project_directory: Option<String> = if has_session_table {
+            row.get::<_, Option<String>>(10)?
+        } else {
+            None
+        };
+        // canonicalUsageCounts with inputIncludesCachedTokens=true: raw input
+        // already contains cached tokens — do NOT add cache again (v0.2.0 fix).
+        let usage = crate::agent_sources::canonical_counts(
+            input,
+            output,
+            cache_read,
+            cache_create,
+            reasoning,
+            true,
+            Some(if computed_total > 0 { computed_total } else { provider_total }),
+        );
         let date = day_string_from_epoch(started_at);
         let ts = iso_string_from_epoch(started_at);
         Ok(UsageRecord {
@@ -1428,15 +1621,12 @@ fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
             timestamp: Some(ts),
             tool: "ZCode".to_string(),
             model,
-            usage: TokenUsageCounts {
-                input_tokens: canonical_input,
-                output_tokens: output.max(0),
-                cache_creation_input_tokens: cache_create.max(0),
-                cache_read_input_tokens: cache_read.max(0),
-                reasoning_output_tokens: reasoning.max(0),
-                total_tokens: total.max(0),
-            },
+            usage,
             cost_usd: None,
+            project_name: crate::agent_sources::project_display_name(
+                project_directory.as_deref(),
+            ),
+            _request_id: String::new(),
         })
     });
     let mut records = Vec::new();
@@ -1528,6 +1718,8 @@ fn collect_hermes() -> (Vec<UsageRecord>, SourceInfo) {
                 total_tokens: derived_total.max(0),
             },
             cost_usd: None,
+            project_name: None,
+            _request_id: String::new(),
         })
     });
     let mut records = Vec::new();
@@ -1560,7 +1752,7 @@ fn discover_workbuddy() -> SourceInfo {
 
 /// Convert epoch seconds (or milliseconds if > 10^10) to a "YYYY-MM-DD" day
 /// string in Asia/Shanghai.
-fn day_string_from_epoch(seconds: f64) -> String {
+pub fn day_string_from_epoch(seconds: f64) -> String {
     let secs = if seconds > 10_000_000_000.0 { seconds / 1000.0 } else { seconds };
     let tz = local_tz();
     let dt = tz.timestamp_opt(secs as i64, 0).single().unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());
@@ -1568,7 +1760,7 @@ fn day_string_from_epoch(seconds: f64) -> String {
 }
 
 /// Convert epoch seconds (or milliseconds) to an ISO-8601 string in Asia/Shanghai.
-fn iso_string_from_epoch(seconds: f64) -> String {
+pub fn iso_string_from_epoch(seconds: f64) -> String {
     let secs = if seconds > 10_000_000_000.0 { seconds / 1000.0 } else { seconds };
     let tz = local_tz();
     let dt = tz.timestamp_opt(secs as i64, 0).single().unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());

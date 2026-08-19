@@ -1,29 +1,112 @@
-//! TokenRank leaderboard reader — a port of macOS `TokenRankService.swift`.
+//! Agent-work-rank leaderboard — a port of upstream macOS
+//! `AgentWorkRankService.swift` (v0.2.0; the former scys.com TokenRank was
+//! retired in v0.1.46 and replaced by the zhenganhuo.com Agent usage rank).
 //!
-//! Fetches the scys.com TokenRank leaderboard (top token users today) and,
-//! if the user has set their own user id, locates their entry. Cached for
-//! 120 seconds.
+//! Fetches the public leaderboard (`client=all&range=today&usage_mode=all`),
+//! and locates the local user's row via the identity the Token Rank CLI
+//! persists at `~/.token-rank/client-state.json`. Rank is fully
+//! server-assigned; the client never computes placements. Cache TTL 30 min.
+//!
+//! Privacy contract (docs/PRIVACY.md): the card defaults to HIDDEN — hidden
+//! mode performs zero local-identity reads and zero network requests.
 
 use crate::paths;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const CACHE_TTL_SECS: u64 = 120;
-const ENDPOINT: &str = "https://scys.com/tokenrank/api/subapp/leaderboard";
+const CACHE_TTL_SECS: u64 = 30 * 60;
+const ENDPOINT: &str = "https://www.zhenganhuo.com/api/token-rank/leaderboard.php";
 #[allow(dead_code)]
-pub const LEADERBOARD_PAGE_URL: &str = "https://scys.com/tokenrank/";
+pub const LEADERBOARD_PAGE_URL: &str = "https://www.zhenganhuo.com/token-rank";
+#[allow(dead_code)]
+pub const MY_PAGE_URL: &str = "https://www.zhenganhuo.com/token-rank/me";
+
+/// Visibility tri-state (upstream `AgentWorkRankVisibility`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RankVisibility {
+    Automatic,
+    Visible,
+    Hidden,
+}
+
+impl RankVisibility {
+    pub fn from_str(v: &str) -> RankVisibility {
+        match v {
+            "automatic" => RankVisibility::Automatic,
+            "visible" => RankVisibility::Visible,
+            _ => RankVisibility::Hidden,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RankVisibility::Automatic => "automatic",
+            RankVisibility::Visible => "visible",
+            RankVisibility::Hidden => "hidden",
+        }
+    }
+
+    /// Hidden performs no identity reads at all.
+    pub fn reads_local_identity(&self) -> bool {
+        *self != RankVisibility::Hidden
+    }
+
+    pub fn should_show(&self, has_local_identity: bool) -> bool {
+        match self {
+            RankVisibility::Automatic => has_local_identity,
+            RankVisibility::Visible => true,
+            RankVisibility::Hidden => false,
+        }
+    }
+}
+
+/// Local identity from the Token Rank CLI (`~/.token-rank/client-state.json`).
+/// `None` when the file is absent or holds no positive user id — "not
+/// linked" (尚未关联).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LocalIdentity {
+    pub id: i64,
+    #[serde(default)]
+    pub name: String,
+    #[serde(rename = "avatarUrl", default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+}
+
+pub fn load_local_identity() -> Option<LocalIdentity> {
+    let text = fs::read_to_string(paths::token_rank_client_state_json()).ok()?;
+    let doc: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let user = doc.get("user")?;
+    let id = user.get("id")?.as_i64()?;
+    if id <= 0 {
+        return None;
+    }
+    Some(LocalIdentity {
+        id,
+        name: user
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("匿名用户")
+            .to_string(),
+        avatar_url: user.get("avatar_url").and_then(|v| v.as_str()).map(String::from),
+    })
+}
 
 /// Snapshot returned to the UI.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TokenRankSnapshot {
     pub available: bool,
-    pub board: Option<String>,
-    pub range: Option<String>,
+    pub identity: Option<LocalIdentity>,
     /// Top entry (rank 1), if any.
     pub top: Option<TokenRankEntry>,
-    /// The current user's entry, if a user id was set and found.
+    /// The current user's entry (server-assigned rank).
     pub mine: Option<TokenRankEntry>,
+    /// Whole-board tokens today (data.total_tokens).
+    #[serde(rename = "totalTokens", default)]
+    pub total_tokens: i64,
+    /// Number of ranked users.
+    #[serde(rename = "totalRankedUsers", default)]
+    pub total_ranked_users: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -31,91 +114,133 @@ pub struct TokenRankSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TokenRankEntry {
     pub rank: i64,
-    #[serde(rename = "userId")]
-    pub user_id: String,
+    #[serde(rename = "userID", default)]
+    pub user_id: i64,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub avatar: Option<String>,
-    pub score: i64,
-    pub cost: f64,
+    #[serde(rename = "avatarURL", default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
+    #[serde(rename = "totalTokens", default)]
+    pub total_tokens: i64,
+    #[serde(rename = "callCount", default)]
+    pub call_count: i64,
+    #[serde(rename = "sessionCount", default)]
+    pub session_count: i64,
     #[serde(default)]
-    pub by_tool: std::collections::BTreeMap<String, i64>,
+    pub clients: std::collections::BTreeMap<String, i64>,
+    #[serde(default)]
+    pub models: Vec<String>,
 }
 
-/// Fetch the leaderboard and locate the user's entry (if `user_id` is set).
-/// Caches for 120s keyed by (board, range, user_id).
-pub fn read(user_id: &str, board: &str, range: &str) -> TokenRankSnapshot {
-    let cleaned = clean_user_id(user_id);
-    if let Some(cached) = read_fresh_cache(board, range, &cleaned) {
+impl TokenRankEntry {
+    /// Primary client = the max-tokens key of `clients` (upstream maps the
+    /// raw client ids to display names at the UI layer).
+    #[allow(dead_code)]
+    pub fn primary_client(&self) -> Option<(&String, &i64)> {
+        self.clients.iter().max_by_key(|(_, v)| *v)
+    }
+}
+
+/// Fetch the leaderboard and locate the user's row via `identity`.
+/// Cached for 30 minutes. When `identity` is None the board is still fetched
+/// (the card may show the top entry) but `mine` stays None.
+pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
+    if let Some(cached) = read_fresh_cache(identity.map(|i| i.id)) {
         return cached;
     }
-
-    let url = format!(
-        "{}?board={}&range={}",
-        ENDPOINT,
-        urlencoding::encode(board),
-        urlencoding::encode(range)
-    );
+    let url = format!("{}?client=all&range=today&usage_mode=all", ENDPOINT);
     let client = match reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(7))
+        .timeout(std::time::Duration::from_secs(12))
         .build()
     {
         Ok(c) => c,
-        Err(e) => return err_snapshot(&format!("榜单地址不可用: {}", e)),
+        Err(_) => return err_snapshot("榜单地址不可用"),
     };
-    let resp = match client.get(&url).header("Accept", "application/json").send() {
+    let resp = match client
+        .get(&url)
+        .header("Accept", "application/json")
+        .header("Cache-Control", "no-cache")
+        .send()
+    {
         Ok(r) => r,
         Err(_) => return err_snapshot("暂时无法读取榜单"),
     };
     if !resp.status().is_success() {
         return err_snapshot("暂时无法读取榜单");
     }
-    let body: Response = match resp.json() {
-        Ok(b) => b,
+    let body: serde_json::Value = match resp.json() {
+        Ok(v) => v,
         Err(_) => return err_snapshot("暂时无法读取榜单"),
     };
-    // API uses status=0 for success.
-    if body.status.unwrap_or(0) != 0 {
+    // API uses success=true; rows live under data.rows.
+    if body.get("success").and_then(|v| v.as_bool()) != Some(true) {
         return err_snapshot("暂时无法读取榜单");
     }
-
-    let top = body.entries.first().cloned();
-    let mine = if cleaned.is_empty() {
-        None
-    } else {
-        body.entries.iter().find(|e| e.user_id == cleaned).cloned()
+    let Some(data) = body.get("data") else {
+        return err_snapshot("暂时无法读取榜单");
     };
-
+    let total_tokens = data.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+    let total_ranked = data.get("total_ranked_users").and_then(|v| v.as_i64()).unwrap_or(0);
+    let mut entries: Vec<TokenRankEntry> = vec![];
+    if let Some(rows) = data.get("rows").and_then(|v| v.as_array()) {
+        for row in rows {
+            if let Some(e) = parse_entry(row) {
+                entries.push(e);
+            }
+        }
+    }
+    let top = entries.first().cloned();
+    let mine = identity.and_then(|me| entries.iter().find(|e| e.user_id == me.id).cloned());
     let snap = TokenRankSnapshot {
-        available: top.is_some() || mine.is_some(),
-        board: Some(body.board.clone()),
-        range: Some(body.range.clone()),
+        available: top.is_some(),
+        identity: identity.cloned(),
         top,
         mine,
+        total_tokens,
+        total_ranked_users: total_ranked,
         error: None,
     };
-    write_cache(&snap, board, range, &cleaned);
+    write_cache(&snap, identity.map(|i| i.id));
     snap
 }
 
-/// Build the user's public profile URL (None if user id is empty/invalid).
-#[allow(dead_code)]
-pub fn user_page_url(user_id: &str) -> Option<String> {
-    let cleaned = clean_user_id(user_id);
-    if cleaned.is_empty() {
-        None
-    } else {
-        Some(format!("https://scys.com/tokenrank/u/{}", cleaned))
-    }
-}
-
-/// Mirror upstream `cleanedTokenRankUserID`: trim + keep digits only.
-pub fn clean_user_id(value: &str) -> String {
-    value
-        .trim()
-        .chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect()
+fn parse_entry(row: &serde_json::Value) -> Option<TokenRankEntry> {
+    // Row fields may sit at top level or under a `user` wrapper.
+    let src = row.get("user").unwrap_or(row);
+    Some(TokenRankEntry {
+        rank: row.get("rank").and_then(|v| v.as_i64()).unwrap_or(0),
+        user_id: src.get("id").and_then(|v| v.as_i64()).unwrap_or(0),
+        name: src
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("匿名用户")
+            .to_string(),
+        avatar_url: src
+            .get("avatar_url")
+            .or_else(|| src.get("avatarUrl"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        total_tokens: row.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+        call_count: row.get("call_count").and_then(|v| v.as_i64()).unwrap_or(0),
+        session_count: row.get("session_count").and_then(|v| v.as_i64()).unwrap_or(0),
+        clients: row
+            .get("clients")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_i64().map(|n| (k.clone(), n)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        models: row
+            .get("models")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default(),
+    })
 }
 
 fn err_snapshot(msg: &str) -> TokenRankSnapshot {
@@ -126,80 +251,46 @@ fn err_snapshot(msg: &str) -> TokenRankSnapshot {
     }
 }
 
-// --- Cache (120s), keyed by board+range+userId ---
-
-#[derive(Debug, Deserialize)]
-struct Response {
-    status: Option<i64>,
-    board: String,
-    range: String,
-    entries: Vec<TokenRankEntry>,
-}
+// --- Cache (30 min), keyed by identity id ---
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CacheFile {
     fetched_at_secs: u64,
-    board: String,
-    range: String,
-    user_id: String,
+    identity_id: Option<i64>,
     snapshot: TokenRankSnapshot,
 }
 
-fn cache_path() -> std::path::PathBuf {
-    paths::token_rank_cache_json()
-}
-
-fn read_fresh_cache(board: &str, range: &str, user_id: &str) -> Option<TokenRankSnapshot> {
-    let text = fs::read_to_string(cache_path()).ok()?;
+fn read_fresh_cache(identity_id: Option<i64>) -> Option<TokenRankSnapshot> {
+    let text = fs::read_to_string(paths::token_rank_cache_json()).ok()?;
     let cache: CacheFile = serde_json::from_str(&text).ok()?;
-    if cache.board != board || cache.range != range || cache.user_id != user_id {
+    if cache.identity_id != identity_id {
         return None;
     }
-    let now_secs = SystemTime::now()
+    let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    if cache.fetched_at_secs + CACHE_TTL_SECS < now_secs {
+    if cache.fetched_at_secs + CACHE_TTL_SECS < now {
         return None;
     }
     Some(cache.snapshot)
 }
 
-fn write_cache(snap: &TokenRankSnapshot, board: &str, range: &str, user_id: &str) {
-    let now_secs = SystemTime::now()
+fn write_cache(snap: &TokenRankSnapshot, identity_id: Option<i64>) {
+    let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let cache = CacheFile {
-        fetched_at_secs: now_secs,
-        board: board.to_string(),
-        range: range.to_string(),
-        user_id: user_id.to_string(),
+        fetched_at_secs: now,
+        identity_id,
         snapshot: snap.clone(),
     };
-    let path = cache_path();
+    let path = paths::token_rank_cache_json();
     if let Some(parent) = path.parent() {
-        if fs::create_dir_all(parent).is_err() {
-            return;
-        }
+        let _ = fs::create_dir_all(parent);
     }
     if let Ok(text) = serde_json::to_string_pretty(&cache) {
         let _ = fs::write(path, text);
-    }
-}
-
-// Minimal percent-encoding for the board/range query params (we control these
-// values, but encode defensively in case a future caller passes user input).
-mod urlencoding {
-    pub fn encode(s: &str) -> String {
-        s.chars()
-            .map(|c| {
-                if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '~' {
-                    c.to_string()
-                } else {
-                    format!("%{:02X}", c as u32)
-                }
-            })
-            .collect()
     }
 }

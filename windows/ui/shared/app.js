@@ -2552,6 +2552,109 @@ function recalibrationNoticeHTML() {
   '</div>';
 }
 
+
+// ---- Today projects card (port of upstream G-B1 todayProjectsCard) ----
+function escapeHtmlStr(s) {
+  return String(s == null ? '' : s).replace(/[<>&"]/g, function (c) {
+    return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c];
+  });
+}
+function projectDisplayName(name) {
+  return name ? name : t("未命名项目");
+}
+function projectAgentSummary(tools) {
+  var entries = Object.keys(tools || {})
+    .map(function (k) { return [k, tools[k]]; })
+    .sort(function (a, b) { return b[1] - a[1]; })
+    .slice(0, 3);
+  return entries.map(function (e) { return e[0] === "Claude Code" ? "Claude" : e[0]; }).join(" · ");
+}
+function todayProjectsCardHTML(today) {
+  var projects = (today && today.projects) || [];
+  if (!projects.length) return "";
+  var total = Math.max(1, projects.reduce(function (a, p) { return a + (p.tokens || 0); }, 0));
+  var rows = projects.slice(0, 4).map(function (p) {
+    var pct = (p.tokens || 0) * 100 / total;
+    var barW = Math.max(1.5, pct);
+    return '<div style="display:flex;align-items:center;gap:14px;margin:8px 0">' +
+      '<div style="flex:0 0 200px;font-weight:800;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + escapeHtmlStr(projectDisplayName(p.name)) + '">' +
+        escapeHtmlStr(projectDisplayName(p.name)) + '</div>' +
+      '<div style="flex:1;height:8px;border-radius:999px;background:var(--track);opacity:.6;overflow:hidden">' +
+        '<div style="height:100%;width:' + barW.toFixed(1) + '%;border-radius:999px;background:var(--green);opacity:.85"></div>' +
+      '</div>' +
+      '<div style="flex:0 0 130px;text-align:right;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">' +
+        formatTokens(p.tokens || 0, true) + ' · ' + pct.toFixed(0) + '%</div>' +
+      '<div style="flex:0 0 150px;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+        escapeHtmlStr(projectAgentSummary(p.tools)) + '</div>' +
+    '</div>';
+  }).join('');
+  var more = projects.length > 4
+    ? '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:6px">' + window.TS.tf("还有 %d 个项目", projects.length - 4) + '</div>'
+    : '';
+  return '<div class="card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">' +
+      '<div style="font-size:20px;font-weight:800;color:var(--ink)">' + t("今日项目") + '</div>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--muted)">' + t("今天你的 token 走了这些路") + '</div>' +
+    '</div>' + rows + more +
+    '<div style="font-size:11px;font-weight:600;color:var(--muted);margin-top:8px">' + t("只显示项目目录名；完整路径仅保存在本机。") + '</div>' +
+  '</div>';
+}
+
+// ---- Freshness badge (port of upstream G-V1 FreshnessBadge) ----
+// kind: never_succeeded / fresh / aging / stale / partial / disabled
+function freshnessBadgeHTML(kind) {
+  var map = {
+    fresh:        { color: "var(--green)",  bg: "color-mix(in srgb,var(--green) 12%,transparent)",  icon: "●", label: t("已同步") },
+    aging:        { color: "#d97706",       bg: "color-mix(in srgb,#d97706 12%,transparent)",        icon: "◐", label: t("数据待更新") },
+    stale:        { color: "#dc2626",       bg: "color-mix(in srgb,#dc2626 12%,transparent)",        icon: "▲", label: t("同步失败") },
+    partial:      { color: "#d97706",       bg: "color-mix(in srgb,#d97706 12%,transparent)",        icon: "◑", label: t("部分来源失败") },
+    never_succeeded: { color: "var(--muted)", bg: "color-mix(in srgb,var(--muted) 12%,transparent)", icon: "○", label: t("暂无数据") },
+    disabled:     { color: "var(--muted)",  bg: "color-mix(in srgb,var(--muted) 12%,transparent)",  icon: "⏸", label: t("已关闭") },
+  };
+  var m = map[kind] || map.never_succeeded;
+  return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;color:' + m.color + ';background:' + m.bg + ';border:1px solid color-mix(in srgb,' + m.color + ' 30%,transparent)">' +
+    '<span style="font-size:10px">' + m.icon + '</span>' + m.label + '</span>';
+}
+
+// ---- Agent-work-rank card body (port of upstream PopoverTokenRankCard) ----
+// Renders into #tokenRankContent. `r` is the TokenRankSnapshot from Rust.
+function agentRankCardContentHTML(r) {
+  // Whole-board error (fetch failed).
+  if (r.error) {
+    return '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t(r.error) + '</div>';
+  }
+  if (!r.available && !r.mine) {
+    return '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("榜单暂不可用") + '</div>';
+  }
+  var head = r.top
+    ? '<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">' + t("今日榜首") + ' · ' + escapeHtmlStr(r.top.name) + ' · ' + formatTokens(r.top.total_tokens, true) + '</div>'
+    : '';
+  if (r.mine) {
+    var ranked = Math.max(1, r.total_ranked_users || 1);
+    // Percentile: how many ranked users I beat (clamped 0-100).
+    var pct = Math.max(0, Math.min(100, Math.round((1 - r.mine.rank / ranked) * 100)));
+    var primary = r.mine.primary_client ? (r.mine.primary_client[0]) : "";
+    var sub = escapeHtmlStr(r.mine.name) + (primary ? ' · ' + t("主力") + ' ' + escapeHtmlStr(primary) : '');
+    return head +
+      '<div style="display:flex;align-items:baseline;gap:12px;margin:6px 0">' +
+        '<div style="font-size:40px;font-weight:900;color:var(--green-dark);line-height:1">🏆 #' + r.mine.rank + '</div>' +
+        '<div style="font-size:13px;font-weight:700;color:var(--muted)">' + t("今日排名") + '</div>' +
+      '</div>' +
+      '<div style="font-size:14px;font-weight:700;color:var(--ink)">' + sub + '</div>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:3px">' +
+        window.TS.tf("第 %d / %d · 超过 %d%% 参榜用户", r.mine.rank, ranked, pct).replace(/%%/g, "%") + '</div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+        '<span style="font-size:12px;font-weight:700;color:var(--ink);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("我的今日 Token") + ' ' + formatTokens(r.mine.total_tokens, true) + '</span>' +
+        '<span style="font-size:12px;font-weight:700;color:var(--muted);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("全榜今日 Token") + ' ' + formatTokens(r.total_tokens, true) + '</span>' +
+      '</div>';
+  }
+  // Visible but not linked / not on today's board.
+  if (!r.identity) {
+    return head + '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("尚未关联") + ' · ' + t("安装 Token Rank 后自动识别") + '</div>';
+  }
+  return head + '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("今日未上榜") + '</div>';
+}
+
 // ---- Expose to the page ----
 window.TS = {
   invoke,
@@ -2588,4 +2691,9 @@ window.TS = {
   comparisonText,
   agentWorkCardHTML,
   recalibrationNoticeHTML,
+  todayProjectsCardHTML,
+  projectDisplayName,
+  freshnessBadgeHTML,
+  agentRankCardContentHTML,
+  escapeHtmlStr,
 };
