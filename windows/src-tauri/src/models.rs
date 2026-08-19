@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Token breakdown for a single usage record. Mirrors the Swift
 /// `TokenUsageCounts` (private in the original) plus the Python
 /// `empty_usage()` shape.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct TokenUsageCounts {
     pub input_tokens: i64,
     pub output_tokens: i64,

@@ -591,52 +591,6 @@
         html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('启用实验数据源') + '</div><div class="setting-hint">' + window.TS.t('实验源默认关闭；开启后检测到已安装的 Agent 自动纳入统计，可单独关闭某个来源。只读 usage 字段，不读对话正文。') + '</div></div><label class="switch"><input type="checkbox" id="expAgentToggle"' + expAgentChecked + '/><span class="slider"></span></label></div>';
         html += '<div id="agentSourceGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;margin-top:6px"></div>';
         html += '</div>';
-      
-      function updateFreshnessBadge() {
-        var host = document.getElementById('syncText');
-        if (!host) return;
-        invoke('get_freshness').then(function (f) {
-          if (!f || !f.collection) return;
-          var kind = f.collection.kind || 'never_succeeded';
-          var suffix = '';
-          if ((kind === 'stale' || kind === 'aging') && f.collection.last_succeeded_at) {
-            suffix = ' <span style="opacity:.7">' + window.TS.t('显示最后成功数据') + '</span>';
-          }
-          host.innerHTML = window.TS.freshnessBadgeHTML(kind) + suffix;
-        }).catch(function () { /* keep whatever is displayed */ });
-      }
-      function renderAgentSourceGrid() {
-              var grid = document.getElementById('agentSourceGrid');
-              if (!grid) return;
-              invoke('agent_source_detection').then(function (detected) {
-                var saved = settings.experimental_agent_sources || null;
-                var master = settings.show_experimental_agent_sources;
-                var ids = ['ZCode', 'Hermes Agent', 'WorkBuddy'].concat(['Gemini CLI', 'Qwen Code', 'Kimi Code', 'OpenCode', 'Amp', 'Droid', 'Grok Build']);
-                var installed = ['ZCode', 'Hermes Agent', 'WorkBuddy'].concat(['Gemini CLI', 'Qwen Code', 'Kimi Code', 'OpenCode', 'Amp', 'Droid', 'Grok Build'])
-                  .filter(function (id) { return (detected && detected[id]) === 'installed'; });
-                var effective = saved === null || saved === undefined ? installed : saved;
-                grid.innerHTML = ids.map(function (id) {
-                  var isInstalled = (detected && detected[id]) === 'installed';
-                  var on = effective.indexOf(id) >= 0;
-                  var status = !master ? window.TS.t('默认关闭')
-                    : !isInstalled ? window.TS.t('未检测到')
-                    : on ? window.TS.t('已计入统计')
-                    : window.TS.t('已安装，未启用');
-                  return '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0">' +
-                    '<span style="font-size:13px;font-weight:700;color:var(--ink)">' + id + '</span>' +
-                    '<span style="display:flex;align-items:center;gap:8px">' +
-                      '<span style="font-size:11px;font-weight:600;color:var(--muted)">' + status + '</span>' +
-                      '<label class="switch"><input type="checkbox" data-agentsource="' + id + '"' + (on ? ' checked' : '') + (master ? '' : ' disabled') + '/><span class="slider"></span></label>' +
-                    '</span></div>';
-                }).join('');
-                grid.querySelectorAll('input[data-agentsource]').forEach(function (cb) {
-                  cb.addEventListener('change', function () {
-                    invoke('set_experimental_agent_source', { sourceId: cb.dataset.agentsource, enabled: cb.checked })
-                      .then(function (s) { settings = s; });
-                  });
-                });
-              }).catch(function () {});
-            }
         // Update check card.
         var updHint = latestUpdate && latestUpdate.has_update
           ? '<div style="margin-top:10px;padding:10px;background:color-mix(in srgb,var(--green) 10%,transparent);border-radius:10px;font-weight:700;color:var(--green-dark)">🎉 ' + window.TS.tf('发现新版本 v%@', latestUpdate.latest_version) + ' · <a id="updDownloadLink" href="#" style="color:var(--green-dark);text-decoration:underline;cursor:pointer">' + window.TS.t('立即安装') + '</a></div>'
@@ -650,6 +604,53 @@
         html += '<div class="card" style="border:1px solid color-mix(in srgb,var(--green) 25%,transparent)"><div style="display:flex;align-items:flex-start;gap:12px;padding:12px;background:color-mix(in srgb,var(--mint) 18%,transparent);border-radius:17px"><div style="flex-shrink:0;width:38px;height:38px;border-radius:50%;background:color-mix(in srgb,var(--mint) 30%,transparent);display:flex;align-items:center;justify-content:center;font-size:18px">🛡</div><div style="flex:1"><div style="font-weight:800;color:var(--ink);font-size:15px">' + window.TS.t('本地隐私保护已开启') + '</div><div style="font-size:13px;font-weight:800;color:var(--green-dark);margin-top:3px">' + window.TS.t('代码与对话不会离开这台电脑') + '</div></div></div><div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">' + [window.TS.t('只统计 token 数量'), window.TS.t('不读取代码与对话'), window.TS.t('不默认上传数据')].map(function (txt) { return '<div style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700;color:var(--ink-soft)"><span style="color:var(--green);font-weight:900">✓</span>' + txt + '</div>'; }).join('') + '</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px"><span class="pill"><span class="pill-label">' + window.TS.t('本机') + '</span></span><span class="pill"><span class="pill-label">' + (snapshot.generated_at ? window.TS.formatGeneratedTime(snapshot.generated_at) : window.TS.t('等待同步')) + '</span></span><span class="pill"><span class="pill-label">' + window.TS.tf('%@ 个客户端', String(Object.keys(snapshot.sources || {}).length)) + '</span></span></div></div>';
         html += '<div style="margin-top:18px;text-align:center"><button class="btn" id="resetDefaultsBtn" style="color:var(--muted);font-weight:700">' + window.TS.t('恢复默认设置') + '</button></div>';
         return html;
+      }
+
+
+      function updateFreshnessBadge() {
+      var host = document.getElementById('syncText');
+      if (!host) return;
+      invoke('get_freshness').then(function (f) {
+      if (!f || !f.collection) return;
+      var kind = f.collection.kind || 'never_succeeded';
+      var suffix = '';
+      if ((kind === 'stale' || kind === 'aging') && f.collection.last_succeeded_at) {
+      suffix = ' <span style="opacity:.7">' + window.TS.t('显示最后成功数据') + '</span>';
+      }
+      host.innerHTML = window.TS.freshnessBadgeHTML(kind) + suffix;
+      }).catch(function () { /* keep whatever is displayed */ });
+      }
+      function renderAgentSourceGrid() {
+      var grid = document.getElementById('agentSourceGrid');
+      if (!grid) return;
+      invoke('agent_source_detection').then(function (detected) {
+      var saved = settings.experimental_agent_sources || null;
+      var master = settings.show_experimental_agent_sources;
+      var ids = ['ZCode', 'Hermes Agent', 'WorkBuddy'].concat(['Gemini CLI', 'Qwen Code', 'Kimi Code', 'OpenCode', 'Amp', 'Droid', 'Grok Build']);
+      var installed = ['ZCode', 'Hermes Agent', 'WorkBuddy'].concat(['Gemini CLI', 'Qwen Code', 'Kimi Code', 'OpenCode', 'Amp', 'Droid', 'Grok Build'])
+      .filter(function (id) { return (detected && detected[id]) === 'installed'; });
+      var effective = saved === null || saved === undefined ? installed : saved;
+      grid.innerHTML = ids.map(function (id) {
+      var isInstalled = (detected && detected[id]) === 'installed';
+      var on = effective.indexOf(id) >= 0;
+      var status = !master ? window.TS.t('默认关闭')
+      : !isInstalled ? window.TS.t('未检测到')
+      : on ? window.TS.t('已计入统计')
+      : window.TS.t('已安装，未启用');
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0">' +
+      '<span style="font-size:13px;font-weight:700;color:var(--ink)">' + id + '</span>' +
+      '<span style="display:flex;align-items:center;gap:8px">' +
+      '<span style="font-size:11px;font-weight:600;color:var(--muted)">' + status + '</span>' +
+      '<label class="switch"><input type="checkbox" data-agentsource="' + id + '"' + (on ? ' checked' : '') + (master ? '' : ' disabled') + '/><span class="slider"></span></label>' +
+      '</span></div>';
+      }).join('');
+      grid.querySelectorAll('input[data-agentsource]').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+      invoke('set_experimental_agent_source', { sourceId: cb.dataset.agentsource, enabled: cb.checked })
+      .then(function (s) { settings = s; });
+      });
+      });
+      }).catch(function () {});
       }
 
       function render() {

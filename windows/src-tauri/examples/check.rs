@@ -36,6 +36,22 @@ fn main() {
         let pct = row.percent.unwrap_or(0.0);
         println!("  - {} / {}: {} ({:.1}%)", row.tool.as_deref().unwrap_or(""), row.model, human_tokens(row.tokens), pct);
     }
+    // Diagnostics: today's row with per-tool split + projects.
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    if let Some(row) = snapshot.daily.iter().find(|d| d.date == today) {
+        println!("TODAY {}: {}", row.date, human_tokens(row.total_tokens));
+        let mut tools: Vec<_> = row.tools.iter().collect();
+        tools.sort_by(|a, b| b.1.cmp(a.1));
+        for (t, v) in tools {
+            println!("  - {}: {}", t, human_tokens(*v));
+        }
+    }
+    println!("top days:");
+    let mut days: Vec<_> = snapshot.daily.iter().collect();
+    days.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    for d in days.iter().rev().take(3) {
+        println!("  - {}: {}", d.date, human_tokens(d.total_tokens));
+    }
     println!("sources:");
     for (name, info) in &snapshot.sources {
         println!("  - {}: status={:?} files={:?} records={:?}", name, info.status, info.files, info.records);

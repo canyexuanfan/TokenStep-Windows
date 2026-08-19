@@ -61,8 +61,12 @@ pub struct UsageRecord {
 pub fn collect(include_experimental: bool, experimental_source_ids: Option<&Vec<String>>) -> UsageSnapshot {
     let pricing_data = pricing::load();
 
-    let (codex_records, mut codex_source) = collect_codex();
-    let (claude_records, mut claude_source) = collect_claude_code();
+    // One shared collector cache for the whole pass: each collector only
+    // prunes its own entries (single save at the end).
+    let mut cache = load_cache();
+    let (codex_records, mut codex_source) = collect_codex(&mut cache);
+    let (claude_records, mut claude_source) = collect_claude_code(&mut cache);
+    save_cache(&cache);
     let (ccswitch_records, mut ccswitch_source) = collect_ccswitch();
 
     // Stamp accounting revision on Codex source (forward compat with macOS).
@@ -135,15 +139,23 @@ pub fn collect(include_experimental: bool, experimental_source_ids: Option<&Vec<
 // Codex
 // ---------------------------------------------------------------------------
 
-fn collect_codex() -> (Vec<UsageRecord>, SourceInfo) {
+fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     // Primary: JSONL rollouts (per-turn token counts), matching the Python
     // collector's precedence. SQLite `threads` (per-thread totals) is only a
-    // fallback when no JSONL data exists.
-    let mut cache = load_cache();
+    // fallback when no JSONL data exists. The cache is shared with the other
+    // collectors (single load/save per pass — fixing the historic clobber
+    // where each collector's save wiped the others' entries).
     let mut live_paths: BTreeSet<String> = BTreeSet::new();
-    let (records, files) = collect_codex_jsonl(&mut cache, &mut live_paths);
-    cache.files.retain(|k, _| live_paths.contains(k));
-    save_cache(&cache);
+    let (records, files) = collect_codex_jsonl(cache, &mut live_paths);
+    let stale: Vec<String> = cache
+        .files
+        .iter()
+        .filter(|(k, entry)| entry.tool == "Codex" && !live_paths.contains(k.as_str()))
+        .map(|(k, _)| k.clone())
+        .collect();
+    for k in stale {
+        cache.files.remove(&k);
+    }
 
     if !records.is_empty() {
         return (
@@ -251,23 +263,89 @@ fn collect_codex_jsonl(
     let mut records: Vec<UsageRecord> = Vec::new();
     let mut seen: BTreeSet<String> = BTreeSet::new();
 
+    // ── Phase 0: per-file fork metadata (own session / parent / created_at) ──
+    // session_meta sits near the head of each rollout, so only the first
+    // chunk of every file is read here.
+    let mut metas: Vec<(String, String, Option<String>, Option<f64>)> =
+        Vec::with_capacity(all_paths.len());
     for path in &all_paths {
         let key = path.to_string_lossy().to_string();
         live_paths.insert(key.clone());
+        let cached_meta = cache.files.get(&key).filter(|e| {
+            let Some((size, mtime)) = file_meta(path) else { return false };
+            entry_is_fresh(entry_meta(e), size, mtime)
+        });
+        if let Some(entry) = cached_meta {
+            let session = entry
+                .codex_session
+                .clone()
+                .unwrap_or_else(|| fallback_session_from_path(path));
+            metas.push((key, session, entry.codex_parent_session.clone(), entry.codex_created_at));
+            continue;
+        }
+        let (session, parent, created) = codex_head_meta(path);
+        metas.push((key, session, parent, created));
+    }
+
+    // Parent sessions that at least one live file forks from.
+    let parent_ids: BTreeSet<String> = metas
+        .iter()
+        .filter_map(|(_, _, parent, _)| parent.clone())
+        .collect();
+
+    // ── Phase 1: anchors keyed by the file's OWN session id (children look
+    // their parent up here). Only files referenced as a parent need anchors.
+    let mut anchors_by_session: BTreeMap<String, Vec<CachedAnchor>> = BTreeMap::new();
+    for (index, (key, own_session, _, _)) in metas.iter().enumerate() {
+        if !parent_ids.contains(own_session) {
+            continue;
+        }
+        let path = &all_paths[index];
+        if let Some(entry) = cache.files.get(key) {
+            if entry_is_fresh_by_meta(entry, path) {
+                anchors_by_session.insert(own_session.clone(), entry.codex_anchors.clone());
+                continue;
+            }
+        }
+        // Uncached parent file: extract its anchors by streaming.
+        let anchors = codex_scan_anchors(path);
+        anchors_by_session.insert(own_session.clone(), anchors);
+    }
+
+    // ── Phase 2: per-file scan + delta (fork files inherit the parent anchor) ──
+    for (index, path) in all_paths.iter().enumerate() {
+        let key = path.to_string_lossy().to_string();
+        let (own_session, parent, created_at) = {
+            let (_, s, p, c) = &metas[index];
+            (s.clone(), p.clone(), *c)
+        };
 
         if let Some(cached) = cached_records(cache, &key, "Codex", path) {
             records.extend(cached);
+            // Publish this cached file's anchors for its children.
+            if parent_ids.contains(&own_session) {
+                if let Some(entry) = cache.files.get(&key) {
+                    anchors_by_session.insert(own_session.clone(), entry.codex_anchors.clone());
+                }
+            }
             continue;
         }
 
-        let mut file_records: Vec<UsageRecord> = Vec::new();
+        // ── Token accounting calibration rev8 (upstream v0.1.44 1b54e5c) ──
+        // A token_count event carries BOTH a cumulative usage
+        // (`info.total_token_usage`, monotonically growing per session) and
+        // the last turn's snapshot (`info.last_token_usage`). Summing either
+        // directly double-counts O(N^2); the per-event usage is the DELTA
+        // between consecutive cumulative values (with sentinel / reset
+        // handling). Fork files inherit the parent's anchor so the inherited
+        // history is counted exactly once.
         let mut session_id = path
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
-        let mut current_model = String::from("unknown");
+        let mut final_model = String::from("unknown");
         let mut session_project: Option<String> = None;
-        let mut event_index = 0i64;
+        let mut events: Vec<CodexTokenEvent> = Vec::new();
 
         // Stream the file line-by-line instead of read_to_string, so a 9.7 GB
         // rollout never sits fully in memory (memory optimization, port of
@@ -307,7 +385,7 @@ fn collect_codex_jsonl(
             if ev_type == "turn_context" {
                 if let Some(m) = payload.and_then(|p| p.get("model")).and_then(|v| v.as_str()) {
                     if !m.is_empty() {
-                        current_model = model_key(m);
+                        final_model = model_key(m);
                     }
                 }
             }
@@ -319,40 +397,588 @@ fn collect_codex_jsonl(
                 continue;
             }
             let info = payload.and_then(|p| p.get("info"));
-            let raw_usage = info.and_then(|i| i.get("last_token_usage"));
-            let mut usage = normalize_usage(raw_usage);
-            usage.finalize_total();
-            if usage.total_tokens <= 0 {
-                continue;
-            }
-            let Some(timestamp) = obj.get("timestamp").and_then(|v| v.as_str()) else {
-                continue;
-            };
-            let Some(day) = day_string_from_iso(timestamp) else {
-                continue;
-            };
-            event_index += 1;
-            let dedupe = format!("{session_id}|{timestamp}|{event_index}|{}", usage.total_tokens);
-            if !seen.insert(dedupe) {
-                continue;
-            }
-            file_records.push(UsageRecord {
-                date: day,
-                timestamp: Some(timestamp.to_string()),
-                tool: "Codex".to_string(),
-                model: current_model.clone(),
-                usage,
-                cost_usd: None,
-                project_name: session_project.clone(),
-                _request_id: String::new(),
+            let cumulative = info
+                .and_then(|i| i.get("total_token_usage"))
+                .map(|v| normalize_usage(Some(v)));
+            let last = info
+                .and_then(|i| i.get("last_token_usage"))
+                .map(|v| normalize_usage(Some(v)));
+            let model_context_window = info
+                .and_then(|i| i.get("model_context_window"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            events.push(CodexTokenEvent {
+                timestamp: obj
+                    .get("timestamp")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                model: final_model.clone(),
+                cumulative,
+                last,
+                model_context_window,
             });
         }
 
+        // Resolve the parent anchor: the parent's cumulative value at (or
+        // just before) this file's creation time.
+        let parent_anchor: Option<TokenUsageCounts> = parent
+            .as_ref()
+            .and_then(|p| anchors_by_session.get(p))
+            .and_then(|anchors| codex_anchor_at_or_before(created_at, anchors));
+        let parent_first: Option<TokenUsageCounts> = parent
+            .as_ref()
+            .and_then(|p| anchors_by_session.get(p))
+            .and_then(|anchors| anchors.first())
+            .map(|a| a.usage())
+            .filter(|u| u.total_tokens > 0);
+        let inherited_from = parent_anchor
+            .as_ref()
+            .map(|a| a.total_tokens)
+            .unwrap_or(0);
+
+        let file_records = codex_delta_records(
+            &session_id,
+            &events,
+            session_project.as_deref(),
+            parent_anchor.as_ref(),
+            parent_first.as_ref(),
+            created_at,
+            &mut seen,
+        );
         records.extend(file_records.clone());
-        update_cache(cache, &key, "Codex", path, &file_records);
+
+        // Persist with fork metadata + this file's own anchors so future
+        // children (and cache hits) can inherit.
+        let anchors: Vec<CachedAnchor> = events
+            .iter()
+            .filter_map(|e| {
+                let u = e.cumulative.as_ref()?;
+                if u.total_tokens <= 0 {
+                    return None;
+                }
+                let ts = e
+                    .timestamp
+                    .as_deref()
+                    .and_then(parse_iso)
+                    .map(|dt| dt.timestamp() as f64)?;
+                Some(CachedAnchor::from_usage(ts, u))
+            })
+            .collect();
+        update_codex_cache(
+            cache,
+            &key,
+            path,
+            &file_records,
+            &session_id,
+            parent,
+            created_at,
+            anchors.clone(),
+        );
+        // Publish anchors for children of this session.
+        if parent_ids.contains(&session_id) {
+            anchors_by_session.insert(session_id.clone(), anchors);
+        }
+        let _ = inherited_from;
     }
 
     (records, all_paths.len() as i64)
+}
+
+/// Fallback session key for cache entries saved before `codex_session`
+/// existed: the rollout file stem.
+fn fallback_session_from_path(path: &Path) -> String {
+    path.file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+/// Read a rollout's head to extract (session id, parent session, created_at).
+/// session_meta is the first relevant line in practice; cap the hunt at 256 KB.
+fn codex_head_meta(path: &Path) -> (String, Option<String>, Option<f64>) {
+    use std::io::Read;
+    let session = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let Ok(mut file) = fs::File::open(path) else {
+        return (session, None, None);
+    };
+    let mut buf = Vec::with_capacity(256 * 1024);
+    let mut chunk = [0u8; 64 * 1024];
+    while buf.len() < 256 * 1024 {
+        match file.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+        }
+    }
+    let text_head = String::from_utf8_lossy(&buf);
+    for line in text_head.lines() {
+        if !line.contains("session_meta") {
+            continue;
+        }
+        let Ok(obj) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        let payload = obj.get("payload");
+        let id = payload
+            .and_then(|p| p.get("id"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .unwrap_or(session);
+        let parent = codex_parent_session_id(payload);
+        let created = obj
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .or_else(|| payload.and_then(|p| p.get("timestamp")).and_then(|v| v.as_str()))
+            .and_then(parse_iso)
+            .map(|dt| dt.timestamp() as f64);
+        return (id, parent, created);
+    }
+    (session, None, None)
+}
+
+/// Upstream `codexParentSessionID`: source.subagent.thread_spawn.parent_thread_id,
+/// then payload.parent_thread_id / forked_from_id.
+fn codex_parent_session_id(payload: Option<&serde_json::Value>) -> Option<String> {
+    let payload = payload?;
+    if let Some(parent) = payload
+        .get("source")
+        .and_then(|s| s.get("subagent"))
+        .and_then(|s| s.get("thread_spawn"))
+        .and_then(|t| t.get("parent_thread_id"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+    {
+        return Some(parent.trim().to_string());
+    }
+    for key in ["parent_thread_id", "forked_from_id"] {
+        if let Some(parent) = payload
+            .get(key)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+        {
+            return Some(parent.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Stream a file and collect its cumulative anchors (ts + usage), skipping
+/// consecutive duplicates to keep the list compact.
+fn codex_scan_anchors(path: &Path) -> Vec<CachedAnchor> {
+    use std::io::BufRead;
+    let mut anchors: Vec<CachedAnchor> = Vec::new();
+    let Ok(file) = fs::File::open(path) else { return anchors };
+    let reader = std::io::BufReader::new(file);
+    for line in reader.lines().map_while(Result::ok) {
+        if !line.contains("token_count") {
+            continue;
+        }
+        let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        if obj.get("type").and_then(|v| v.as_str()) != Some("event_msg") {
+            continue;
+        }
+        let Some(info) = obj
+            .get("payload")
+            .and_then(|p| p.get("info"))
+        else {
+            continue;
+        };
+        let Some(cumulative) = info.get("total_token_usage") else { continue };
+        let usage = normalize_usage(Some(cumulative));
+        if usage.total_tokens <= 0 {
+            continue;
+        }
+        let Some(ts) = obj
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .and_then(parse_iso)
+            .map(|dt| dt.timestamp() as f64)
+        else {
+            continue;
+        };
+        // Skip consecutive duplicates (same total).
+        if anchors.last().map(|a| a.total) == Some(usage.total_tokens) {
+            continue;
+        }
+        anchors.push(CachedAnchor::from_usage(ts, &usage));
+    }
+    anchors
+}
+
+/// Upstream `codexAnchor(atOrBefore:)`: binary search for the newest anchor
+/// whose timestamp is <= the child's creation time.
+fn codex_anchor_at_or_before(created_at: Option<f64>, anchors: &[CachedAnchor]) -> Option<TokenUsageCounts> {
+    let created = created_at?;
+    let idx = anchors.partition_point(|a| a.ts <= created);
+    if idx == 0 {
+        return None;
+    }
+    let anchor = &anchors[idx - 1];
+    if anchor.total <= 0 {
+        return None;
+    }
+    Some(anchor.usage())
+}
+
+/// Freshness check for a cache entry against live file metadata.
+fn entry_is_fresh(entry: (u64, f64), size: u64, mtime: f64) -> bool {
+    entry.0 == size && (entry.1 - mtime).abs() < 0.001
+}
+
+fn entry_meta(entry: &CachedUsageFile) -> (u64, f64) {
+    (entry.size, entry.mtime)
+}
+
+fn entry_is_fresh_by_meta(entry: &CachedUsageFile, path: &Path) -> bool {
+    let Some((size, mtime)) = file_meta(path) else { return false };
+    entry_is_fresh(entry_meta(entry), size, mtime)
+}
+
+/// Codex-specific cache write carrying fork metadata + anchors.
+fn update_codex_cache(
+    cache: &mut CollectorCache,
+    key: &str,
+    path: &Path,
+    records: &[UsageRecord],
+    session_id: &str,
+    parent: Option<String>,
+    created_at: Option<f64>,
+    anchors: Vec<CachedAnchor>,
+) {
+    let Some((size, mtime)) = file_meta(path) else {
+        return;
+    };
+    cache.files.insert(
+        key.to_string(),
+        CachedUsageFile {
+            tool: "Codex".to_string(),
+            size,
+            mtime,
+            records: records.iter().map(CachedRecord::from).collect(),
+            codex_session: Some(session_id.to_string()),
+            codex_parent_session: parent,
+            codex_created_at: created_at,
+            codex_anchors: anchors,
+        },
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Codex token accounting calibration rev8 (port of upstream v0.1.44/v0.2.0
+// scanCodexSessionFile + codexDeltaRecords + codexIncrementUsage)
+// ---------------------------------------------------------------------------
+
+/// One `token_count` event from a Codex rollout, holding both usage flavors.
+#[derive(Debug, Clone)]
+struct CodexTokenEvent {
+    timestamp: Option<String>,
+    model: String,
+    /// `info.total_token_usage` — session-cumulative (monotonic per epoch).
+    cumulative: Option<TokenUsageCounts>,
+    /// `info.last_token_usage` — last turn's snapshot.
+    last: Option<TokenUsageCounts>,
+    /// `info.model_context_window` — used to recognize sentinel values.
+    model_context_window: i64,
+}
+
+impl CodexTokenEvent {
+    fn cumulative_present(&self) -> bool {
+        self.cumulative.is_some()
+    }
+}
+
+/// A first-event cumulative above this (with a valid per-turn snapshot) is
+/// treated as an inherited counter from a resume chain, not fresh usage.
+const INHERITED_COUNTER_FLOOR_TOKENS: i64 = 10_000_000;
+
+/// Upstream `isCodexBreakdownConsistent`: all parts non-negative, input+output
+/// equals total, cache contained in input, reasoning contained in output.
+fn codex_breakdown_consistent(u: &TokenUsageCounts, total: i64) -> bool {
+    u.input_tokens >= 0
+        && u.output_tokens >= 0
+        && u.cache_creation_input_tokens >= 0
+        && u.cache_read_input_tokens >= 0
+        && u.reasoning_output_tokens >= 0
+        && u.input_tokens + u.output_tokens == total
+        && u.cache_creation_input_tokens + u.cache_read_input_tokens <= u.input_tokens
+        && u.reasoning_output_tokens <= u.output_tokens
+}
+
+/// Upstream `isCodexContextWindowSentinel`: an all-zero cumulative whose total
+/// equals the model context window is a synthetic marker, not usage.
+fn codex_is_context_window_sentinel(event: &CodexTokenEvent) -> bool {
+    let Some(c) = event.cumulative.as_ref() else { return false };
+    c.input_tokens == 0
+        && c.output_tokens == 0
+        && c.cache_creation_input_tokens == 0
+        && c.cache_read_input_tokens == 0
+        && c.reasoning_output_tokens == 0
+        && event.last.as_ref().map(|l| l.total_tokens).unwrap_or(0) == 0
+        && event.model_context_window > 0
+        && c.total_tokens == event.model_context_window
+}
+
+/// Upstream `isCredibleCodexReset`: a drop in the cumulative total counts as a
+/// counter reset only if the `last` snapshot matches the new value, or a later
+/// event climbs from it while staying below the previous maximum.
+fn codex_is_credible_reset(
+    index: usize,
+    events: &[CodexTokenEvent],
+    current: &TokenUsageCounts,
+    previous: &TokenUsageCounts,
+) -> bool {
+    if let Some(last) = events[index].last.as_ref() {
+        if last.total_tokens == current.total_tokens
+            && codex_breakdown_consistent(last, current.total_tokens)
+        {
+            return true;
+        }
+    }
+    for candidate in events.iter().skip(index + 1) {
+        let Some(next) = candidate.cumulative.as_ref() else { continue };
+        if next.total_tokens <= 0 {
+            continue;
+        }
+        if next.total_tokens == current.total_tokens {
+            continue;
+        }
+        return next.total_tokens > current.total_tokens && next.total_tokens < previous.total_tokens;
+    }
+    false
+}
+
+/// Upstream `codexIncrementUsage`: distribute a delta total across fields.
+/// Prefers the `last` snapshot when it exactly matches the delta; else the
+/// per-field difference (when monotonic); else a total-only record.
+fn codex_increment_usage(
+    current: &TokenUsageCounts,
+    previous: Option<&TokenUsageCounts>,
+    last: Option<&TokenUsageCounts>,
+    total: i64,
+) -> TokenUsageCounts {
+    if let Some(last) = last {
+        if last.total_tokens == total && codex_breakdown_consistent(last, total) {
+            let mut result = last.clone();
+            result.total_tokens = total;
+            return result;
+        }
+    }
+    let empty = TokenUsageCounts::default();
+    let prev = previous.unwrap_or(&empty);
+    let monotonic = current.input_tokens >= prev.input_tokens
+        && current.output_tokens >= prev.output_tokens
+        && current.cache_creation_input_tokens >= prev.cache_creation_input_tokens
+        && current.cache_read_input_tokens >= prev.cache_read_input_tokens
+        && current.reasoning_output_tokens >= prev.reasoning_output_tokens;
+    if monotonic {
+        let mut result = TokenUsageCounts {
+            input_tokens: current.input_tokens - prev.input_tokens,
+            output_tokens: current.output_tokens - prev.output_tokens,
+            cache_creation_input_tokens: current.cache_creation_input_tokens
+                - prev.cache_creation_input_tokens,
+            cache_read_input_tokens: current.cache_read_input_tokens - prev.cache_read_input_tokens,
+            reasoning_output_tokens: current.reasoning_output_tokens
+                - prev.reasoning_output_tokens,
+            total_tokens: total,
+        };
+        if codex_breakdown_consistent(&result, total) {
+            return result;
+        }
+        result = TokenUsageCounts::default();
+        result.total_tokens = total;
+        return result;
+    }
+    let mut result = TokenUsageCounts::default();
+    result.total_tokens = total;
+    result
+}
+
+/// Upstream `codexDeltaRecords`: turn one file's token_count events into
+/// per-event delta records. Files without the cumulative schema fall back to
+/// the legacy per-event `last` estimate (dedup'd). `seen` is the cross-file
+/// request-id set, preserved between files of the same collection pass.
+fn codex_delta_records(
+    session_id: &str,
+    events: &[CodexTokenEvent],
+    project_name: Option<&str>,
+    parent_anchor: Option<&TokenUsageCounts>,
+    parent_first_cumulative: Option<&TokenUsageCounts>,
+    child_created_at: Option<f64>,
+    seen: &mut std::collections::BTreeSet<String>,
+) -> Vec<UsageRecord> {
+    let mut records: Vec<UsageRecord> = Vec::new();
+    let has_cumulative_schema = events.iter().any(|e| e.cumulative_present());
+
+    if !has_cumulative_schema {
+        // Legacy schema: only `last_token_usage` exists — use it directly
+        // (upstream "codex_last_usage_legacy_estimate").
+        for event in events {
+            let Some(usage) = event.last.as_ref() else { continue };
+            if usage.total_tokens <= 0 {
+                continue;
+            }
+            let Some(timestamp) = event.timestamp.as_ref() else { continue };
+            let Some(day) = day_string_from_iso(timestamp) else { continue };
+            let fingerprint = format!(
+                "{}:{}:{}:{}:{}:{}",
+                usage.input_tokens,
+                usage.output_tokens,
+                usage.cache_creation_input_tokens,
+                usage.cache_read_input_tokens,
+                usage.reasoning_output_tokens,
+                usage.total_tokens
+            );
+            let request_id = format!("codex:legacy:{session_id}:{timestamp}:{fingerprint}");
+            if !seen.insert(request_id) {
+                continue;
+            }
+            let mut usage = usage.clone();
+            usage.finalize_total();
+            records.push(UsageRecord {
+                date: day,
+                timestamp: Some(timestamp.clone()),
+                tool: "Codex".to_string(),
+                model: event.model.clone(),
+                usage,
+                cost_usd: None,
+                project_name: project_name.map(String::from),
+                _request_id: String::new(),
+            });
+        }
+        return records;
+    }
+
+    // Cumulative schema: per-event usage = delta between consecutive totals.
+    // A fork file inherits the parent's anchor: events up to (and including)
+    // the matching cumulative value are inherited history counted by the
+    // parent, so delta-ing resumes from there (upstream codexForkAnchor).
+    let mut previous: Option<TokenUsageCounts> = None;
+    let mut start_index = 0usize;
+    if let Some(anchor) = parent_anchor {
+        if anchor.total_tokens > 0 {
+            if let Some(anchor_index) = events
+                .iter()
+                .position(|e| matches!(e.cumulative.as_ref(), Some(c) if c == anchor))
+            {
+                previous = Some(anchor.clone());
+                start_index = anchor_index + 1;
+            }
+        }
+    }
+    // Dump fallback: a fork file whose FIRST cumulative equals the parent's
+    // first cumulative field-for-field is a transcript dump (compact/resume
+    // writes a fresh rollout copying the parent's whole event history; the
+    // exact anchor no longer matches because the parent kept growing after
+    // the dump). Copied events all carry timestamps <= the dump moment, so
+    // delta-ing resumes strictly after `child_created_at`.
+    if start_index == 0 {
+        if let (Some(parent_first), Some(created)) = (parent_first_cumulative, child_created_at) {
+            let is_dump = parent_first.total_tokens > 0
+                && matches!(events.first().and_then(|e| e.cumulative.as_ref()),
+                            Some(c) if c == parent_first);
+            if is_dump {
+                let mut last_before: Option<&TokenUsageCounts> = None;
+                let mut split = events.len();
+                for (index, event) in events.iter().enumerate() {
+                    let Some(ts) = event
+                        .timestamp
+                        .as_deref()
+                        .and_then(parse_iso)
+                        .map(|dt| dt.timestamp() as f64)
+                    else {
+                        continue;
+                    };
+                    if ts > created {
+                        split = index;
+                        break;
+                    }
+                    if let Some(c) = event.cumulative.as_ref() {
+                        last_before = Some(c);
+                    }
+                }
+                previous = last_before.cloned().or_else(|| parent_anchor.cloned());
+                start_index = split;
+            }
+        }
+    }
+    let mut epoch = 0usize;
+    for (index, event) in events.iter().enumerate().skip(start_index) {
+        if !event.cumulative_present() {
+            continue;
+        }
+        let Some(current) = event.cumulative.as_ref() else { continue };
+        if current.total_tokens <= 0 {
+            continue;
+        }
+        let Some(timestamp) = event.timestamp.as_ref() else { continue };
+        let Some(day) = day_string_from_iso(timestamp) else { continue };
+
+        let (delta_total, is_reset): (i64, bool);
+        match previous.as_ref() {
+            Some(prev) => {
+                if current.total_tokens == prev.total_tokens {
+                    continue; // duplicate snapshot
+                } else if current.total_tokens > prev.total_tokens {
+                    delta_total = current.total_tokens - prev.total_tokens;
+                    is_reset = false;
+                } else if codex_is_context_window_sentinel(event) {
+                    continue; // synthetic context-window marker
+                } else if codex_is_credible_reset(index, events, current, prev) {
+                    epoch += 1;
+                    delta_total = current.total_tokens;
+                    is_reset = true;
+                } else {
+                    continue; // non-credible drop — skip rather than guess
+                }
+            }
+            None => {
+                // Inherited-counter guard: a first cumulative in the tens of
+                // millions+ with a valid per-turn snapshot is a resumed
+                // counter (resume chains point parent_thread_id at the
+                // ORIGINAL session, whose anchors long stopped growing, so
+                // fork anchoring can't reach it). Count only this turn's
+                // real usage instead of re-counting the whole history.
+                let last_total = event.last.as_ref().map(|l| l.total_tokens).unwrap_or(0);
+                if current.total_tokens > INHERITED_COUNTER_FLOOR_TOKENS && last_total > 0 {
+                    delta_total = last_total;
+                } else {
+                    delta_total = current.total_tokens;
+                }
+                is_reset = false;
+            }
+        }
+        if delta_total <= 0 {
+            continue;
+        }
+        let usage = codex_increment_usage(
+            current,
+            if is_reset { None } else { previous.as_ref() },
+            event.last.as_ref(),
+            delta_total,
+        );
+        let request_id =
+            format!("codex:cumulative:{session_id}:{epoch}:{}", current.total_tokens);
+        if !seen.insert(request_id) {
+            previous = Some(current.clone());
+            continue;
+        }
+        records.push(UsageRecord {
+            date: day,
+            timestamp: Some(timestamp.clone()),
+            tool: "Codex".to_string(),
+            model: event.model.clone(),
+            usage,
+            cost_usd: None,
+            project_name: project_name.map(String::from),
+            _request_id: String::new(),
+        });
+        previous = Some(current.clone());
+    }
+    records
 }
 
 // ---------------------------------------------------------------------------
@@ -418,12 +1044,11 @@ impl ClaudeCandidate {
     }
 }
 
-fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
+fn collect_claude_code(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     let root = paths::claude_projects_root();
     let mut all_paths = jsonl_files_under(&root);
     all_paths.sort();
 
-    let mut cache = load_cache();
     let mut live_paths: BTreeSet<String> = BTreeSet::new();
     let mut records: Vec<UsageRecord> = Vec::new();
 
@@ -519,11 +1144,18 @@ fn collect_claude_code() -> (Vec<UsageRecord>, SourceInfo) {
             .collect();
 
         records.extend(file_records.clone());
-        update_cache(&mut cache, &key, "Claude Code", path, &file_records);
+        update_cache(cache, &key, "Claude Code", path, &file_records);
     }
 
-    cache.files.retain(|k, _| live_paths.contains(k));
-    save_cache(&cache);
+    let stale: Vec<String> = cache
+        .files
+        .iter()
+        .filter(|(k, entry)| entry.tool == "Claude Code" && !live_paths.contains(k.as_str()))
+        .map(|(k, _)| k.clone())
+        .collect();
+    for k in stale {
+        cache.files.remove(&k);
+    }
 
     let status = if records.is_empty() { "missing" } else { "ok" };
     (
@@ -1134,7 +1766,7 @@ fn share(part: i64, whole: i64) -> f64 {
 /// Extract the local hour-of-day (0-23) from an ISO timestamp. Port of
 /// Current collector cache version. Bump on schema changes to force a full
 /// rebuild from source. v5 = agent work aggregation + accounting revision tracking.
-const COLLECTOR_CACHE_VERSION: i32 = 6;
+const COLLECTOR_CACHE_VERSION: i32 = 10;
 
 /// Current Codex accounting revision (mirrors macOS `codexAccountingRevision`).
 /// The Win port does not yet implement the rev6-8 incremental accounting, but
@@ -1330,6 +1962,55 @@ struct CachedUsageFile {
     size: u64,
     mtime: f64,
     records: Vec<CachedRecord>,
+    /// Codex fork metadata (rev8): the session this file forked from, its
+    /// creation time, and the file's cumulative anchors — used so freshly
+    /// scanned fork files can inherit the parent's counter instead of
+    /// re-counting the inherited history.
+    #[serde(default, rename = "codex_session", skip_serializing_if = "Option::is_none")]
+    codex_session: Option<String>,
+    #[serde(default, rename = "codex_parent_session", skip_serializing_if = "Option::is_none")]
+    codex_parent_session: Option<String>,
+    #[serde(default, rename = "codex_created_at", skip_serializing_if = "Option::is_none")]
+    codex_created_at: Option<f64>,
+    #[serde(default)]
+    codex_anchors: Vec<CachedAnchor>,
+}
+
+/// One cumulative anchor point: (epoch secs, usage snapshot).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedAnchor {
+    ts: f64,
+    total: i64,
+    input: i64,
+    output: i64,
+    cache_creation: i64,
+    cache_read: i64,
+    reasoning: i64,
+}
+
+impl CachedAnchor {
+    fn usage(&self) -> TokenUsageCounts {
+        TokenUsageCounts {
+            input_tokens: self.input,
+            output_tokens: self.output,
+            cache_creation_input_tokens: self.cache_creation,
+            cache_read_input_tokens: self.cache_read,
+            reasoning_output_tokens: self.reasoning,
+            total_tokens: self.total,
+        }
+    }
+
+    fn from_usage(ts: f64, u: &TokenUsageCounts) -> CachedAnchor {
+        CachedAnchor {
+            ts,
+            total: u.total_tokens,
+            input: u.input_tokens,
+            output: u.output_tokens,
+            cache_creation: u.cache_creation_input_tokens,
+            cache_read: u.cache_read_input_tokens,
+            reasoning: u.reasoning_output_tokens,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1460,6 +2141,10 @@ fn update_cache(
             size,
             mtime,
             records: records.iter().map(CachedRecord::from).collect(),
+            codex_session: None,
+            codex_parent_session: None,
+            codex_created_at: None,
+            codex_anchors: vec![],
         },
     );
 }
