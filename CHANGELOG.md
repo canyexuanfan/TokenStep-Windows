@@ -10,6 +10,21 @@
 
 （开发中。参见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。）
 
+## [0.1.7] - 零遗漏收尾 + 侧边栏 GitHub 入口
+
+### 新增
+
+- **侧边栏 GitHub 入口**：GitHub 按钮（打开仓库页）+ 一键 Star（学习 opencodex 的 sidebar 模式）。星标走本机 `gh` 登录，程序不存储任何 GitHub token；未登录时兜底打开仓库页。
+- **分享成绩单卡「今日/昨日路线」项目面板**：前 3 个项目目录 + token + 百分比（对齐上游 G-B1，此前漏移植）。
+- **Agent 工作强度卡完全体**：今日/近 7 天切换（7 个日历日缺日补零、x/168、分时日均）；来源过滤（全部/Codex/Hermes/其他，codex via 归一）；缓存命中率折线（右侧 100%/0% 轴、覆盖不完整断线）。
+- **历史页改版**：「近 8 个月活动墙」头卡 + 活跃日胶囊；明细表 4 列（日期/Token/金额/主力工具色点）。
+- **设置页**：「自动刷新」+ 当前节奏状态行。
+
+### 修复
+
+- **节奏分享卡数据错位**：标题一直写「昨日 AI 节奏」但数据取的是今日——改为真·昨日数据。
+- **今日概览截图**补「今日路线」项目面板。
+
 ## [0.1.6] - 上游 v0.2.0 全量移植 + Codex 计量修复 + 对齐审查
 
 同步上游 macOS v0.1.46~v0.2.0（47 文件 +8612 行），并修复 Windows 版 Codex 计量的五层根因。
@@ -129,6 +144,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), adhere
 ## [Unreleased]
 
 (In development. See [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md).)
+
+## [0.1.7] - Zero-gap polish + sidebar GitHub entry
+
+### Added
+
+- **Sidebar GitHub entry**: repo button + one-click star (after opencodex's sidebar pattern). Starring uses the local `gh` login — no GitHub token is ever stored by the app; logged-out users fall back to the repo page.
+- **Share-card "Today's route" projects panel**: top-3 project folders with tokens and percents (upstream G-B1, previously missed).
+- **Agent Work card, complete**: Today / last-7-days toggle (calendar-day zeros, x/168, hourly average); source filter (All / Codex / Hermes / Other, "codex via" folding); cache-hit-rate line with a right 100%/0% axis.
+- **History page redesign**: "Last 8 months" wall header + active-days capsule; 4-column detail table (date / tokens / cost / dominant tool with color dot).
+- **Settings**: "Auto refresh" card with a current-pace status line.
+
+### Fixed
+
+- **Rhythm share card data mismatch**: the title always said "Yesterday's AI rhythm" while the data came from today — now genuinely yesterday's.
+- **Today-overview screenshot** gains the "Today's route" projects panel.
 
 ## [0.1.6] - Upstream v0.2.0 full port + Codex accounting fix + alignment audit
 
