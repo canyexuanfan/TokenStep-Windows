@@ -65,7 +65,7 @@
 
       // Build the full app shell (same as before but proven-safe).
       document.getElementById('app').innerHTML =
-        '<aside class="sidebar"><div class="brand"><div class="brand-mark"><img src="../shared/logo.png" alt="TokenStep" style="width:36px;height:36px"/></div><div class="brand-text"><h1>TokenStep</h1><p>每天一个亿</p></div></div><nav class="nav" id="nav"></nav><div class="sidebar-spacer"></div><div class="privacy-badge"><span>' + ICONS.shield + '</span><div><div class="pb-title">本地统计</div><div class="pb-sub">不上传代码或对话</div></div></div></aside>' +
+        '<aside class="sidebar"><div class="brand"><div class="brand-mark"><img src="../shared/logo.png" alt="TokenStep" style="width:36px;height:36px"/></div><div class="brand-text"><h1>TokenStep</h1><p>每天一个亿</p></div></div><nav class="nav" id="nav"></nav><div class="sidebar-spacer"></div><div class="privacy-badge"><span>' + ICONS.shield + '</span><div><div class="pb-title">本地统计</div><div class="pb-sub">不上传代码或对话</div></div></div><div class="github-row" id="githubRow"><button class="github-link" id="githubRepoBtn" title="GitHub"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3-.3 6.2-1.5 6.2-6.7A5.2 5.2 0 0 0 20 4.8 4.9 4.9 0 0 0 19.9 1S18.7.6 16 2.5a13.4 13.4 0 0 0-7 0C6.3.6 5.1 1 5.1 1A4.9 4.9 0 0 0 5 4.8a5.2 5.2 0 0 0-1.4 3.7c0 5.1 3.1 6.4 6.1 6.7a3.4 3.4 0 0 0-.9 2.5V22"/></svg><span>GitHub</span></button><button class="github-star" id="githubStarBtn" title="' + window.TS.t('点个 Star') + '"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span id="githubStarCount"></span></button></div></aside>' +
         '<main class="content"><div class="page"><div class="page-header"><div><h2 class="page-title" id="pageTitle">今日</h2><p class="page-subtitle" id="pageSubtitle"></p></div><div><div class="sync-status"><span class="sync-dot" id="syncDot"></span><span id="syncText">已同步</span><button class="btn" style="padding:6px 10px;margin-left:6px;display:none" id="updateBtn" title="发现新版本">🎁</button><button class="btn" style="padding:6px 12px;margin-left:6px;position:relative" id="shotBtn" title="截图">📷<div id="shareMenu" style="display:none;position:absolute;top:100%;right:0;margin-top:6px;background:var(--surface);border:1px solid var(--track);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.12);padding:6px;min-width:200px;z-index:50"></div></button><button class="btn" style="padding:6px 12px;margin-left:6px" id="refreshBtn" title="刷新">' + ICONS.refresh + '</button></div><div class="updated" id="updated"></div></div></div><div id="errorBanner"></div><div id="view"></div></div></main>';
 
       // Nav
@@ -751,6 +751,47 @@
           bindAgentWorkControls();
         }
       }
+
+
+      // Sidebar GitHub row (opencodex pattern): repo link + star via local gh.
+      (function initGithubRow() {
+        var count = document.getElementById('githubStarCount');
+        var starBtn = document.getElementById('githubStarBtn');
+        var repoBtn = document.getElementById('githubRepoBtn');
+        invoke('github_repo_info').then(function (info) {
+          if (count && info && info.stars > 0) count.textContent = String(info.stars);
+        }).catch(function () {});
+        invoke('github_star_state').then(function (state) {
+          if (!starBtn) return;
+          if (state === 'starred') {
+            starBtn.classList.add('starred');
+            starBtn.title = window.TS.t('已 Star');
+            starBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+          }
+        }).catch(function () {});
+        if (repoBtn) repoBtn.addEventListener('click', function () {
+          invoke('github_repo_url').then(function (url) {
+            invoke('open_release_page', { url: url }).catch(function () {});
+          }).catch(function () {});
+        });
+        if (starBtn) starBtn.addEventListener('click', function () {
+          if (starBtn.classList.contains('starred')) return;
+          invoke('github_star').then(function (r) {
+            if (r && r.ok) {
+              starBtn.classList.add('starred');
+              starBtn.querySelector('svg').setAttribute('fill', 'currentColor');
+              starBtn.title = window.TS.t('已 Star');
+              var c = document.getElementById('githubStarCount');
+              if (c && c.textContent) c.textContent = String(parseInt(c.textContent, 10) + 1 || 1);
+              return;
+            }
+            // Not logged into gh / failed — hand over to the repo page.
+            invoke('github_repo_url').then(function (url) {
+              invoke('open_release_page', { url: url }).catch(function () {});
+            }).catch(function () {});
+          }).catch(function () {});
+        });
+      })();
 
       function updateFreshnessBadge() {
       var host = document.getElementById('syncText');

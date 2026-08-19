@@ -12,6 +12,7 @@ mod claude_quota;
 mod codex_quota;
 mod energy;
 mod freshness;
+mod github;
 mod models;
 mod net;
 mod paths;
@@ -441,6 +442,28 @@ fn check_for_update() -> update::UpdateCheck {
 
 /// The running app version (compile-time), for the About card before any
 /// update check has run.
+/// Sidebar GitHub row (opencodex pattern): repo info + star via local gh.
+#[tauri::command]
+fn github_repo_info() -> github::RepoInfo {
+    github::repo_info()
+}
+
+#[tauri::command]
+fn github_star_state() -> github::StarState {
+    github::star_state()
+}
+
+#[tauri::command]
+fn github_star() -> serde_json::Value {
+    let (ok, state) = github::star();
+    serde_json::json!({ "ok": ok, "state": state })
+}
+
+#[tauri::command]
+fn github_repo_url() -> String {
+    github::REPO_URL.to_string()
+}
+
 #[tauri::command]
 fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
@@ -942,6 +965,10 @@ pub fn run() {
             read_token_rank,
             set_agent_work_rank_visibility,
             app_version,
+            github_repo_info,
+            github_star_state,
+            github_star,
+            github_repo_url,
             agent_source_detection,
             set_experimental_agent_source,
             get_freshness,

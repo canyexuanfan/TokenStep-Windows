@@ -800,3 +800,30 @@ input[type="number"]:focus {
   background: #fff;
   opacity: 1;
 }
+
+/* ---- Sidebar GitHub row (opencodex sidebar-github-row pattern) ---- */
+.github-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px; }
+.github-row button {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--track); background: var(--canvas); color: var(--muted);
+  border-radius: 999px; padding: 6px 12px; font-size: 12.5px; font-weight: 700;
+  cursor: pointer;
+  transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
+}
+.github-row button:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 25%, transparent);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+.github-row button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--green) 50%, transparent);
+  outline-offset: 2px;
+}
+.github-row .github-star.starred {
+  color: #e8a812;
+  border-color: rgba(232, 168, 18, .45);
+  background: rgba(232, 168, 18, .10);
+  cursor: default;
+}
+.github-row .github-star:not(.starred):hover { transform: scale(1.06); }
+.github-row .github-star:not(.starred):active { transform: scale(.96); }
