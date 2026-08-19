@@ -128,6 +128,11 @@ function contributionColor(tokens, goal) {
 }
 
 // ---- Day key for "today" in Asia/Shanghai ----
+function yesterdayKey() {
+  var tz8 = Date.now() + 8 * 3600 * 1000;
+  return new Date(tz8 - 86400000).toISOString().slice(0, 10);
+}
+
 function todayKey() {
   // +08:00 fixed offset (matches the collector's timezone).
   const now = new Date();
@@ -395,10 +400,17 @@ function renderShareDailyCard(canvas, opts) {
   // sync with that function. Empty data → entries.length 0 → 66px panel.
   const breakdownToolH = 16 * 2 + 34 + Math.max(toolEntries.length, 1) * 25;
   const breakdownModelH = 16 * 2 + 34 + Math.max(modelEntries.length, 1) * 25;
+  // G-B1 share-card project rows: top-3 directories (upstream projectRows).
+  const projectEntries = (day.projects || [])
+    .filter(function (p) { return p.tokens > 0; })
+    .slice(0, 3);
+  const breakdownProjectH = projectEntries.length
+    ? 16 * 2 + 34 + projectEntries.length * 25
+    : 0; // panel hidden when the day has no project data (upstream `if let`)
   // Trend panel height MUST equal drawShareTrendPanel's panelH (162).
   const trendH = 162;
 
-  const blocks = [headerH, heroH, metricStripH, breakdownToolH, breakdownModelH, trendH];
+  const blocks = [headerH, heroH, metricStripH, breakdownToolH, breakdownProjectH, breakdownModelH, trendH];
   const spacing = 14;
   const totalH = pad + blocks.reduce(function (a, b) { return a + b; }, 0) + spacing * (blocks.length - 1) + 14 /* gap before footer */ + footerH + pad;
 
@@ -568,6 +580,22 @@ function renderShareDailyCard(canvas, opts) {
   );
   y += b1H + 14;
 
+  // ── Breakdown: 今日/昨日路线 (projects, G-B1). ────────────────────────
+  if (projectEntries.length) {
+    const projectValues = {};
+    projectEntries.forEach(function (p) {
+      projectValues[projectDisplayName(p.name)] = p.tokens;
+    });
+    drawShareBreakdownPanel(
+      ctx, C, pad, y, contentW,
+      isYesterday ? t("昨日路线") : t("今日路线"),
+      t("项目目录名"),
+      projectValues, false,
+      day.total_tokens || 1
+    );
+    y += breakdownProjectH + 14;
+  }
+
   // ── Breakdown: 主力模型. ─────────────────────────────────────────────
   const b2H = drawShareBreakdownPanel(
     ctx, C, pad, y, contentW,
@@ -645,8 +673,15 @@ function renderTodayOverview(canvas, opts) {
   const heroContentH = ringBox + chipsGap + chipsRowH + 16 + pillsRowH;
   const heroH = 22 * 2 + heroContentH; // surface padding 22
 
+  // G-B1: today's-route projects panel (top-3 directories), hidden when the
+  // day carries no project data.
+  const projectEntries = (today.projects || [])
+    .filter(function (p) { return p.tokens > 0; })
+    .slice(0, 3);
+  const projectsPanelH = projectEntries.length ? 16 * 2 + 34 + projectEntries.length * 25 : 0;
+
   const spacing = 16;
-  const blocks = [headerH, heroH, metricStripH, activityPanelH, distPanelH];
+  const blocks = [headerH, heroH, metricStripH, projectsPanelH, activityPanelH, distPanelH];
   const totalH = pad + blocks.reduce(function (a, b) { return a + b; }, 0) + spacing * (blocks.length - 1) + 14 + footerH + pad;
 
   canvas.width = W;
@@ -781,6 +816,22 @@ function renderTodayOverview(canvas, opts) {
     { label: t("达标天数"), value: goalDays + " " + t("天"), detail: t("达到每日目标") },
   ]);
   y += metricStripH + spacing;
+
+  // ── 今日路线 (projects, G-B1). ──
+  if (projectEntries.length) {
+    const projectValues = {};
+    projectEntries.forEach(function (p) {
+      projectValues[projectDisplayName(p.name)] = p.tokens;
+    });
+    drawShareBreakdownPanel(
+      ctx, C, pad, y, contentW,
+      t("今日路线"),
+      t("项目目录名"),
+      projectValues, false,
+      today.total_tokens || 1
+    );
+    y += projectsPanelH + spacing;
+  }
 
   // ── 30-day activity panel. ──
   drawOverviewActivityPanel(ctx, C, pad, y, contentW, daily.slice(-30), goal, today);
@@ -1136,8 +1187,10 @@ function comparisonText(day, previousDay) {
 // Breakdown panel (port of ShareBreakdownPanel, compact:true).
 // Title + subtitle header, then up to 4 rows: color dot + name (fixed width) +
 // inline progress bar + value (fixed width), row height 25. Returns panel height.
-function drawShareBreakdownPanel(ctx, C, x, y, w, title, subtitle, values, useToolColor) {
-  const total = Math.max(dayValuesSum(values), 1);
+function drawShareBreakdownPanel(ctx, C, x, y, w, title, subtitle, values, useToolColor, totalOverride) {
+  // totalOverride: percent denominator from the caller (the projects panel
+  // measures against the whole DAY total, upstream projectRows parity).
+  const total = Math.max(totalOverride != null ? totalOverride : dayValuesSum(values), 1);
   const entries = Object.keys(values)
     .filter(function (k) { return values[k] > 0; })
     .sort(function (a, b) { return values[b] - values[a]; })
@@ -1542,7 +1595,8 @@ function renderRhythmCard(canvas, opts) {
   numGrad.addColorStop(1, "#ffffff");
   ctx.fillStyle = numGrad;
   ctx.font = "800 49px 'Segoe UI', sans-serif";
-  ctx.fillText(formatTokens(rhythm.total_tokens || 0), W / 2, y + consoleH - 14);
+  var heroTokens = (opts.day && opts.day.total_tokens) || rhythm.total_tokens || 0;
+  ctx.fillText(formatTokens(heroTokens), W / 2, y + consoleH - 14);
   ctx.restore();
 
   y += consoleH + 14;
@@ -2448,43 +2502,21 @@ function applyTheme(name) {
   themeColors.ring4 = v["--ring4"];
 }
 
-// ---- Agent Work card (port of upstream TodayAgentWorkCard) ----
-// Renders the "Agent 工作强度" card HTML. Data comes from snapshot.agent_work.
-function agentWorkCardHTML(snapshot, settings) {
-  var agentWork = snapshot.agent_work || [];
-  var today = agentWork.filter(function (w) { return w.date === todayKey(); })[0]
-    || agentWork[agentWork.length - 1]
-    || { total_tokens: 0, active_hours: 0, input_tokens: 0, cached_input_tokens: 0, cache_coverage_complete: false, hourly_buckets: [], sources: [], unbucketed_tokens: 0 };
+// ---- Agent Work card (port of upstream v0.2.0 TodayAgentWorkCard) ----
+// Period segment (今日 / 近 7 天) + source filter (全部/Codex/Hermes/其他) +
+// cache-hit-rate line, matching upstream AgentWorkViews semantics.
+var __tsAgentWorkState = { period: "today", filter: "all" };
 
-  // 7-day average: sum of last 7 entries / 7.
-  var last7 = agentWork.slice(-7);
-  var sevenDayAvg = last7.length ? Math.round(last7.reduce(function (a, w) { return a + (w.total_tokens || 0); }, 0) / 7) : 0;
-
-  // Cache hit rate.
-  var cacheRate = "--";
-  if (today.cache_coverage_complete && today.input_tokens > 0 && today.cached_input_tokens <= today.input_tokens) {
-    cacheRate = formatPercent((today.cached_input_tokens / today.input_tokens) * 100);
-  }
-
-  // Build the 24-hour chart data from today's hourly_buckets.
-  var chartHTML = renderAgentWorkChart(today);
-
-  var card =
-    '<div class="card" id="agentWorkCard">' +
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
-        '<div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + t("Agent 工作强度") + '</div>' +
-        '<div style="font-size:14px;font-weight:600;color:var(--muted);margin-top:4px">' + t("按本机 Token 记录展示活跃节奏，不代表实际工时或生产力。") + '</div></div>' +
-      '</div>' +
-      // Metric strip: 4 tiles.
-      '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px">' +
-        agentWorkMetricTile(t("Agent Token"), formatTokens(today.total_tokens || 0, true), t("今日")) +
-        agentWorkMetricTile(t("有记录小时"), (today.active_hours || 0) + "/24", t("有 Token 记录，非工时")) +
-        agentWorkMetricTile(t("近 7 日均"), formatTokens(sevenDayAvg, true), t("按 7 个日历日折算")) +
-        agentWorkMetricTile(t("缓存命中率"), cacheRate, today.cache_coverage_complete ? t("仅展示完整口径") : t("口径不完整")) +
-      '</div>' +
-      chartHTML +
-    '</div>';
-  return card;
+/// Upstream AgentSourceFilter.normalized: lowercase matching with
+/// "codex via" prefix folding (AgentWorkViews.swift L883-897).
+function agentSourceMatches(source, filter) {
+  var n = String(source || "").toLowerCase();
+  var isCodex = n === "codex" || n.indexOf("codex via") === 0;
+  var isHermes = n.indexOf("hermes") >= 0;
+  if (filter === "all") return true;
+  if (filter === "codex") return isCodex;
+  if (filter === "hermes") return isHermes;
+  return !isCodex && !isHermes; // "other"
 }
 
 function agentWorkMetricTile(label, value, detail) {
@@ -2495,73 +2527,232 @@ function agentWorkMetricTile(label, value, detail) {
   '</div>';
 }
 
-// Render the 24-hour stacked bar chart for agent work (SVG).
-function renderAgentWorkChart(work) {
-  var buckets = work.hourly_buckets || [];
-  if (!buckets.length && !(work.unbucketed_tokens > 0)) {
-    return '<div style="padding:30px;text-align:center;color:var(--muted);font-weight:600">' + t("暂无 Agent 工作记录") + '</div>';
-  }
-  if (!buckets.length) {
-    return '<div style="padding:20px;text-align:center;color:var(--muted);font-weight:600">' + t("有 Token 记录但无分时段数据") + '</div>';
+function agentWorkCardHTML(snapshot, settings) {
+  var agentWork = snapshot.agent_work || [];
+  var state = __tsAgentWorkState;
+  var isToday = state.period === "today";
+
+  // Trailing 7 calendar days anchored on today (missing days count as zero).
+  var byDate = {};
+  agentWork.forEach(function (w) { byDate[w.date] = w; });
+  var trailing7 = [];
+  var anchorMs = Date.parse(todayKey() + "T00:00:00+08:00");
+  for (var d = 0; d < 7; d++) {
+    var key = new Date(anchorMs - d * 86400000).toISOString().slice(0, 10);
+    trailing7.push(byDate[key] || { date: key, total_tokens: 0, active_hours: 0, input_tokens: 0, cached_input_tokens: 0, cache_coverage_complete: false, hourly_buckets: [], sources: [], unbucketed_tokens: 0 });
   }
 
-  // Build 24-slot array (pad missing hours with empty).
-  var slots = [];
+  // Aggregate the chart's hourly buckets + totals over the period (with the
+  // source filter applied), mirroring upstream chartHours/selectedTokens.
+  var periodWorks = isToday
+    ? (byDate[todayKey()] ? [byDate[todayKey()]] : [])
+    : trailing7;
+  var filter = state.filter;
+  var maxHours = isToday ? 24 : 168;
+  var chartHours = [];   // 24 slots: {tokens, sources:Map, cached, input, complete}
   for (var h = 0; h < 24; h++) {
-    var found = buckets.filter(function (b) { return b.hour === h; })[0];
-    slots.push(found || { hour: h, sources: [] });
+    chartHours.push({ hour: h, tokens: 0, sources: {}, cached: 0, input: 0, complete: true, active: false });
+  }
+  var selectedTokens = 0;
+  var selectedUnbucketed = 0;
+  var activeHours = 0;
+  var periodWorksList = isToday ? (byDate[todayKey()] ? [byDate[todayKey()]] : []) : trailing7;
+  periodWorksList.forEach(function (w) {
+    var daySelected = 0;
+    (w.hourly_buckets || []).forEach(function (b) {
+      (b.sources || []).forEach(function (s) {
+        if (!agentSourceMatches(s.source, filter)) return;
+        daySelected += s.tokens || 0;
+        var slot = chartHours[b.hour] || chartHours[0];
+        slot.tokens += s.tokens || 0;
+        slot.sources[s.source] = (slot.sources[s.source] || 0) + (s.tokens || 0);
+        slot.cached += s.cached_input_tokens || 0;
+        slot.input += s.input_tokens || 0;
+        if (!s.cache_coverage_complete) slot.complete = false;
+      });
+    });
+    (w.sources || []).forEach(function (s) {
+      // Count tool/model requests only for filtered-in sources.
+      if (!agentSourceMatches(s.source, filter)) return;
+    });
+    selectedTokens += daySelected;
+    // Unbucketed applies per-day filter: approximate with the day's residual
+    // after subtracting filtered bucket tokens when coverage is total-known.
+    var dayTotal = 0;
+    (w.sources || []).forEach(function (s) { if (agentSourceMatches(s.source, filter)) dayTotal += s.tokens || 0; });
+    var bucketed = daySelected;
+    if (dayTotal > bucketed) selectedUnbucketed += dayTotal - bucketed;
+  });
+  chartHours.forEach(function (slot) { if (slot.tokens > 0) activeHours++; });
+  // Today-mode active hours count from the single day; 7-day mode counts any
+  // hour with tokens across the week (upstream sums per-day active buckets).
+
+  // 7-day average ALWAYS over the trailing 7 days (filter applied).
+  var sum7 = 0;
+  trailing7.forEach(function (w) {
+    (w.sources || []).forEach(function (s) {
+      if (agentSourceMatches(s.source, filter)) sum7 += s.tokens || 0;
+    });
+  });
+  var sevenDayAvg = Math.round(sum7 / 7);
+
+  // Cache hit rate (period-level): only when every active hour's coverage is
+  // complete AND no unbucketed remainder (upstream tile rule + filter rule).
+  var totalInput = 0, totalCached = 0, coverageComplete = true, hasActive = false;
+  chartHours.forEach(function (slot) {
+    if (slot.tokens <= 0) return;
+    hasActive = true;
+    if (!slot.complete) coverageComplete = false;
+    totalInput += slot.input;
+    totalCached += slot.cached;
+  });
+  var cacheRate = "--";
+  var cacheRateValues = null; // per-hour line values
+  if (hasActive && coverageComplete && selectedUnbucketed === 0 && totalInput > 0 && totalCached <= totalInput) {
+    var pct = (totalCached / totalInput) * 100;
+    cacheRate = formatPercent(pct);
+    cacheRateValues = chartHours.map(function (slot) {
+      if (slot.tokens <= 0 || !slot.complete || slot.input <= 0) return null;
+      var r = slot.cached / slot.input;
+      return r <= 1 ? r : 1;
+    });
   }
 
-  // Find max tokens across all hours for scaling.
-  var maxTokens = Math.max.apply(null, slots.map(function (s) {
-    return s.sources.reduce(function (a, src) { return a + src.tokens; }, 0);
-  }).concat([1]));
+  // Tiles.
+  var tiles =
+    agentWorkMetricTile(t("Agent Token"), formatTokens(selectedTokens || 0, true), isToday ? t("今日") : t("7 个日历日合计")) +
+    agentWorkMetricTile(t("有记录小时"), activeHours + "/" + maxHours, t("有 Token 记录，非工时")) +
+    agentWorkMetricTile(t("近 7 日均"), formatTokens(sevenDayAvg, true), t("按 7 个日历日折算")) +
+    agentWorkMetricTile(t("缓存命中率"), cacheRate, cacheRateValues ? t("仅展示完整口径") : t("口径不完整"));
 
-  // Chart dimensions.
-  var chartW = 500, chartH = 80, barGap = 2;
-  var barW = (chartW - barGap * 23) / 24;
+  var chartHTML = renderAgentWorkChart(chartHours, cacheRateValues, isToday);
 
-  // Build stacked bars.
+  // Segment + filter controls.
+  var seg = function (val, label) {
+    var on = state.period === val;
+    return '<button data-awperiod="' + val + '" style="flex:1;padding:6px 10px;font-size:12px;font-weight:800;background:' + (on ? "color-mix(in srgb,var(--green) 14%,transparent)" : "var(--canvas)") + ';color:' + (on ? "var(--green-dark)" : "var(--muted)") + ';border:1px solid ' + (on ? "color-mix(in srgb,var(--green) 40%,transparent)" : "var(--track)") + ';border-radius:9px;cursor:pointer">' + label + '</button>';
+  };
+  var filt = function (val, label) {
+    var on = state.filter === val;
+    return '<button data-awfilter="' + val + '" style="padding:5px 12px;font-size:12px;font-weight:700;border-radius:999px;cursor:pointer;background:' + (on ? "color-mix(in srgb,var(--ink) 8%,transparent)" : "transparent") + ';color:' + (on ? "var(--ink)" : "var(--muted)") + ';border:1px solid var(--track)">' + label + '</button>';
+  };
+
+  var card =
+    '<div class="card" id="agentWorkCard">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
+        '<div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + t("Agent 工作强度") + '</div>' +
+        '<div style="font-size:14px;font-weight:600;color:var(--muted);margin-top:4px">' + t("按本机 Token 记录展示活跃节奏，不代表实际工时或生产力。") + '</div></div>' +
+        '<div style="display:flex;gap:6px;width:150px">' + seg("today", t("今日")) + seg("seven", t("近 7 天")) + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' +
+        filt("all", t("全部")) + filt("codex", "Codex") + filt("hermes", "Hermes") + filt("other", t("其他")) +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px">' + tiles + '</div>' +
+      chartHTML +
+    '</div>';
+  return card;
+}
+
+function agentWorkMetricTileSafe() { return agentWorkMetricTile; }
+
+/// Render the 24-slot stacked bar chart + optional cache-hit line (SVG).
+/// Port of upstream AgentWorkPlot: 24 slots, X labels 00/06/12/18/24, right
+/// axis 100%/0%, green line with dot markers, hover caption.
+function renderAgentWorkChart(chartHours, cacheValues, isToday) {
+  var hasTokens = chartHours.some(function (s) { return s.tokens > 0; });
+  if (!hasTokens) {
+    return '<div style="padding:30px;text-align:center;color:var(--muted);font-weight:600">' + t("这个时段还没有可统计的 Agent Token") + '</div>';
+  }
+
+  var maxTokens = Math.max.apply(null, chartHours.map(function (s) { return s.tokens; }).concat([1]));
+  var chartW = 640, chartH = 120, rightAxis = 34, barGap = 2;
+  var plotW = chartW - rightAxis;
+  var barW = Math.max(5, Math.min(18, (plotW / 24) * 0.58));
+
+  // Stacked bars (sources tokens-desc, name-alpha tiebreak).
   var bars = '';
-  slots.forEach(function (slot, i) {
-    var x = i * (barW + barGap);
-    var slotTotal = slot.sources.reduce(function (a, s) { return a + s.tokens; }, 0);
-    if (slotTotal <= 0) return;
+  chartHours.forEach(function (slot, i) {
+    var x = (plotW / 24) * i + ((plotW / 24) - barW) / 2;
+    var names = Object.keys(slot.sources).sort(function (a, b) {
+      return slot.sources[b] - slot.sources[a] || (a < b ? -1 : 1);
+    });
+    if (!names.length) return;
     var y = chartH;
-    slot.sources.forEach(function (src) {
-      var segH = (src.tokens / maxTokens) * chartH;
+    names.forEach(function (n) {
+      var segH = (slot.sources[n] / maxTokens) * chartH;
       bars += '<rect x="' + x.toFixed(1) + '" y="' + (y - segH).toFixed(1) +
-        '" width="' + barW.toFixed(1) + '" height="' + segH.toFixed(1) +
-        '" fill="' + tokenToolColor(src.source) + '" rx="1"/>';
+        '" width="' + barW.toFixed(1) + '" height="' + Math.max(segH, 0.5).toFixed(1) +
+        '" fill="' + tokenToolColor(n) + '" rx="1"><title>' + n + ' ' + formatTokens(slot.sources[n], true) + '</title></rect>';
       y -= segH;
     });
   });
 
-  // Legend: top 4 sources.
-  var sourceTotals = {};
-  buckets.forEach(function (b) {
-    b.sources.forEach(function (s) {
-      sourceTotals[s.source] = (sourceTotals[s.source] || 0) + s.tokens;
+  // Cache line path (broken on null segments).
+  var line = '', dots = '';
+  if (cacheValues && cacheValues.some(function (v) { return v != null; })) {
+    var inSeg = false;
+    cacheValues.forEach(function (v, i) {
+      if (v == null) { inSeg = false; return; }
+      var x = (plotW / 24) * i + (plotW / 24) / 2;
+      var y = chartH - 6 - v * Math.max(1, chartH - 12);
+      line += (inSeg ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1) + " ";
+      dots += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="3" fill="var(--surface)" stroke="var(--green-dark)" stroke-width="1.5"/>';
+      inSeg = true;
     });
-  });
-  var topSources = Object.keys(sourceTotals).sort(function (a, b) { return sourceTotals[b] - sourceTotals[a]; }).slice(0, 4);
-  var legend = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px">' +
-    topSources.map(function (name) {
-      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);font-weight:600">' +
-        '<span style="width:9px;height:9px;border-radius:50%;background:' + tokenToolColor(name) + '"></span>' + name + '</span>';
-    }).join('') + '</div>';
-
-  // Unbucketed notice.
-  var unbucketedNotice = '';
-  if (work.unbucketed_tokens > 0) {
-    unbucketedNotice = '<div style="margin-top:6px;font-size:12px;color:#ca8a04;font-weight:600">' +
-      t("另有") + ' ' + formatTokens(work.unbucketed_tokens, true) + ' ' + t("无分时段记录") + '</div>';
   }
 
+  // X labels + gridlines.
+  var axis = '';
+  [0, 6, 12, 18, 24].forEach(function (h) {
+    var x = h === 24 ? plotW - 8 : (plotW / 24) * h;
+    axis += '<text x="' + x + '" y="' + (chartH + 14) + '" font-size="10" font-weight="700" fill="var(--muted)" text-anchor="middle">' + String(h).padStart(2, "0") + '</text>';
+  });
+  var grid = '';
+  for (var g = 1; g <= 4; g++) {
+    var gy = (chartH / 4) * g - 0.5;
+    grid += '<line x1="0" y1="' + gy + '" x2="' + plotW + '" y2="' + gy + '" stroke="var(--track)" stroke-width="0.5"/>';
+  }
+
+  var rightAxisHTML = (cacheValues && cacheValues.some(function (v) { return v != null; }))
+    ? '<text x="' + (chartW - 4) + '" y="12" font-size="9" font-weight="800" fill="var(--green-dark)" text-anchor="end">100%</text>' +
+      '<text x="' + (chartW - 4) + '" y="' + (chartH - 2) + '" font-size="9" font-weight="800" fill="var(--green-dark)" text-anchor="end">0%</text>'
+    : '';
+
+  // Caption: bar meaning (+ line meaning when present).
+  var caption = cacheValues && cacheValues.some(function (v) { return v != null; })
+    ? t("柱形为 Token · 折线为缓存")
+    : t("柱形为 Token");
+
+  // Legend: top-4 sources of the filtered set + cache pill.
+  var sourceTotals = {};
+  chartHours.forEach(function (slot) {
+    Object.keys(slot.sources).forEach(function (n) {
+      sourceTotals[n] = (sourceTotals[n] || 0) + slot.sources[n];
+    });
+  });
+  var topSources = Object.keys(sourceTotals).sort(function (a, b) { return sourceTotals[b] - sourceTotals[a]; });
+  var legendNames = topSources.slice(0, 4);
+  var extra = topSources.length > 4 ? '+' + (topSources.length - 4) : '';
+  var legend = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:10px;align-items:center">' +
+    legendNames.map(function (name) {
+      return '<span style="display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--muted);font-weight:600">' +
+        '<span style="width:9px;height:9px;border-radius:50%;background:' + tokenToolColor(name) + '"></span>' + name + '</span>';
+    }).join('') +
+    (extra ? '<span style="font-size:12px;color:var(--muted);font-weight:700">' + extra + '</span>' : '') +
+    (cacheValues && cacheValues.some(function (v) { return v != null; })
+      ? '<span style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);font-weight:600"><span style="width:15px;height:2px;border-radius:2px;background:var(--green-dark)"></span>' + t("缓存命中率") + '</span>'
+      : '') +
+  '</div>';
+
   return '<div style="margin-top:4px">' +
-    '<div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:6px">' + t("24 小时 Token 记录") + '</div>' +
-    '<svg width="' + chartW + '" height="' + chartH + '" viewBox="0 0 ' + chartW + ' ' + chartH + '">' + bars + '</svg>' +
-    legend + unbucketedNotice +
+    '<div style="font-size:14px;font-weight:800;color:var(--ink);margin-bottom:6px">' + (isToday ? t("24 小时 Token 记录") : t("近 7 天分时日均")) + '</div>' +
+    '<svg width="' + chartW + '" height="' + (chartH + 18) + '" viewBox="0 0 ' + chartW + ' ' + (chartH + 18) + '">' +
+      grid + bars +
+      (line ? '<path d="' + line.trim() + '" fill="none" stroke="var(--green-dark)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' + dots : '') +
+      axis + rightAxisHTML +
+    '</svg>' +
+    '<div style="font-size:11px;color:var(--muted);font-weight:600;margin-top:2px">' + caption + '</div>' +
+    legend +
   '</div>';
 }
 
@@ -2721,6 +2912,7 @@ window.TS = {
   formatInterval,
   contributionColor,
   todayKey,
+  yesterdayKey,
   ringSvg,
   ICONS,
   lapProgress,

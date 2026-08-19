@@ -237,15 +237,18 @@
         }
       }
 
-      // Render the rhythm share card.
+      // Render the rhythm share card (upstream: YESTERDAY's rhythm —
+      // PopoverPanelView.shareDay(.yesterday)).
       function shareRhythmCard(copy) {
         var eb = document.getElementById('errorBanner');
         try {
-          var rhythm = (snapshot.rhythms || []).filter(function (r) { return r.date === window.TS.todayKey(); })[0];
-          if (!rhythm) { if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('暂无节奏数据') + '</div>'; return; }
+          var yKey = window.TS.yesterdayKey();
+          var rhythm = (snapshot.rhythms || []).filter(function (r) { return r.date === yKey && r.total_tokens > 0; })[0];
+          if (!rhythm) { if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('昨日节奏还在等待同步') + '</div>'; return; }
+          var yDay = (snapshot.daily || []).filter(function (d) { return d.date === yKey; })[0] || { total_tokens: rhythm.total_tokens, cost: 0, tools: {}, models: {} };
           var c = document.createElement('canvas');
           c.width = 600; c.height = 840;
-          window.TS.renderRhythmCard(c, { rhythm: rhythm, date: rhythm.date });
+          window.TS.renderRhythmCard(c, { rhythm: rhythm, date: rhythm.date, day: yDay });
           finishCard(c, copy, eb);
         } catch (e) {
           if (eb) eb.innerHTML = '<div style="padding:8px;background:#fee">' + window.TS.t('截图失败:') + ' ' + (e && e.message ? e.message : e) + '</div>';
@@ -389,14 +392,37 @@
         // ---- Distribution cards: TODAY's client + model split (not all-time) ----
         // Port of upstream d0af1c4: show today's breakdown, not the cumulative
         // table (the cumulative breakdown stays on the Stats page).
-        var todayToolsArr = Object.keys(t.tools || {})
-          .map(function (k) { return { tool: k, tokens: t.tools[k] || 0, percent: t.total_tokens ? (100 * (t.tools[k] || 0) / t.total_tokens) : 0 }; })
-          .sort(function (a, b) { return b.tokens - a.tokens; })
-          .slice(0, 5);
-        var todayModelsArr = Object.keys(t.models || {})
-          .map(function (k) { return { model: k, tokens: t.models[k] || 0, percent: t.total_tokens ? (100 * (t.models[k] || 0) / t.total_tokens) : 0 }; })
-          .sort(function (a, b) { return b.tokens - a.tokens; })
-          .slice(0, 5);
+        // Upstream TodayBreakdownCards rules: clients maxRows 3 / models 4;
+        // Codex & Claude pinned on top (in that order) when active; rows under
+        // 0.1% are hidden only when more than 2 rows exist (first 2 kept).
+        function pinnedToolRows(day) {
+          var total = day.total_tokens || 0;
+          var arr = Object.keys(day.tools || {})
+            .map(function (k) { return { tool: k, tokens: day.tools[k] || 0, percent: total ? (100 * (day.tools[k] || 0) / total) : 0 }; });
+          var pinned = ['Codex', 'Claude Code'].filter(function (n) {
+            return arr.some(function (r) { return r.tool === n && r.tokens > 0; });
+          });
+          var rest = arr.filter(function (r) { return pinned.indexOf(r.tool) < 0; })
+            .sort(function (a, b) { return b.tokens - a.tokens; });
+          var ordered = pinned.map(function (n) { return arr.filter(function (r) { return r.tool === n; })[0]; }).concat(rest);
+          if (ordered.length > 2) {
+            ordered = ordered.filter(function (r, i) { return i < 2 || r.percent >= 0.1; });
+          }
+          return ordered.slice(0, 3);
+        }
+        function modelRows(day) {
+          var total = day.total_tokens || 0;
+          var arr = Object.keys(day.models || {})
+            .map(function (k) { return { model: k, tokens: day.models[k] || 0, percent: total ? (100 * (day.models[k] || 0) / total) : 0 }; })
+            .filter(function (r) { return r.tokens > 0; })
+            .sort(function (a, b) { return b.tokens - a.tokens; });
+          if (arr.length > 2) {
+            arr = arr.filter(function (r, i) { return i < 2 || r.percent >= 0.1; });
+          }
+          return arr.slice(0, 4);
+        }
+        var todayToolsArr = pinnedToolRows(t);
+        var todayModelsArr = modelRows(t);
         // ---- Rhythm card: today's 24h token distribution + rhythm tag ----
         // Port of upstream macOS rhythm card. Shown only when today's rhythm
         // exists (Codex JSONL / Claude / CC Switch records carry timestamps).
@@ -564,7 +590,29 @@
       function viewHistory() {
         var rows = snapshot.daily.slice().reverse().slice(0, 180);
         var wallHTML = window.TS.contributionWallHTML(snapshot.daily, settings.daily_goal_tokens);
-        return '<div class="card"><div class="card-title">' + window.TS.t('活动墙') + '</div>' + wallHTML + '</div><div class="card"><div class="card-row" style="justify-content:space-between"><div class="card-title" style="margin:0">' + window.TS.t('按天明细') + '</div><button class="btn" id="exportCsvBtn">' + window.TS.t('导出 CSV') + '</button></div><div class="table-wrap"><table><thead><tr><th>' + window.TS.t('日期') + '</th><th>Codex</th><th>Claude Code</th><th>' + window.TS.t('合计') + '</th><th>' + window.TS.t('成本') + '</th></tr></thead><tbody>' + rows.map(function (d) { return '<tr><td>' + d.date + '</td><td>' + (d.tools['Codex'] ? formatTokens(d.tools['Codex']) : '—') + '</td><td>' + (d.tools['Claude Code'] ? formatTokens(d.tools['Claude Code']) : '—') + '</td><td class="total">' + formatTokens(d.total_tokens) + '</td><td>' + formatMoney(d.cost) + '</td></tr>'; }).join('') + '</tbody></table></div></div>';
+        // Upstream HistoryView header: subtitle + active-days capsule.
+        var activeDays = (snapshot.totals || {}).active_days || 0;
+        var headerCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px"><div class="card-title" style="margin:0">' + window.TS.t('近 8 个月活动墙') + '</div>' +
+          '<span style="font-size:12px;font-weight:800;color:var(--green-dark);background:color-mix(in srgb,var(--mint) 30%,transparent);border-radius:999px;padding:4px 12px">' + window.TS.tf('%d 个活跃日', activeDays) + '</span></div>' +
+          '<div style="font-size:13px;color:var(--muted);font-weight:600">' + window.TS.t('颜色越深，用量越高；描边是今天') + '</div>' + wallHTML + '</div>';
+        // Detail table: date / tokens / cost / dominant tool (color dot),
+        // matching upstream HistoryView columns.
+        function dominantTool(d) {
+          var best = null;
+          Object.keys(d.tools || {}).forEach(function (k) {
+            if ((d.tools[k] || 0) > 0 && (!best || d.tools[k] > d.tools[best])) best = k;
+          });
+          return best;
+        }
+        var tableRows = rows.map(function (d) {
+          var dom = dominantTool(d);
+          var dot = dom ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + window.TS.tokenToolColor(dom) + ';margin-right:7px;vertical-align:middle"></span>' : '';
+          return '<tr><td>' + d.date + '</td><td>' + formatTokens(d.total_tokens) + '</td><td>' + formatMoney(d.cost) + '</td><td>' + (dom ? dot + dom : window.TS.t('无')) + '</td></tr>';
+        }).join('');
+        var legend = window.TS.tokenToolLegendHTML ? window.TS.tokenToolLegendHTML(snapshot.daily) : '';
+        return headerCard + '<div class="card"><div class="card-row" style="justify-content:space-between"><div class="card-title" style="margin:0">' + window.TS.t('全部明细') + '</div><div style="display:flex;align-items:center;gap:12px">' + legend + '<button class="btn" id="exportCsvBtn">' + window.TS.t('导出 CSV') + '</button></div></div>' +
+          '<div style="font-size:12px;color:var(--muted);font-weight:600;margin:2px 0 8px">' + window.TS.tf('%d 条记录，向下滚动查看完整历史', rows.length) + '</div>' +
+          '<div class="table-wrap"><table><thead><tr><th>' + window.TS.t('日期') + '</th><th>' + window.TS.t('Token 消耗') + '</th><th>' + window.TS.t('消耗金额') + '</th><th>' + window.TS.t('主力工具') + '</th></tr></thead><tbody>' + tableRows + '</tbody></table></div></div>';
       }
       function viewPrivacy() {
         var srcs = Object.keys(snapshot.sources || {});
@@ -593,7 +641,7 @@
         var gm = Math.round(settings.daily_goal_tokens / 1000000);
         var ctt = settings.close_to_tray !== false; // default true
         var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px"><span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:800;color:var(--green-dark);background:color-mix(in srgb,var(--mint) 30%,transparent);padding:5px 14px;border-radius:999px">🛡 ' + window.TS.t('本地统计') + '</span></div>';
-        html += '<div class="card"><div class="card-title">' + window.TS.t('基本设置') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('每日目标') + '</div><div class="setting-hint">' + window.TS.t('当前 ') + formatTokens(settings.daily_goal_tokens) + '</div></div><div style="display:flex;align-items:center;gap:6px"><button class="btn" id="goalStepDown" style="padding:4px 10px;font-weight:800">−</button><input type="number" id="goalInput" value="' + gm + '" min="1" style="width:90px;text-align:center"/><button class="btn" id="goalStepUp" style="padding:4px 10px;font-weight:800">+</button><span style="font-weight:700;color:var(--muted);margin-left:6px">' + window.TS.t('百万') + '</span></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' + [50,100,200,300,500,1000].map(function(preset){ return '<button class="goal-preset" data-goal="' + preset + '" style="padding:6px 12px;border-radius:999px;border:1px solid var(--track);background:var(--canvas);font-weight:700;font-size:13px;color:var(--muted-strong);cursor:pointer">' + formatTokens(preset*1000000,true) + '</button>'; }).join('') + '</div><div class="setting-row" style="margin-top:18px"><div><div class="setting-label">' + window.TS.t('刷新间隔') + '</div><div class="setting-hint">' + window.TS.t('当前 ') + formatInterval(settings.refresh_interval_seconds) + '</div></div><select id="intervalSelect"><option value="60">' + window.TS.t('1 分钟') + '</option><option value="300">5 ' + window.TS.t('分钟') + '</option><option value="900">15 ' + window.TS.t('分钟') + '</option><option value="0">' + window.TS.t('手动') + '</option></select></div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('基本设置') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('每日目标') + '</div><div class="setting-hint">' + window.TS.t('当前 ') + formatTokens(settings.daily_goal_tokens) + '</div></div><div style="display:flex;align-items:center;gap:6px"><button class="btn" id="goalStepDown" style="padding:4px 10px;font-weight:800">−</button><input type="number" id="goalInput" value="' + gm + '" min="1" style="width:90px;text-align:center"/><button class="btn" id="goalStepUp" style="padding:4px 10px;font-weight:800">+</button><span style="font-weight:700;color:var(--muted);margin-left:6px">' + window.TS.t('百万') + '</span></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' + [50,100,200,300,500,1000].map(function(preset){ return '<button class="goal-preset" data-goal="' + preset + '" style="padding:6px 12px;border-radius:999px;border:1px solid var(--track);background:var(--canvas);font-weight:700;font-size:13px;color:var(--muted-strong);cursor:pointer">' + formatTokens(preset*1000000,true) + '</button>'; }).join('') + '</div><div class="setting-row" style="margin-top:18px"><div><div class="setting-label">' + window.TS.t('自动刷新') + '</div><div class="setting-hint">' + window.TS.t('面板可见时按此频率检查；后台会根据供电状态降低频率。') + '</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="font-size:12px;font-weight:800;color:var(--green-dark)">⏱</span><span style="font-size:12px;font-weight:700;color:var(--muted)">' + window.TS.t('当前节奏') + ' · ' + (settings.refresh_interval_seconds === 0 ? window.TS.t('手动更新') : window.TS.tf('每 %@', formatInterval(settings.refresh_interval_seconds))) + '</span></div></div><select id="intervalSelect"><option value="60">' + window.TS.t('1 分钟') + '</option><option value="300">5 ' + window.TS.t('分钟') + '</option><option value="900">15 ' + window.TS.t('分钟') + '</option><option value="0">' + window.TS.t('手动') + '</option></select></div></div>';
         html += '<div class="card"><div class="card-title">' + window.TS.t('窗口行为') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('关闭按钮行为') + '</div><div class="setting-hint">' + window.TS.t('点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序') + '</div></div><select id="closeBehaviorSelect"><option value="tray">' + window.TS.t('最小化到托盘') + '</option><option value="quit">' + window.TS.t('直接退出') + '</option></select></div></div>';
         // Autostart toggle (HKCU Run key).
         var autostartChecked = settings.autostart ? ' checked' : '';
@@ -672,6 +720,38 @@
       }
 
 
+
+      // Agent-work card segment/filter controls: update state and re-render
+      // just that card in place (upstream animates; a local swap is enough).
+      function bindAgentWorkControls() {
+        var card = document.getElementById('agentWorkCard');
+        if (!card) return;
+        card.querySelectorAll('button[data-awperiod]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            window.__tsAgentWorkState.period = b.dataset.awperiod;
+            refreshAgentWorkCard();
+          });
+        });
+        card.querySelectorAll('button[data-awfilter]').forEach(function (b) {
+          b.addEventListener('click', function () {
+            window.__tsAgentWorkState.filter = b.dataset.awfilter;
+            refreshAgentWorkCard();
+          });
+        });
+      }
+
+      function refreshAgentWorkCard() {
+        var card = document.getElementById('agentWorkCard');
+        if (!card) return;
+        var tmp = document.createElement('div');
+        tmp.innerHTML = window.TS.agentWorkCardHTML(snapshot, settings);
+        var fresh = tmp.firstElementChild;
+        if (fresh) {
+          card.replaceWith(fresh);
+          bindAgentWorkControls();
+        }
+      }
+
       function updateFreshnessBadge() {
       var host = document.getElementById('syncText');
       if (!host) return;
@@ -738,6 +818,7 @@
         updateFreshnessBadge();
         if (current === 'today') {
           view.innerHTML = viewToday();
+          bindAgentWorkControls();
           loadCodexQuota();
           loadClaudeQuota();
           loadTokenRank();
