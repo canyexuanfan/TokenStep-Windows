@@ -202,7 +202,13 @@ pub fn source_status_class(status: &str) -> SourceStatusClass {
     match status {
         "ok" | "ok_sqlite" => SourceStatusClass::Success,
         // Absent ≠ failed: a missing tool must not flag the channel red.
-        "disabled" | "missing" | "missing_db" | "missing_valid_rows" => SourceStatusClass::Absent,
+        // "discovered_no_usage" = the tool is installed but produced no
+        // usage today — an absence per the upstream comment's intent
+        // ("missing 各形态"), even though the upstream literal list omits it
+        // (an upstream oversight that would nag "部分来源失败" daily).
+        "disabled" | "missing" | "missing_db" | "missing_valid_rows" | "discovered_no_usage" => {
+            SourceStatusClass::Absent
+        }
         _ => SourceStatusClass::Failure,
     }
 }
