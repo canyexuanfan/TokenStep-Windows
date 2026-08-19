@@ -53,13 +53,27 @@ pub fn read() -> CodexQuotaSnapshot {
         }
     };
 
-    let mut child = match Command::new(&codex)
+    // Build the command line. Batch scripts (.cmd/.bat — the npm shim) cannot
+    // be spawned directly by CreateProcess; they must go through cmd.exe /c.
+    // A real .exe is spawned as-is.
+    let is_batch = codex.ends_with(".cmd") || codex.ends_with(".bat");
+    let mut cmd = if is_batch {
+        let mut c = Command::new("cmd.exe");
+        c.arg("/c").arg(&codex);
+        c
+    } else {
+        Command::new(&codex)
+    };
+    let mut child = match cmd
         .arg("app-server")
         .arg("--listen")
         .arg("stdio://")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        // stderr goes to the sink: app-server is chatty (config warnings,
+        // logs) and an unread pipe buffer would block it before the quota
+        // response ever reaches stdout.
+        .stderr(Stdio::null())
         .spawn()
     {
         Ok(c) => c,
@@ -76,28 +90,39 @@ pub fn read() -> CodexQuotaSnapshot {
     let init_req = r#"{"method":"initialize","id":1,"params":{"clientInfo":{"name":"tokenstep","title":"TokenStep","version":"0.1.0"},"capabilities":null}}"#;
     let quota_req = format!(r#"{{"method":"account/rateLimits/read","id":{}}}"#, REQUEST_ID);
 
-    if let Some(mut stdin) = child.stdin.take() {
+    // Write the handshake, then KEEP the stdin pipe open (as_mut, not take):
+    // dropping it signals EOF and the app-server shuts down before the
+    // id=2 response is ever written.
+    if let Some(stdin) = child.stdin.as_mut() {
         let _ = writeln!(stdin, "{}", init_req);
         let _ = writeln!(stdin, "{}", quota_req);
         let _ = stdin.flush();
     }
 
-    // Read stdout lines until we find the response with id=REQUEST_ID (or timeout).
+    // Read stdout lines until the response with id=REQUEST_ID arrives, with a
+    // hard timeout (upstream cuts at 4s; allow 12s for the slow npm-batch +
+    // node cold start on Windows). The reader runs on its own thread so a
+    // hung app-server can never block the caller forever.
     let stdout = child.stdout.take();
     let result = if let Some(stdout) = stdout {
-        let reader = BufReader::new(stdout);
-        let mut found = None;
-        for line_result in reader.lines() {
-            let line = match line_result {
-                Ok(l) => l,
-                Err(_) => break,
-            };
-            if line.contains(&format!("\"id\":{}", REQUEST_ID)) {
-                found = parse_response(&line);
-                break;
+        let (tx, rx) = std::sync::mpsc::channel::<Option<CodexQuotaSnapshot>>();
+        let needle = format!("\"id\":{}", REQUEST_ID);
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            let mut found = None;
+            for line_result in reader.lines() {
+                let line = match line_result {
+                    Ok(l) => l,
+                    Err(_) => break,
+                };
+                if line.contains(&needle) {
+                    found = parse_response(&line);
+                    break;
+                }
             }
-        }
-        found
+            let _ = tx.send(found);
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(12)).ok().flatten()
     } else {
         None
     };
