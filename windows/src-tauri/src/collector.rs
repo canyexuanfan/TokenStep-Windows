@@ -175,7 +175,7 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
             return (
                 records,
                 SourceInfo {
-                    status: Some("fallback_threads".to_string()),
+                    status: Some("ok_sqlite".to_string()),
                     files: Some(files as i64),
                     records: None,
                     ..Default::default()
@@ -1340,7 +1340,7 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
         });
     }
 
-    let status = if records.is_empty() { "missing_proxy_rows" } else { "ok" };
+    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
     let count = records.len();
     (
         records,
