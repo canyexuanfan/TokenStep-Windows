@@ -69,7 +69,7 @@ pub struct LocalIdentity {
     pub id: i64,
     #[serde(default)]
     pub name: String,
-    #[serde(rename = "avatarUrl", default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
 }
 
@@ -102,11 +102,13 @@ pub struct TokenRankSnapshot {
     /// The current user's entry (server-assigned rank).
     pub mine: Option<TokenRankEntry>,
     /// Whole-board tokens today (data.total_tokens).
-    #[serde(rename = "totalTokens", default)]
     pub total_tokens: i64,
     /// Number of ranked users.
-    #[serde(rename = "totalRankedUsers", default)]
     pub total_ranked_users: i64,
+    /// When this data was fetched (epoch secs) — drives the "N 人 · X 分钟前"
+    /// header (cache hits re-stamp from the cache file).
+    #[serde(default)]
+    pub fetched_at_secs: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -114,21 +116,22 @@ pub struct TokenRankSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TokenRankEntry {
     pub rank: i64,
-    #[serde(rename = "userID", default)]
+    #[serde(default)]
     pub user_id: i64,
     pub name: String,
-    #[serde(rename = "avatarURL", default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
-    #[serde(rename = "totalTokens", default)]
+    #[serde(default)]
     pub total_tokens: i64,
-    #[serde(rename = "callCount", default)]
+    #[serde(default)]
     pub call_count: i64,
-    #[serde(rename = "sessionCount", default)]
+    #[serde(default)]
     pub session_count: i64,
     #[serde(default)]
     pub clients: std::collections::BTreeMap<String, i64>,
+    /// model id -> tokens (the API ships a map, not a list).
     #[serde(default)]
-    pub models: Vec<String>,
+    pub models: std::collections::BTreeMap<String, i64>,
 }
 
 impl TokenRankEntry {
@@ -144,7 +147,8 @@ impl TokenRankEntry {
 /// Cached for 30 minutes. When `identity` is None the board is still fetched
 /// (the card may show the top entry) but `mine` stays None.
 pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
-    if let Some(cached) = read_fresh_cache(identity.map(|i| i.id)) {
+    if let Some(mut cached) = read_fresh_cache(identity.map(|i| i.id)) {
+        cached.fetched_at_secs = cached_fetch_stamp();
         return cached;
     }
     let url = format!("{}?client=all&range=today&usage_mode=all", ENDPOINT);
@@ -197,6 +201,10 @@ pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
         mine,
         total_tokens,
         total_ranked_users: total_ranked,
+        fetched_at_secs: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
         error: None,
     };
     write_cache(&snap, identity.map(|i| i.id));
@@ -233,14 +241,22 @@ fn parse_entry(row: &serde_json::Value) -> Option<TokenRankEntry> {
             .unwrap_or_default(),
         models: row
             .get("models")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|m| m.as_str().map(String::from))
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_i64().map(|n| (k.clone(), n)))
                     .collect()
             })
             .unwrap_or_default(),
     })
+}
+
+fn cached_fetch_stamp() -> u64 {
+    fs::read_to_string(paths::token_rank_cache_json())
+        .ok()
+        .and_then(|text| serde_json::from_str::<CacheFile>(&text).ok())
+        .map(|c| c.fetched_at_secs)
+        .unwrap_or(0)
 }
 
 fn err_snapshot(msg: &str) -> TokenRankSnapshot {

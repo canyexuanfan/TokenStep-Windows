@@ -2292,12 +2292,34 @@ function rhythmTagTitle(tag) {
 
 // ---- Quota window card (shared by Codex + Claude quota) ----
 // Renders one 5h/7d utilization window. `prefix` disambiguates element ids.
-function quotaWindowHTML(label, pct, resetsAt, prefix) {
-  var color = pct >= 80 ? "#ef4444" : pct >= 50 ? "var(--green-dark)" : "var(--green)";
+/// Relative reset countdown, upstream PopoverQuotaCard tiers:
+/// 即将重置 (<2min) / N 分后重置 (<60min) / 约 H:MM 后重置 (<24h) / N 天后重置.
+function quotaResetCountdown(iso) {
+  var ms = Date.parse(iso);
+  if (!iso || isNaN(ms)) return "";
+  var diff = ms - Date.now();
+  if (diff <= 0) return t("即将重置");
+  var mins = Math.floor(diff / 60000);
+  if (mins < 2) return t("即将重置");
+  if (mins < 60) return tf("%d 分后重置", mins).replace(/%d/, mins);
+  var hours = diff / 3600000;
+  if (hours < 24) {
+    var h = Math.floor(hours), m = Math.round((hours - h) * 60);
+    return tf("约 %@ 后重置", h + ":" + (m < 10 ? "0" + m : m)).replace("%@", h + ":" + (m < 10 ? "0" + m : m));
+  }
+  var days = Math.round(hours / 24);
+  return tf("%d 天后重置", days).replace(/%d/, days);
+}
+
+/// Upstream shows REMAINING percent (100 - used), always tokenGreen, min
+/// bar width 5%.
+function quotaWindowHTML(label, usedPct, resetsAt, prefix) {
+  var remaining = Math.max(0, Math.min(100, 100 - usedPct));
   var html = '<div><div style="font-size:14px;color:var(--muted);font-weight:600;margin-bottom:6px">' + label + "</div>";
-  html += '<div style="font-size:32px;font-weight:800;color:' + color + '">' + Math.round(pct) + "%</div>";
-  html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + Math.min(100, Math.round(pct)) + "%;background:" + color + ';border-radius:999px"></div></div>';
-  if (resetsAt) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + t("重置于 ") + resetsAt + "</div>";
+  html += '<div style="font-size:32px;font-weight:800;color:var(--green-dark)">' + Math.round(remaining) + "%</div>";
+  html += '<div style="height:8px;background:var(--track);border-radius:999px;margin-top:6px;overflow:hidden"><div style="height:100%;width:' + Math.max(5, Math.round(remaining)) + '%;background:var(--green);border-radius:999px"></div></div>';
+  var cd = quotaResetCountdown(resetsAt);
+  if (cd) html += '<div style="font-size:12px;color:var(--muted);margin-top:4px">' + cd + "</div>";
   var _ = prefix;
   return html + "</div>";
 }
@@ -2451,7 +2473,7 @@ function agentWorkCardHTML(snapshot, settings) {
     '<div class="card" id="agentWorkCard">' +
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
         '<div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + t("Agent 工作强度") + '</div>' +
-        '<div style="font-size:14px;font-weight:600;color:var(--muted);margin-top:4px">' + t("只统计 token 数量，不读取对话") + '</div></div>' +
+        '<div style="font-size:14px;font-weight:600;color:var(--muted);margin-top:4px">' + t("按本机 Token 记录展示活跃节奏，不代表实际工时或生产力。") + '</div></div>' +
       '</div>' +
       // Metric strip: 4 tiles.
       '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px">' +
@@ -2618,14 +2640,38 @@ function freshnessBadgeHTML(kind) {
 
 // ---- Agent-work-rank card body (port of upstream PopoverTokenRankCard) ----
 // Renders into #tokenRankContent. `r` is the TokenRankSnapshot from Rust.
+/// Client id -> display name (upstream PopoverTokenRankCard mapping).
+function rankClientDisplayName(id) {
+  var map = { codex: "Codex", claude: "Claude Code", workbuddy: "WorkBuddy", zcode: "ZCode", hermes: "Hermes" };
+  return map[id] || id;
+}
+
+/// "N 人 · X 分钟前" header status (upstream headerStatus).
+function rankHeaderStatus(r) {
+  var people = r.total_ranked_users || 0;
+  var rel = "";
+  if (r.fetched_at_secs) {
+    var diff = Math.max(0, Math.floor(Date.now() / 1000) - r.fetched_at_secs);
+    if (diff < 60) rel = t("刚刚");
+    else if (diff < 3600) rel = Math.floor(diff / 60) + t(" 分钟前");
+    else rel = Math.floor(diff / 3600) + t(" 小时前");
+  }
+  var left = people ? tf("%d 人", people).replace(/%d/, people) : "";
+  return [left, rel].filter(Boolean).join(" · ");
+}
+
 function agentRankCardContentHTML(r) {
   // Whole-board error (fetch failed).
   if (r.error) {
-    return '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t(r.error) + '</div>';
+    return '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + escapeHtmlStr(r.error) + '</div>';
   }
   if (!r.available && !r.mine) {
     return '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("榜单暂不可用") + '</div>';
   }
+  var status = rankHeaderStatus(r);
+  var statusLine = status
+    ? '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">' + escapeHtmlStr(status) + '</div>'
+    : '';
   var head = r.top
     ? '<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">' + t("今日榜首") + ' · ' + escapeHtmlStr(r.top.name) + ' · ' + formatTokens(r.top.total_tokens, true) + '</div>'
     : '';
@@ -2633,9 +2679,16 @@ function agentRankCardContentHTML(r) {
     var ranked = Math.max(1, r.total_ranked_users || 1);
     // Percentile: how many ranked users I beat (clamped 0-100).
     var pct = Math.max(0, Math.min(100, Math.round((1 - r.mine.rank / ranked) * 100)));
-    var primary = r.mine.primary_client ? (r.mine.primary_client[0]) : "";
+    var primary = "";
+    if (r.mine.clients) {
+      var best = null;
+      Object.keys(r.mine.clients).forEach(function (k) {
+        if (!best || r.mine.clients[k] > r.mine.clients[best]) best = k;
+      });
+      if (best) primary = rankClientDisplayName(best);
+    }
     var sub = escapeHtmlStr(r.mine.name) + (primary ? ' · ' + t("主力") + ' ' + escapeHtmlStr(primary) : '');
-    return head +
+    return statusLine + head +
       '<div style="display:flex;align-items:baseline;gap:12px;margin:6px 0">' +
         '<div style="font-size:40px;font-weight:900;color:var(--green-dark);line-height:1">🏆 #' + r.mine.rank + '</div>' +
         '<div style="font-size:13px;font-weight:700;color:var(--muted)">' + t("今日排名") + '</div>' +
@@ -2645,14 +2698,14 @@ function agentRankCardContentHTML(r) {
         window.TS.tf("第 %d / %d · 超过 %d%% 参榜用户", r.mine.rank, ranked, pct).replace(/%%/g, "%") + '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
         '<span style="font-size:12px;font-weight:700;color:var(--ink);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("我的今日 Token") + ' ' + formatTokens(r.mine.total_tokens, true) + '</span>' +
-        '<span style="font-size:12px;font-weight:700;color:var(--muted);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("全榜今日 Token") + ' ' + formatTokens(r.total_tokens, true) + '</span>' +
+        '<span style="font-size:12px;font-weight:700;color:var(--muted);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("全榜今日 Token") + ' ' + (r.total_tokens ? formatTokens(r.total_tokens, true) : t("等待同步")) + '</span>' +
       '</div>';
   }
   // Visible but not linked / not on today's board.
   if (!r.identity) {
-    return head + '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("尚未关联") + ' · ' + t("安装 Token Rank 后自动识别") + '</div>';
+    return statusLine + head + '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("尚未关联") + ' · ' + t("安装 Token Rank 后自动识别") + '</div>';
   }
-  return head + '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("今日未上榜") + '</div>';
+  return statusLine + head + '<div style="color:var(--muted);font-weight:600;padding:8px 0">' + t("今日未上榜") + '</div>';
 }
 
 // ---- Expose to the page ----
@@ -2695,5 +2748,7 @@ window.TS = {
   projectDisplayName,
   freshnessBadgeHTML,
   agentRankCardContentHTML,
+  rankClientDisplayName,
+  rankHeaderStatus,
   escapeHtmlStr,
 };

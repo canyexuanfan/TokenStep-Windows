@@ -95,8 +95,15 @@ fn set_close_to_tray(enabled: bool) -> Result<TokenStepSettings, String> {
 /// Reset all settings to defaults (port of macOS "restore defaults" footer).
 #[tauri::command]
 fn reset_settings() -> Result<TokenStepSettings, String> {
-    let s = TokenStepSettings::default();
+    // Upstream parity: after a reset the launch-at-login behavior stays ON
+    // (macOS re-installs its LaunchAgent). Mirror that by keeping the HKCU
+    // Run entry in sync instead of leaving a stale registry value behind.
+    let previous_autostart = settings::load().autostart;
+    let mut s = TokenStepSettings::default();
+    s.autostart = previous_autostart;
     settings::save(&s).map_err(|e| e.to_string())?;
+    // Sync the registry with the persisted setting (no orphan entries).
+    let _ = set_autostart(s.autostart);
     Ok(settings::load())
 }
 

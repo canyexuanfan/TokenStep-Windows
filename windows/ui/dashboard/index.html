@@ -343,6 +343,7 @@
         var monthRows = snapshot.daily.slice(-30);
         var monthAvg = monthRows.length ? Math.round(monthRows.reduce(function (a, d) { return a + d.total_tokens; }, 0) / monthRows.length) : 0;
         var goalDays = snapshot.daily.filter(function (d) { return d.total_tokens >= settings.daily_goal_tokens; }).length;
+        var hasNoData = snapshot.totals.active_days === 0;
         var lap = window.TS.lapProgress(t.total_tokens, settings.daily_goal_tokens);
 
         // ---- Hero card: progress ring + lap info + chips + pills ----
@@ -360,7 +361,7 @@
         }
         var hero = '<div class="card"><div style="display:flex;align-items:center;gap:34px;flex-wrap:wrap">' +
           '<div class="ring-wrap" style="width:204px;height:204px;flex-shrink:0">' + ringSvg(lap.currentLapProgress, 204, 20) +
-            '<div class="ring-center" style="width:160px"><div class="ring-value" style="font-size:42px">' + formatTokens(t.total_tokens) + '</div><div class="ring-goal">/ ' + formatTokens(settings.daily_goal_tokens, true) + ' ' + window.TS.t('每圈') + '</div></div>' +
+            '<div class="ring-center" style="width:160px"><div class="ring-value" style="font-size:' + (hasNoData ? '20px;color:var(--muted)' : '42px') + '">' + (hasNoData ? window.TS.t('暂无数据') : formatTokens(t.total_tokens)) + '</div><div class="ring-goal">/ ' + formatTokens(settings.daily_goal_tokens, true) + ' ' + window.TS.t('每圈') + '</div></div>' +
           '</div>' +
           '<div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:18px">' +
             '<div style="display:flex;flex-direction:column;gap:8px">' +
@@ -455,14 +456,38 @@
         el.innerHTML = html;
       }
 
+      // Upstream v0.2.0 quota-card behavior: a provider that has NEVER been
+      // read successfully is hidden entirely (never-succeeded sections stay
+      // out of sight); when both are hidden, one placeholder card explains
+      // what would make them appear.
+      function hideQuotaCard(cardId) {
+        var card = document.getElementById(cardId);
+        if (card) card.style.display = 'none';
+        checkQuotaPlaceholder();
+      }
+
+      function checkQuotaPlaceholder() {
+        var c = document.getElementById('quotaCard');
+        var cl = document.getElementById('claudeQuotaCard');
+        var bothHidden = (!c || c.style.display === 'none') && (!cl || cl.style.display === 'none');
+        var ph = document.getElementById('quotaPlaceholder');
+        if (bothHidden && !ph && c) {
+          c.style.display = '';
+          c.id = 'quotaPlaceholder';
+          c.innerHTML = '<div class="card-title">' + window.TS.t('Agent 额度') + '</div>' +
+            '<div style="color:var(--muted);font-weight:600;padding:6px 0">' + window.TS.t('暂未读取到 Agent 额度') + '</div>' +
+            '<div style="font-size:12px;color:var(--muted)">' + window.TS.t('打开并登录 Codex / Claude Code 后会自动显示。') + '</div>';
+        }
+      }
+
       function loadCodexQuota() {
         var el = document.getElementById('quotaContent');
         if (!el) return;
         invoke('read_codex_quota').then(function (q) {
-          renderQuotaInto('quotaContent', q);
-        }).catch(function (e) {
-          var n = document.getElementById('quotaContent');
-          if (n) n.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('读取失败:') + ' ' + (e && e.message ? e.message : e) + '</span>';
+          if (!q || !q.available) { hideQuotaCard('quotaCard'); return; }
+          renderQuotaInto('quotaContent', q, 'codex');
+        }).catch(function () {
+          hideQuotaCard('quotaCard');
         });
       }
 
@@ -470,10 +495,10 @@
         var el = document.getElementById('claudeQuotaContent');
         if (!el) return;
         invoke('read_claude_quota').then(function (q) {
+          if (!q || !q.available) { hideQuotaCard('claudeQuotaCard'); return; }
           renderQuotaInto('claudeQuotaContent', q, 'claude');
-        }).catch(function (e) {
-          var n = document.getElementById('claudeQuotaContent');
-          if (n) n.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('读取失败:') + ' ' + (e && e.message ? e.message : e) + '</span>';
+        }).catch(function () {
+          hideQuotaCard('claudeQuotaCard');
         });
       }
 
@@ -488,6 +513,18 @@
           if (!n) return;
           if (!r || (!r.available && !r.identity && !r.error)) return; // hidden mode
           n.innerHTML = window.TS.agentRankCardContentHTML(r || {});
+          // Upstream: tapping the card opens the personal page when linked,
+          // else the leaderboard page.
+          var card = document.getElementById('tokenRankCard');
+          if (card) {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', function (ev) {
+              if (ev.target.closest('a,button')) return;
+              var url = (r && r.mine) ? 'https://www.zhenganhuo.com/token-rank/me'
+                                       : 'https://www.zhenganhuo.com/token-rank';
+              invoke('open_release_page', { url: url }).catch(function () {});
+            });
+          }
         }).catch(function () {
           var n = document.getElementById('tokenRankContent');
           if (n) n.innerHTML = '<span style="color:var(--muted)">' + window.TS.t('暂时无法读取榜单') + '</span>';
@@ -498,9 +535,29 @@
         return String(s || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; });
       }
       function viewStats() {
+        // By-project column (upstream v0.2.0 StatsView): last-30-day project
+        // aggregates, up to 8 rows.
+        var projects30 = (snapshot.projects || []).slice(0, 8);
+        var projectCard = projects30.length
+          ? '<div class="card"><div class="card-title">' + window.TS.t('按项目') + '<span style="float:right;font-size:11px;font-weight:700;color:var(--muted)">' + window.TS.t('近 30 天') + '</span></div>' +
+              projects30.map(function (p) {
+                var top = Math.max(1, (snapshot.projects[0] || {}).tokens || 1);
+                var w = Math.max(4, Math.round((p.tokens || 0) * 100 / top));
+                var agents = Object.keys(p.tools || {}).sort(function (a, b) { return p.tools[b] - p.tools[a]; }).slice(0, 2)
+                  .map(function (n) { return n === 'Claude Code' ? 'Claude' : n; }).join(' · ');
+                return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0">' +
+                  '<div style="flex:0 0 150px;font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + window.TS.escapeHtmlStr(window.TS.projectDisplayName(p.name)) + '</div>' +
+                  '<div style="flex:1;height:7px;border-radius:999px;background:var(--track);overflow:hidden"><div style="height:100%;width:' + w + '%;background:var(--green);border-radius:999px;opacity:.85"></div></div>' +
+                  '<div style="flex:0 0 88px;text-align:right;font-size:12px;font-weight:700;color:var(--muted)">' + formatTokens(p.tokens || 0, true) + '</div>' +
+                  '<div style="flex:0 0 110px;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + window.TS.escapeHtmlStr(agents) + '</div>' +
+                '</div>';
+              }).join('') +
+              '<div style="font-size:11px;color:var(--muted);margin-top:6px;font-weight:600">' + window.TS.t('只显示项目目录名；完整路径仅保存在本机。') + '</div></div>'
+          : '';
         return '<div class="dist-grid">' +
           '<div class="card">' + distributionInner(window.TS.t('按工具'), snapshot.tools) + '</div>' +
           '<div class="card">' + distributionInner(window.TS.t('按模型'), snapshot.models.slice(0, 12)) + '</div>' +
+          projectCard +
         '</div>';
       }
       function viewHistory() {
@@ -523,11 +580,12 @@
           '<div class="card"><div class="card-title">' + window.TS.t('数据源') + '</div>' + (srcs.length ? srcs.map(function (n) { var m = snapshot.sources[n]; return '<div class="card-row" style="justify-content:space-between"><div><b>' + n + '</b></div><div style="color:var(--muted)">' + (m.status || '?') + ' · ' + (m.records || 0) + ' ' + window.TS.t('条') + '</div></div>'; }).join('') : window.TS.t('暂无')) + '</div>' +
           '<div class="card"><div class="card-title">' + window.TS.t('数据状态说明') + '</div>' +
             '<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">' +
-              ['数据在正常刷新周期内成功获取。', '超过正常刷新周期，最近一次尝试没有失败。', '最近一次尝试失败，当前展示最后成功数据。', '同一轮刷新中部分数据来源失败，其余正常。', '该数据从未成功获取，不会显示为 0。'].map(function (s) {
-                return '<div style="display:flex;gap:10px;align-items:center"><span style="flex-shrink:0">' + window.TS.freshnessBadgeHTML('fresh') + '</span><span style="font-size:13px;color:var(--muted-strong)">' + window.TS.t(s) + '</span></div>';
+              [['fresh', '数据在正常刷新周期内成功获取。'], ['aging', '超过正常刷新周期，最近一次尝试没有失败。'], ['stale', '最近一次尝试失败，当前展示最后成功数据。'], ['partial', '同一轮刷新中部分数据来源失败，其余正常。'], ['never_succeeded', '该数据从未成功获取，不会显示为 0。']].map(function (row) {
+                return '<div style="display:flex;gap:10px;align-items:center"><span style="flex-shrink:0">' + window.TS.freshnessBadgeHTML(row[0]) + '</span><span style="font-size:13px;color:var(--muted-strong)">' + window.TS.t(row[1]) + '</span></div>';
               }).join('') +
             '</div>' +
             '<div style="font-size:12px;color:var(--muted);margin-top:10px;font-weight:600">' + window.TS.t('按 API 列表价估算，不代表订阅或实际账单。') + '</div>' +
+            '<div style="font-size:12px;color:var(--muted);margin-top:6px;font-weight:600">' + window.TS.t('后续如果接入排行榜，会单独做授权和确认，不会默认上传。') + '</div>' +
           '</div>';
       }
       function viewSettings() {
@@ -582,6 +640,12 @@
           '<div id="rankVisSeg" style="display:flex;gap:8px;margin:4px 0 8px">' + segBtn('automatic', window.TS.t('自动检测')) + segBtn('visible', window.TS.t('显示')) + segBtn('hidden', window.TS.t('隐藏')) + '</div>';
         if (rankVis === 'hidden') {
           html += '<div style="font-size:12px;font-weight:700;color:var(--green-dark);background:color-mix(in srgb,var(--mint) 30%,transparent);border-radius:9px;padding:6px 12px;display:inline-block">' + window.TS.t('零身份读取 · 零网络请求') + '</div>';
+        } else {
+          html += '<div class="setting-row" style="gap:8px">' +
+            '<button class="btn" id="rankMyUsageBtn">' + window.TS.t('我的消耗') + '</button>' +
+            '<button class="btn" id="rankOpenBtn">' + window.TS.t('打开榜单') + '</button>' +
+            '<span id="rankSyncInfo" style="font-size:12px;color:var(--muted);font-weight:600"></span>' +
+          '</div>';
         }
         html += '</div>';
         // Experimental agent sources card.
@@ -756,6 +820,22 @@
           if (quotaToggle) quotaToggle.addEventListener('change', function () {
             invoke('set_show_codex_quota', { enabled: quotaToggle.checked }).then(function (s) { settings = s; render(); });
           });
+          // Rank settings card actions + data-sync line.
+          var myBtn = document.getElementById('rankMyUsageBtn');
+          if (myBtn) myBtn.addEventListener('click', function () {
+            invoke('open_release_page', { url: 'https://www.zhenganhuo.com/token-rank/me' }).catch(function () {});
+          });
+          var openBtn = document.getElementById('rankOpenBtn');
+          if (openBtn) openBtn.addEventListener('click', function () {
+            invoke('open_release_page', { url: 'https://www.zhenganhuo.com/token-rank' }).catch(function () {});
+          });
+          var syncInfo = document.getElementById('rankSyncInfo');
+          if (syncInfo) invoke('read_token_rank').then(function (r) {
+            if (!r || !r.fetched_at_secs) return;
+            var diff = Math.max(0, Math.floor(Date.now() / 1000) - r.fetched_at_secs);
+            var rel = diff < 60 ? window.TS.t('刚刚') : diff < 3600 ? Math.floor(diff / 60) + window.TS.t(' 分钟前') : Math.floor(diff / 3600) + window.TS.t(' 小时前');
+            syncInfo.textContent = window.TS.t('数据同步') + ' · ' + rel;
+          }).catch(function () {});
           // Agent-work-rank visibility segments.
           var seg = document.getElementById('rankVisSeg');
           if (seg) seg.querySelectorAll('button[data-rankvis]').forEach(function (b) {
