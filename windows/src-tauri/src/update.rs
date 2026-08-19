@@ -136,7 +136,7 @@ fn pick_install_asset<'a>(assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> 
 /// this exact version, we report "no update" so they aren't nagged.
 pub fn check() -> UpdateCheck {
     let current = current_version();
-    let client = match reqwest::blocking::Client::builder()
+    let client = match crate::net::blocking_client()
         .user_agent(format!("TokenStep/{current}"))
         .timeout(Duration::from_secs(15))
         .build()
@@ -267,9 +267,11 @@ pub fn download<F>(asset_url: &str, _asset_name: &str, expected_size: u64, versi
 where
     F: Fn(DownloadProgress),
 {
-    let client = match reqwest::blocking::Client::builder()
+    let client = match crate::net::blocking_client()
         .user_agent(format!("TokenStep/{}", current_version()))
-        // Generous timeout: the installer is a few MB and may be on a slow link.
+        // Fast connect failure + generous total: the installer is a few MB
+        // and may be on a slow (proxied) link.
+        .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(300))
         .build()
     {

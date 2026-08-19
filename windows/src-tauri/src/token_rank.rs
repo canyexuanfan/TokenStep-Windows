@@ -152,7 +152,7 @@ pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
         return cached;
     }
     let url = format!("{}?client=all&range=today&usage_mode=all", ENDPOINT);
-    let client = match reqwest::blocking::Client::builder()
+    let client = match crate::net::blocking_client()
         .timeout(std::time::Duration::from_secs(12))
         .build()
     {

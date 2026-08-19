@@ -122,7 +122,7 @@ fn read_access_token() -> Option<String> {
 /// Fetch the usage payload. Blocking + rustls (matches the rest of the crate's
 /// HTTP style; avoids tokio/OpenSSL).
 fn fetch_usage(token: &str) -> Result<ClaudeUsageResponse, String> {
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::net::blocking_client()
         .timeout(std::time::Duration::from_secs(7))
         .build()
         .map_err(|e| format!("Claude API: {}", e))?;

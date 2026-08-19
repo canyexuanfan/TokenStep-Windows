@@ -13,6 +13,7 @@ mod codex_quota;
 mod energy;
 mod freshness;
 mod models;
+mod net;
 mod paths;
 mod pricing;
 mod settings;
@@ -438,9 +439,6 @@ fn check_for_update() -> update::UpdateCheck {
     update::check()
 }
 
-/// Open a URL in the user's default browser (used by the update badge / tray
-/// item to send the user to the Releases page). Requires the `shell:allow-open`
-/// permission, already granted in capabilities/default.json.
 /// The running app version (compile-time), for the About card before any
 /// update check has run.
 #[tauri::command]
@@ -448,6 +446,9 @@ fn app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+/// Open a URL in the user's default browser (used by the update badge / tray
+/// item and the rank-card shortcuts). Requires the `shell:allow-open`
+/// permission, already granted in capabilities/default.json.
 #[tauri::command]
 fn open_release_page(app: tauri::AppHandle, url: String) {
     // `open` is deprecated in favor of tauri-plugin-opener, but switching plugins
