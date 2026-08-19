@@ -18,6 +18,7 @@
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::time::Duration;
+use std::os::windows::process::CommandExt;
 
 /// Where the Windows port lives on GitHub. Used for both the API URL and the
 /// Releases page a user is sent to.
@@ -408,13 +409,18 @@ pub fn install_and_restart(installer: &std::path::Path, installed_exe: &std::pat
 
         // Detach the helper via cmd /c so it survives our exit.
         // CREATE_NO_WINDOW keeps it from flashing a console.
-        let _ = std::process::Command::new("cmd")
+        // CREATE_NO_WINDOW (0x08000000): keep the helper from flashing a
+        // console window in this GUI app (the old comment claimed it; now it
+        // actually does). Windows-only target, so no cfg dance.
+        let mut helper_cmd = std::process::Command::new("cmd");
+        helper_cmd
             .args(["/C", "start", "/B", ""])
             .arg(&helper)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
+            .stderr(std::process::Stdio::null());
+        helper_cmd.creation_flags(0x0800_0000);
+        let _ = helper_cmd.spawn();
 
         // Brief grace period so the helper is running before we exit.
         std::thread::sleep(Duration::from_millis(500));

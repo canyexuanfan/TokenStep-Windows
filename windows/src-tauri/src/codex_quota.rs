@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
+use std::os::windows::process::CommandExt;
 
 const REQUEST_ID: i64 = 2;
 
@@ -64,6 +65,9 @@ pub fn read() -> CodexQuotaSnapshot {
     } else {
         Command::new(&codex)
     };
+    // CREATE_NO_WINDOW: this is a GUI app — spawning the npm batch shim would
+    // otherwise flash a console window every quota refresh.
+    cmd.creation_flags(0x0800_0000);
     let mut child = match cmd
         .arg("app-server")
         .arg("--listen")

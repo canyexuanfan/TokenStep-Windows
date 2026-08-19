@@ -441,6 +441,13 @@ fn check_for_update() -> update::UpdateCheck {
 /// Open a URL in the user's default browser (used by the update badge / tray
 /// item to send the user to the Releases page). Requires the `shell:allow-open`
 /// permission, already granted in capabilities/default.json.
+/// The running app version (compile-time), for the About card before any
+/// update check has run.
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
 #[tauri::command]
 fn open_release_page(app: tauri::AppHandle, url: String) {
     // `open` is deprecated in favor of tauri-plugin-opener, but switching plugins
@@ -933,6 +940,7 @@ pub fn run() {
             read_claude_quota,
             read_token_rank,
             set_agent_work_rank_visibility,
+            app_version,
             agent_source_detection,
             set_experimental_agent_source,
             get_freshness,

@@ -10,6 +10,38 @@
 
 （开发中。参见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。）
 
+## [0.1.6] - 上游 v0.2.0 全量移植 + Codex 计量修复 + 对齐审查
+
+同步上游 macOS v0.1.46~v0.2.0（47 文件 +8612 行），并修复 Windows 版 Codex 计量的五层根因。
+
+### 新增
+
+- **7 个实验 Agent 源**（Gemini CLI / Qwen Code / Kimi Code / OpenCode / Amp / Droid / Grok Build）：逐源开关、自动纳入已安装源、统一 token 口径换算。
+- **项目维度（B1-lite）**：「今日项目」卡（进度条 + 工具摘要）、统计页「按项目」列、五类源的工作目录脱敏提取。
+- **新鲜度模型（六态）**：页头徽章 + 隐私页状态图例 + per-channel 尝试记录持久化；未使用的源正确归类为"缺席"而非"失败"。
+- **能耗策略**：后台采集地板（交流 15 分钟 / 电池·节电 30 分钟）、前台 tick 上限 60 秒。
+- **Agent 消耗榜**（替换生财榜）：zhenganhuo.com 接口 + Token Rank 本地身份自动识别 + 三态可见性（默认隐藏 = 零身份读取零网络请求）+ 点击跳转 + 头部「N 人 · X 分钟前」。
+- **ZCode session-join**：SQL 条件拼接（provider_total_tokens 列探测 + session 表 join 取项目目录）。
+
+### 修复
+
+- **Codex 计量五层根因**（今日 58.35 亿 → 1.24 亿，全历史 11383 亿 → 402 亿）：
+  1. O(N²) 累加 → 完整移植上游 rev8 delta 校准（哨兵值/可信重置/字段分摊/requestID 去重）；
+  2. compact 转储重复 → fork anchor + dump 检测按创建时刻切分；
+  3. resume 继承计数器虚高 847 亿 → 首事件继承保护（超上游的治本修复）；
+  4. Codex 缓存被 Claude 的保存清空 → 共享缓存单次读写；
+  5. 特定文件采集卡死 → 上述修复连带消除（扫描恢复 5 分钟）。
+- **启动白屏**：新增函数误插在 viewSettings 作用域内导致 ReferenceError。
+- **Agent 榜 token 显示 0**：序列化字段名误用 camelCase；models 字段实为 map。
+- **Codex 额度无法识别登录账号**：npm 的 codex.cmd 需经 cmd.exe /c 执行；stdin 管道提前关闭导致 app-server 在响应前退出；补 12 秒读取超时。
+- **额度卡对齐**：显示剩余百分比（原为已用）、相对倒计时（原为绝对时间）、从未读到的供应商整卡隐藏。
+- **"部分来源失败"误报**：missing_proxy_rows / fallback_threads / discovered_no_usage 三个未使用态被误判为失败。
+
+### 已知限制
+
+- 多级 fork 链（父文件已删除）未持久化 orphan anchors，个别孤儿 resume 文件可能仍有少量继承残留。
+- 设备同步仅有设置字段占位（对齐上游 v0.2.0 的死代码状态）。
+
 ## [0.1.5] - Agent 工作强度 + 计量校准 rev8 + 实验来源
 
 移植上游 macOS v0.1.44/v0.1.45 的全部新功能，并修复移植引入的启动白屏问题。
@@ -97,6 +129,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), adhere
 ## [Unreleased]
 
 (In development. See [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md).)
+
+## [0.1.6] - Upstream v0.2.0 full port + Codex accounting fix + alignment audit
+
+Syncs upstream macOS v0.1.46~v0.2.0 (47 files, +8612 lines) and fixes five layered root causes in the Windows Codex accounting.
+
+### Added
+
+- **7 experimental agent sources** (Gemini CLI / Qwen Code / Kimi Code / OpenCode / Amp / Droid / Grok Build): per-source toggles, auto-enrollment of installed sources, unified token-caliber conversion.
+- **Project dimension (B1-lite)**: Today's-projects card, a by-project stats column, sanitized working-directory extraction across five source families.
+- **Freshness model (six states)**: header badge, privacy-page legend, per-channel attempt persistence; unused sources classified as absent, not failed.
+- **Energy policy**: background collection floor (AC 15 min / battery 30 min), foreground tick capped at 60 s.
+- **Agent usage rank** (replaces the scys board): zhenganhuo.com API + Token Rank local-identity auto-detect + tri-state visibility (hidden by default = zero identity reads, zero network) + click-through + "N users · X min ago" header.
+- **ZCode session-join**: conditionally assembled SQL (provider_total_tokens probe + session join for the project directory).
+
+### Fixed
+
+- **Five layered Codex accounting root causes** (today 5.835B → 124M, all-time 113.8B → 4.02B):
+  1. O(N^2) summation → full rev8 delta port (sentinels, credible resets, field allocation, requestID dedupe);
+  2. compact-dump duplication → fork anchor + dump detection split at creation time;
+  3. resume counter inheritance inflating by 84.7B → first-event inherited-counter guard (a fix beyond upstream);
+  4. Codex cache wiped by Claude's save → one shared cache per pass;
+  5. collection hang on certain files → eliminated by the above (full scan back to 5 minutes).
+- **Startup white screen**: newly added functions were nested inside viewSettings' scope (ReferenceError).
+- **Rank tokens showing 0**: camelCase serialization names; models is a map, not a list.
+- **Codex quota not detecting the signed-in account**: npm's codex.cmd needs cmd.exe /c; the stdin pipe closed before the app-server could respond; added a 12s read timeout.
+- **Quota card alignment**: remaining percent (was used), relative countdown (was absolute), never-succeeded providers hidden entirely.
+- **"Some sources failed" false positives**: missing_proxy_rows / fallback_threads / discovered_no_usage (unused states) misclassified as failures.
+
+### Known limitations
+
+- Multi-level fork chains whose parent file was deleted keep no orphan anchors; a few orphan resume files may still carry small inherited remainders.
+- Device sync is a settings-field placeholder only (mirrors upstream v0.2.0's dead-code state).
 
 ## [0.1.5] - Agent Work Intensity + Calibration rev8 + Experimental Sources
 
