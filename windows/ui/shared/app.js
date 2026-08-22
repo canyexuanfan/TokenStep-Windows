@@ -2525,6 +2525,12 @@ function freshnessBadgeHTML(kind) {
 
 // ---- Agent-work-rank card body (port of upstream PopoverTokenRankCard) ----
 // Renders into #tokenRankContent. `r` is the TokenRankSnapshot from Rust.
+function escapeHtmlStr(s) {
+  return String(s == null ? '' : s).replace(/[<>&"]/g, function (c) {
+    return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c];
+  });
+}
+
 /// Client id -> display name (upstream PopoverTokenRankCard mapping).
 function rankClientDisplayName(id) {
   var map = { codex: "Codex", claude: "Claude Code", workbuddy: "WorkBuddy", zcode: "ZCode", hermes: "Hermes" };
