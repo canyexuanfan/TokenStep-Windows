@@ -48,7 +48,8 @@ body {
 }
 
 #app {
-  display: block;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
@@ -109,20 +110,23 @@ body {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 4px;
-  margin-left: 10px;
+  gap: 2px;
+  margin: 0 26px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 14px;
-  border-radius: 12px;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 10px;
   cursor: pointer;
   border: 1px solid transparent;
+  font-size: 13px;
   transition: background 0.15s, box-shadow 0.15s, color 0.15s;
 }
+.nav-item .nav-icon svg { width: 15px; height: 15px; }
+.nav-item .nav-title { font-size: 13px; }
 
 .nav-item:hover {
   background: var(--surface);
