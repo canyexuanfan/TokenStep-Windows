@@ -176,3 +176,26 @@ pub fn grok_sessions_dir() -> PathBuf {
 pub fn token_rank_client_state_json() -> PathBuf {
     home_dir().join(".token-rank").join("client-state.json")
 }
+
+// ── Cursor (upstream v0.2.1/v0.2.2) ───────────────────────────────────────
+
+/// Cursor's VS Code state DB (holds the auth token in ItemTable), used for
+/// the official usage API. Windows: %APPDATA%/Cursor/User/globalStorage/state.vscdb
+pub fn cursor_state_vscdb() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(|| home_dir().join("AppData").join("Roaming"))
+        .join("Cursor")
+        .join("User")
+        .join("globalStorage")
+        .join("state.vscdb")
+}
+
+/// Cursor's local code-signal DB: ~/.cursor/ai-tracking/ai-code-tracking.db
+pub fn cursor_code_tracking_db() -> PathBuf {
+    home_dir().join(".cursor").join("ai-tracking").join("ai-code-tracking.db")
+}
+
+/// cache/cursor-usage-cache.json — official usage events cache.
+pub fn cursor_usage_cache_json() -> PathBuf {
+    app_support_root().join("cache").join("cursor-usage-cache.json")
+}

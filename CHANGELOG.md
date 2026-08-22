@@ -10,6 +10,22 @@
 
 （开发中。参见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。）
 
+## [0.1.8] - 上游 v0.2.1/v0.2.2 同步：Cursor 官方用量 + 多供应商额度 + 模型仪表盘
+
+### 新增
+
+- **Cursor 官方用量进环**（v0.2.1）：读取 Cursor 登录态（state.vscdb），分页拉取官方用量事件，本地缓存窗口替换，幂等 overlay 合并进今日环/来源/模型/节奏/Agent 强度（token 口径 input+output+cacheRead+cacheWrite）。默认关闭（设置 → Cursor）。
+- **统一订阅额度体系**（v0.2.2）：一张「订阅额度」卡聚合 Codex / Claude / Cursor / GLM / Kimi / Grok 六供应商；剩余百分比、低额橙色（<20%）、告急置顶；未配置/读取失败整卡隐藏绝不显示 0%；15 分钟 TTL。GLM（API Key）/ Kimi（OAuth token）/ Grok（grok login 会话）三探针默认关闭，凭证存本机（HKCU 专键，对应上游钥匙串语义）。
+- **今日模型消耗表**（v0.2.2 model usage dashboard）：全宽表格（模型/进度条/Token/占比/金额估算），<0.1% 尾行过滤（前两行保底）、最多 5 行 + 「还有 N 个」、FNV 色槽、明细与总量不一致提示。
+- **Agent 强度卡改版**（对齐 v0.2.2）：三大数字（模型请求/工具调用/缓存命中）+ KV（输入/缓存读取/输出）。
+- **Cursor 代码信号卡**（L3，默认关闭）：今日 Cursor 代码产出计数（块/文件/模型/会话），不进 Token 统计。
+
+### 移除（对齐上游 v0.2.2）
+
+- 7 个 T1 实验源（Gemini CLI/Qwen/Kimi/OpenCode/Amp/Droid/Grok Build）退出采集管线（上游同）。
+- **项目维度整体移除**：今日项目卡、分享卡/概览项目面板、统计页按项目列（上游 v0.2.2 已删）。
+- 隐私页新鲜度五态图例（上游徽章事实性退役）。
+
 ## [0.1.7] - 零遗漏收尾 + 侧边栏 GitHub 入口
 
 ### 新增
@@ -144,6 +160,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), adhere
 ## [Unreleased]
 
 (In development. See [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md).)
+
+## [0.1.8] - Upstream v0.2.1/v0.2.2: Cursor official usage + multi-provider quotas + model dashboard
+
+### Added
+
+- **Cursor official usage in the ring** (v0.2.1): reads the local Cursor login (state.vscdb), pages the official usage API, caches with window replacement, and merges idempotently into today's ring/sources/models/rhythm/agent-work. Off by default.
+- **Unified subscription quotas** (v0.2.2): one card aggregating Codex / Claude / Cursor / GLM / Kimi / Grok with remaining percents, low-warning orange (<20%), lowest-first ordering; unconfigured providers stay hidden — never 0%. 15-minute TTL. GLM/Kimi/Grok probes default off; credentials stay local (registry key ≈ upstream Keychain).
+- **Today's model usage table** (v0.2.2): full-width table with progress bars, shares and cost estimates; <0.1% tail rows filtered, max 5 rows + "N more", FNV color slots, total-mismatch hint.
+- **Agent intensity card, simplified** (v0.2.2): three big numbers (requests / tool calls / cache hit) + input/cache-read/output rows.
+- **Cursor code signal card** (L3, off by default): today's Cursor code output counts; not counted as tokens.
+
+### Removed (upstream v0.2.2 parity)
+
+- The 7 T1 experimental sources leave the collection pipeline (as upstream).
+- **Project dimension removed**: today's projects card, share/overview project panels, the by-project stats column.
+- Privacy-page freshness legend (the badge is retired upstream).
 
 ## [0.1.7] - Zero-gap polish + sidebar GitHub entry
 

@@ -80,22 +80,6 @@ pub struct DailyUsage {
     #[serde(rename = "total_tokens")]
     pub total_tokens: i64,
     pub cost: f64,
-    /// Per-project breakdown for this day (upstream B1-lite). Older
-    /// snapshots decode as `None`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub projects: Option<Vec<ProjectUsage>>,
-}
-
-/// A sanitized project aggregate (upstream `ProjectUsage`, B1-lite). The name
-/// is the last path segment of the working directory — never a full path.
-/// An empty name means "unassigned" (records without a project context).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProjectUsage {
-    pub name: String,
-    pub tokens: i64,
-    pub cost: f64,
-    pub tools: std::collections::BTreeMap<String, i64>,
-    pub models: std::collections::BTreeMap<String, i64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -268,14 +252,6 @@ pub struct UsageSnapshot {
     pub tools: Vec<ToolUsage>,
     pub models: Vec<ModelUsage>,
     pub sources: std::collections::BTreeMap<String, SourceInfo>,
-    /// Info about the collection attempt that produced this snapshot
-    /// (upstream G-V1 freshness). Older snapshots decode as `None`.
-    #[serde(default, rename = "source_attempt", skip_serializing_if = "Option::is_none")]
-    pub source_attempt: Option<crate::freshness::RefreshAttemptRecord>,
-    /// Project-dimension aggregates (upstream B1-lite, sanitized last path
-    /// segment only). Older snapshots decode as empty.
-    #[serde(default)]
-    pub projects: Vec<ProjectUsage>,
 }
 
 impl UsageSnapshot {
@@ -290,8 +266,6 @@ impl UsageSnapshot {
             tools: vec![],
             models: vec![],
             sources: std::collections::BTreeMap::new(),
-            source_attempt: None,
-            projects: vec![],
         }
     }
 }
@@ -368,6 +342,19 @@ pub struct TokenStepSettings {
     /// `showExperimentalAgentSources`.
     #[serde(rename = "show_experimental_agent_sources", default)]
     pub show_experimental_agent_sources: bool,
+    /// Official Cursor usage events join the today ring (upstream v0.2.1).
+    #[serde(rename = "cursor_quota_enabled", default)]
+    pub cursor_quota_enabled: bool,
+    /// Cursor code-signal card (L3; today's code-production counts).
+    #[serde(rename = "cursor_code_signal_enabled", default)]
+    pub cursor_code_signal_enabled: bool,
+    /// Per-provider quota probes (glm / kimi / grok), default off.
+    #[serde(rename = "glm_quota_enabled", default)]
+    pub glm_quota_enabled: bool,
+    #[serde(rename = "kimi_quota_enabled", default)]
+    pub kimi_quota_enabled: bool,
+    #[serde(rename = "grok_quota_enabled", default)]
+    pub grok_quota_enabled: bool,
 }
 
 fn default_lang() -> String {
@@ -409,6 +396,11 @@ impl Default for TokenStepSettings {
             merge_history_all_devices: false,
             hidden_device_ids: vec![],
             show_experimental_agent_sources: false,
+            cursor_quota_enabled: false,
+            cursor_code_signal_enabled: false,
+            glm_quota_enabled: false,
+            kimi_quota_enabled: false,
+            grok_quota_enabled: false,
         }
     }
 }

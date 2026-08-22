@@ -8,6 +8,7 @@
 
 mod agent_sources;
 mod collector;
+mod cursor_usage;
 mod claude_quota;
 mod codex_quota;
 mod energy;
@@ -17,6 +18,7 @@ mod models;
 mod net;
 mod paths;
 mod pricing;
+mod quota;
 mod settings;
 mod token_rank;
 mod update;
@@ -440,6 +442,196 @@ fn check_for_update() -> update::UpdateCheck {
     update::check()
 }
 
+// ── Cursor official usage + unified quota system (upstream v0.2.1/v0.2.2) ──
+
+#[tauri::command]
+fn set_cursor_quota_enabled(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.cursor_quota_enabled = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+#[tauri::command]
+fn set_cursor_code_signal_enabled(enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.cursor_code_signal_enabled = enabled;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+#[tauri::command]
+fn set_quota_provider_enabled(provider: String, enabled: bool) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    match provider.as_str() {
+        "glm" => s.glm_quota_enabled = enabled,
+        "kimi" => s.kimi_quota_enabled = enabled,
+        "grok" => s.grok_quota_enabled = enabled,
+        _ => return Err("unknown provider".into()),
+    }
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+#[tauri::command]
+fn save_quota_secret(account: String, secret: String) -> Result<(), String> {
+    quota::save_quota_secret(&account, &secret)
+}
+
+#[tauri::command]
+fn clear_quota_secret(account: String) -> Result<(), String> {
+    quota::clear_quota_secret(&account)
+}
+
+#[tauri::command]
+fn has_quota_secret(account: String) -> bool {
+    quota::load_quota_secret(&account).is_some()
+}
+
+/// Read all enabled quota providers (cursor/glm/kimi/grok + the codex/claude
+/// adapters). 15-minute TTL cache in cache/quota-cache.json; `force` refetches.
+#[tauri::command]
+fn read_quota_providers(force: bool) -> serde_json::Value {
+    let s = settings::load();
+    let mut enabled: Vec<quota::QuotaProvider> = Vec::new();
+    if s.cursor_quota_enabled {
+        enabled.push(quota::QuotaProvider::Cursor);
+    }
+    if s.glm_quota_enabled {
+        enabled.push(quota::QuotaProvider::Glm);
+    }
+    if s.kimi_quota_enabled {
+        enabled.push(quota::QuotaProvider::Kimi);
+    }
+    if s.grok_quota_enabled {
+        enabled.push(quota::QuotaProvider::Grok);
+    }
+
+    let cache_path = paths::app_support_root().join("cache").join("quota-cache.json");
+    if !force {
+        if let Ok(text) = std::fs::read_to_string(&cache_path) {
+            if let Ok(mut cached) = serde_json::from_str::<serde_json::Value>(&text) {
+                let fresh = cached
+                    .get("fetched_at_secs")
+                    .and_then(|v| v.as_u64())
+                    .map(|at| {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs().saturating_sub(at) < 15 * 60)
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+                if fresh {
+                    if let Some(list) = cached.get_mut("providers") {
+                        // filter to currently-enabled providers
+                        if let Some(arr) = list.as_array_mut() {
+                            arr.retain(|p| {
+                                p.get("provider")
+                                    .and_then(|v| v.as_str())
+                                    .map(|id| {
+                                        quota::QuotaProvider::Codex.id() != id
+                                            && quota::QuotaProvider::Claude.id() != id
+                                            && enabled
+                                                .iter()
+                                                .any(|e| e.id() == id)
+                                    })
+                                    .unwrap_or(false)
+                            });
+                        }
+                        return cached;
+                    }
+                }
+            }
+        }
+    }
+
+    let fetched = quota::fetch_providers(&enabled);
+    // Attach codex/claude windows from their existing services when visible.
+    let mut providers: Vec<serde_json::Value> = Vec::new();
+    if s.show_codex_quota {
+        let q = codex_quota::read();
+        if q.available {
+            providers.push(serde_json::json!({
+                "provider": "codex",
+                "displayName": "Codex",
+                "status": "available",
+                "windows": quota_windows_from_codex(&q),
+            }));
+        }
+        let cq = claude_quota::read();
+        if cq.available {
+            providers.push(serde_json::json!({
+                "provider": "claude",
+                "displayName": "Claude Code",
+                "status": "available",
+                "windows": quota_windows_from_codex(&cq),
+            }));
+        }
+    }
+    for q in fetched.values() {
+        if q.is_available() {
+            providers.push(serde_json::to_value(q).unwrap_or_default());
+        } else {
+            // Include with its status so the settings page can explain; the
+            // card layer filters by shouldDisplay.
+            providers.push(serde_json::to_value(q).unwrap_or_default());
+        }
+    }
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let payload = serde_json::json!({ "fetched_at_secs": now_secs, "providers": providers });
+    if let Some(parent) = cache_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&cache_path, serde_json::to_string_pretty(&payload).unwrap_or_default());
+    payload
+}
+
+fn quota_windows_from_codex(q: &codex_quota::CodexQuotaSnapshot) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    if let Some(p) = q.seven_day_used_percent {
+        out.push(serde_json::json!({
+            "kind": "seven_day",
+            "title": "7 天",
+            "used_percent": p,
+            "resets_at": q.seven_day_resets_at,
+        }));
+    }
+    if let Some(p) = q.five_hour_used_percent {
+        out.push(serde_json::json!({
+            "kind": "five_hour",
+            "title": "5 小时",
+            "used_percent": p,
+            "resets_at": q.five_hour_resets_at,
+        }));
+    }
+    out
+}
+
+#[tauri::command]
+fn read_cursor_code_signal() -> serde_json::Value {
+    match cursor_usage::read_code_signal() {
+        Ok(sig) => serde_json::json!({ "ok": true, "signal": sig }),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+    }
+}
+
+/// Refresh official Cursor usage now (15-min TTL inside the service is
+/// skipped when force). Called by run_refresh on its cadence too.
+#[tauri::command]
+fn refresh_cursor_usage(force: bool) -> serde_json::Value {
+    let s = settings::load();
+    if !s.cursor_quota_enabled {
+        return serde_json::json!({ "ok": false, "reason": "disabled" });
+    }
+    match cursor_usage::refresh(s.history_days) {
+        Ok(cache) => serde_json::json!({ "ok": true, "days": cache.days.len() }),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+    }
+}
+
 /// The running app version (compile-time), for the About card before any
 /// update check has run.
 /// Sidebar GitHub row (opencodex pattern): repo info + star via local gh.
@@ -558,6 +750,21 @@ fn run_refresh(app: &tauri::AppHandle) {
         let mut fresh = freshness::FreshnessState::load();
         fresh.collection.attempting(freshness::now_iso());
         fresh.save();
+        // Official Cursor usage refresh on the quota cadence (15 min), then
+        // the ledger collect.
+        {
+            static LAST_CURSOR_REFRESH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let last = LAST_CURSOR_REFRESH.load(std::sync::atomic::Ordering::Relaxed);
+            let s = settings::load();
+            if s.cursor_quota_enabled && now.saturating_sub(last) >= 15 * 60 {
+                LAST_CURSOR_REFRESH.store(now, std::sync::atomic::Ordering::Relaxed);
+                let _ = cursor_usage::refresh(s.history_days);
+            }
+        }
         let snapshot = {
             let settings = settings::load();
             collector::collect(
@@ -565,6 +772,15 @@ fn run_refresh(app: &tauri::AppHandle) {
                 settings.experimental_agent_sources.as_ref(),
             )
         };
+        // Official Cursor usage overlay (upstream v0.2.1): merge cached
+        // official events into the ledger snapshot when the toggle is on.
+        let mut snapshot = snapshot;
+        if settings::load().cursor_quota_enabled {
+            let cache = cursor_usage::read_cache();
+            if cache.days.iter().any(|d| d.total_tokens > 0) {
+                snapshot = cursor_usage::merge(snapshot, &cache.days);
+            }
+        }
         // Record success (failures keep the attempt timestamp; the Windows
         // collector degrades per-source instead of erroring wholesale).
         {
@@ -1000,6 +1216,15 @@ pub fn run() {
             set_agent_work_rank_visibility,
             app_version,
             github_repo_info,
+            set_cursor_quota_enabled,
+            set_cursor_code_signal_enabled,
+            set_quota_provider_enabled,
+            save_quota_secret,
+            clear_quota_secret,
+            has_quota_secret,
+            read_quota_providers,
+            read_cursor_code_signal,
+            refresh_cursor_usage,
             github_star_state,
             github_star,
             github_repo_url,

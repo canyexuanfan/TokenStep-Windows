@@ -10,7 +10,7 @@
 //! on Windows.
 
 use crate::models::{
-    DailyAgentWork, DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, ProjectUsage, RhythmTag,
+    DailyAgentWork, DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, RhythmTag,
     SourceInfo, TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
 };
 use crate::paths;
@@ -43,13 +43,6 @@ pub struct UsageRecord {
     /// bypassing the pricing table. `None` → estimate from usage via pricing.
     #[allow(dead_code)]
     pub cost_usd: Option<f64>,
-    /// Sanitized project display name (upstream B1-lite): last path segment
-    /// of the working directory, never a full path. `None` = unassigned.
-    pub project_name: Option<String>,
-    /// Stable per-record identity (e.g. `gemini:<session>:<idx>`) used for
-    /// idempotent rescans by the T1 agent sources. Underscore-prefixed
-    /// because mainline collectors don't set it yet.
-    pub _request_id: String,
 }
 
 /// Public entry point: collect from all sources, aggregate, return a snapshot.
@@ -58,7 +51,7 @@ pub struct UsageRecord {
 /// (ZCode / Hermes / WorkBuddy) key off the master switch alone; T1 agent
 /// sources (Gemini CLI / Qwen / Kimi / OpenCode / Amp / Droid / Grok) follow
 /// the per-source list semantics of `agent_sources::enabled_ids`.
-pub fn collect(include_experimental: bool, experimental_source_ids: Option<&Vec<String>>) -> UsageSnapshot {
+pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec<String>>) -> UsageSnapshot {
     let pricing_data = pricing::load();
 
     // One shared collector cache for the whole pass: each collector only
@@ -95,13 +88,6 @@ pub fn collect(include_experimental: bool, experimental_source_ids: Option<&Vec<
     records.extend(zcode_records.iter().cloned());
     records.extend(hermes_records.iter().cloned());
 
-    // T1 experimental agent sources (upstream G-A1): master switch + explicit
-    // per-source list; auto-enroll installed sources when no list was saved.
-    let enabled_t1 = crate::agent_sources::enabled_ids(include_experimental, experimental_source_ids);
-    let agent_source_results = crate::agent_sources::collect(&enabled_t1);
-    for result in agent_source_results.values() {
-        records.extend(result.records.iter().cloned());
-    }
 
     // Stamp per-source record counts (recount precisely per tool, since the
     // CC Switch source name differs from its record `tool` strings — e.g.
@@ -127,10 +113,6 @@ pub fn collect(include_experimental: bool, experimental_source_ids: Option<&Vec<
     sources.insert("ZCode".to_string(), zcode_source);
     sources.insert("Hermes Agent".to_string(), hermes_source);
     sources.insert("WorkBuddy".to_string(), workbuddy_source);
-    // Merge T1 source infos (each keyed by its display name).
-    for (id, result) in agent_source_results {
-        sources.insert(id, result.source);
-    }
 
     aggregate(records, &pricing_data, sources)
 }
@@ -241,8 +223,6 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
             model: model_key(&sqlite_value_as_string(&model)),
             usage,
             cost_usd: None,
-            project_name: None,
-            _request_id: String::new(),
         });
     }
 
@@ -344,7 +324,6 @@ fn collect_codex_jsonl(
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
         let mut final_model = String::from("unknown");
-        let mut session_project: Option<String> = None;
         let mut events: Vec<CodexTokenEvent> = Vec::new();
 
         // Stream the file line-by-line instead of read_to_string, so a 9.7 GB
@@ -372,14 +351,6 @@ fn collect_codex_jsonl(
                     if !id.is_empty() {
                         session_id = id.to_string();
                     }
-                }
-                // Upstream B1-lite: remember the session's working directory so
-                // every token_count record in this file can carry a project.
-                if session_project.is_none() {
-                    session_project = payload
-                        .and_then(|p| p.get("cwd"))
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| crate::agent_sources::project_display_name(Some(s)));
                 }
             }
             if ev_type == "turn_context" {
@@ -439,7 +410,6 @@ fn collect_codex_jsonl(
         let file_records = codex_delta_records(
             &session_id,
             &events,
-            session_project.as_deref(),
             parent_anchor.as_ref(),
             parent_first.as_ref(),
             created_at,
@@ -804,7 +774,6 @@ fn codex_increment_usage(
 fn codex_delta_records(
     session_id: &str,
     events: &[CodexTokenEvent],
-    project_name: Option<&str>,
     parent_anchor: Option<&TokenUsageCounts>,
     parent_first_cumulative: Option<&TokenUsageCounts>,
     child_created_at: Option<f64>,
@@ -845,8 +814,6 @@ fn codex_delta_records(
                 model: event.model.clone(),
                 usage,
                 cost_usd: None,
-                project_name: project_name.map(String::from),
-                _request_id: String::new(),
             });
         }
         return records;
@@ -973,8 +940,6 @@ fn codex_delta_records(
             model: event.model.clone(),
             usage,
             cost_usd: None,
-            project_name: project_name.map(String::from),
-            _request_id: String::new(),
         });
         previous = Some(current.clone());
     }
@@ -1025,8 +990,6 @@ struct ClaudeCandidate {
     usage: TokenUsageCounts,
     has_stop_reason: bool,
     line_no: usize,
-    /// Sanitized project from the row's top-level `cwd` (upstream B1-lite).
-    project_name: Option<String>,
 }
 
 impl ClaudeCandidate {
@@ -1117,10 +1080,6 @@ fn collect_claude_code(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
                 usage: usage.clone(),
                 has_stop_reason,
                 line_no,
-                project_name: obj
-                    .get("cwd")
-                    .and_then(|v| v.as_str())
-                    .and_then(|s| crate::agent_sources::project_display_name(Some(s))),
             };
             if let Some(existing) = responses.get(&response_key) {
                 if !candidate.is_preferred_over(existing) {
@@ -1138,8 +1097,6 @@ fn collect_claude_code(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
                 model: c.model.clone(),
                 usage: c.usage.clone(),
                 cost_usd: None,
-                project_name: c.project_name.clone(),
-                _request_id: String::new(),
             })
             .collect();
 
@@ -1335,8 +1292,6 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
                 total_tokens: total,
             },
             cost_usd,
-            project_name: None,
-            _request_id: String::new(),
         });
     }
 
@@ -1365,9 +1320,6 @@ fn aggregate(
     let mut rhythms: BTreeMap<String, RhythmAccumulator> = BTreeMap::new();
     let mut tools: BTreeMap<String, UsageAccumulator> = BTreeMap::new();
     let mut models: BTreeMap<(String, String), UsageAccumulator> = BTreeMap::new();
-    // Project-dimension totals (upstream B1-lite `ProjectUsageAccumulator`);
-    // "" groups records without a project context.
-    let mut project_totals: BTreeMap<String, ProjectUsageAccumulator> = BTreeMap::new();
 
     for record in &records {
         // Sources that report a direct USD cost (CC Switch proxy logs) bypass
@@ -1394,21 +1346,6 @@ fn aggregate(
         daily_entry.total_tokens += record.usage.total_tokens;
         daily_entry.cost += cost;
 
-        // Project dimension: fold into both the daily and global accumulators.
-        let record_project = record.project_name.clone().unwrap_or_default();
-        let daily_project = daily_entry
-            .projects
-            .entry(record_project.clone())
-            .or_default();
-        daily_project.tokens += record.usage.total_tokens;
-        daily_project.cost += cost;
-        *daily_project.tools.entry(record.tool.clone()).or_insert(0) += record.usage.total_tokens;
-        *daily_project.models.entry(record.model.clone()).or_insert(0) += record.usage.total_tokens;
-        let global_entry = project_totals.entry(record_project).or_default();
-        global_entry.tokens += record.usage.total_tokens;
-        global_entry.cost += cost;
-        *global_entry.tools.entry(record.tool.clone()).or_insert(0) += record.usage.total_tokens;
-        *global_entry.models.entry(record.model.clone()).or_insert(0) += record.usage.total_tokens;
 
         // Rhythm: bucket this record's tokens into its hour-of-day (0-23),
         // but only when we have a sub-day timestamp. Mirrors upstream
@@ -1441,21 +1378,12 @@ fn aggregate(
 
     let mut daily_rows: Vec<DailyUsage> = daily
         .into_values()
-        .map(|d| {
-            let mut projects: Vec<ProjectUsage> = d
-                .projects
-                .into_iter()
-                .map(|(name, acc)| acc.into_project_usage(name))
-                .collect();
-            projects.sort_by(|a, b| b.tokens.cmp(&a.tokens));
-            DailyUsage {
-                date: d.date,
-                tools: d.tools,
-                models: d.models,
-                total_tokens: d.total_tokens,
-                cost: round(d.cost, 4),
-                projects: Some(projects),
-            }
+        .map(|d| DailyUsage {
+            date: d.date,
+            tools: d.tools,
+            models: d.models,
+            total_tokens: d.total_tokens,
+            cost: round(d.cost, 4),
         })
         .collect();
     daily_rows.sort_by(|a, b| a.date.cmp(&b.date));
@@ -1490,13 +1418,6 @@ fn aggregate(
 
     let active_days = daily_rows.iter().filter(|d| d.total_tokens > 0).count() as i64;
 
-    // Global project aggregates, tokens-descending (upstream B1-lite).
-    let mut project_rows: Vec<ProjectUsage> = project_totals
-        .into_iter()
-        .map(|(name, acc)| acc.into_project_usage(name))
-        .collect();
-    project_rows.sort_by(|a, b| b.tokens.cmp(&a.tokens));
-
     UsageSnapshot {
         generated_at: Some(now_iso()),
         timezone: Some("Asia/Shanghai".to_string()),
@@ -1511,8 +1432,6 @@ fn aggregate(
         tools: tool_rows,
         models: model_rows,
         sources,
-        source_attempt: None,
-        projects: project_rows,
     }
 }
 
@@ -1523,34 +1442,8 @@ struct DailyAccumulator {
     /// Per-model token breakdown for this day (mirrors upstream
     /// DailyAccumulator.models). Drives the Today view's model split.
     models: BTreeMap<String, i64>,
-    /// Per-project accumulators keyed by sanitized name ("" = unassigned).
-    projects: BTreeMap<String, ProjectUsageAccumulator>,
     total_tokens: i64,
     cost: f64,
-}
-
-/// Port of upstream `ProjectUsageAccumulator`: sums tokens/cost and
-/// per-tool / per-model breakdowns for one project on one day (or globally).
-#[derive(Default, Clone)]
-struct ProjectUsageAccumulator {
-    tokens: i64,
-    cost: f64,
-    tools: BTreeMap<String, i64>,
-    models: BTreeMap<String, i64>,
-}
-
-impl ProjectUsageAccumulator {
-    /// Round cost to 4 decimals (upstream `(cost * 10_000).rounded() / 10_000`)
-    /// and drop tools/models that carry no tokens.
-    fn into_project_usage(self, name: String) -> ProjectUsage {
-        ProjectUsage {
-            name,
-            tokens: self.tokens,
-            cost: (self.cost * 10_000.0).round() / 10_000.0,
-            tools: self.tools.into_iter().filter(|(_, v)| *v > 0).collect(),
-            models: self.models.into_iter().filter(|(_, v)| *v > 0).collect(),
-        }
-    }
 }
 
 #[derive(Default)]
@@ -2023,9 +1916,6 @@ struct CachedRecord {
     usage: TokenUsageCounts,
     #[serde(default)]
     cost_usd: Option<f64>,
-    /// Project dimension (v0.2.0 B1-lite); older caches decode as None.
-    #[serde(default)]
-    project_name: Option<String>,
 }
 
 impl From<&UsageRecord> for CachedRecord {
@@ -2037,7 +1927,6 @@ impl From<&UsageRecord> for CachedRecord {
             model: r.model.clone(),
             usage: r.usage.clone(),
             cost_usd: r.cost_usd,
-            project_name: r.project_name.clone(),
         }
     }
 }
@@ -2117,8 +2006,6 @@ fn cached_records(
                 model: c.model.clone(),
                 usage: c.usage.clone(),
                 cost_usd: c.cost_usd,
-                project_name: c.project_name.clone(),
-                _request_id: String::new(),
             })
             .collect(),
     )
@@ -2283,7 +2170,7 @@ order by model_usage.started_at, model_usage.id"#
         let provider_total: i64 = row.get::<_, Option<i64>>(8)?.unwrap_or(0);
         // tool_call_count (column 9) is read for forward compatibility with
         // the upstream agent-work accumulator; not consumed here.
-        let project_directory: Option<String> = if has_session_table {
+        let _project_directory: Option<String> = if has_session_table {
             row.get::<_, Option<String>>(10)?
         } else {
             None
@@ -2308,10 +2195,6 @@ order by model_usage.started_at, model_usage.id"#
             model,
             usage,
             cost_usd: None,
-            project_name: crate::agent_sources::project_display_name(
-                project_directory.as_deref(),
-            ),
-            _request_id: String::new(),
         })
     });
     let mut records = Vec::new();
@@ -2403,8 +2286,6 @@ fn collect_hermes() -> (Vec<UsageRecord>, SourceInfo) {
                 total_tokens: derived_total.max(0),
             },
             cost_usd: None,
-            project_name: None,
-            _request_id: String::new(),
         })
     });
     let mut records = Vec::new();

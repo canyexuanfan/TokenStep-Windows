@@ -118,5 +118,10 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         merge_history_all_devices: false,
         hidden_device_ids: vec![],
         show_experimental_agent_sources: s.show_experimental_agent_sources,
+        cursor_quota_enabled: s.cursor_quota_enabled,
+        cursor_code_signal_enabled: s.cursor_code_signal_enabled,
+        glm_quota_enabled: s.glm_quota_enabled,
+        kimi_quota_enabled: s.kimi_quota_enabled,
+        grok_quota_enabled: s.grok_quota_enabled,
     }
 }

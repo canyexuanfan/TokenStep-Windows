@@ -1,3 +1,4 @@
+#![allow(dead_code)] // T1 sources are offline upstream (v0.2.2); kept as reference.
 //! T1 experimental agent sources — a port of upstream macOS
 //! `AgentSources.swift` (v0.2.0 G-A1). Seven optional, per-source-toggled
 //! collectors: Gemini CLI / Qwen Code / Kimi Code / OpenCode / Amp / Droid /
@@ -269,11 +270,11 @@ pub fn project_display_name(path: Option<&str>) -> Option<String> {
 #[allow(clippy::too_many_arguments)]
 fn make_record(
     tool: &str,
-    request_id: String,
+    _request_id: String,
     epoch_secs: f64,
     model: String,
     usage: TokenUsageCounts,
-    project_name: Option<String>,
+    _project_name: Option<String>,
 ) -> UsageRecord {
     UsageRecord {
         date: collector::day_string_from_epoch(epoch_secs),
@@ -282,8 +283,6 @@ fn make_record(
         model,
         usage,
         cost_usd: None,
-        project_name,
-        _request_id: request_id,
     }
 }
 

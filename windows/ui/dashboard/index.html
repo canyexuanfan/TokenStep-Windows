@@ -438,12 +438,11 @@
         // ---- Quota cards: Codex + Claude (each only when opted in) ----
         // The Codex card reuses #quotaContent; the Claude card uses
         // #claudeQuotaContent. Both are filled async after render.
-        var codexQuotaCard = settings.show_codex_quota
-          ? '<div class="card" id="quotaCard"><div class="card-title">' + window.TS.t('Codex 配额') + '</div><div id="quotaContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
-          : '';
-        var claudeQuotaCard = settings.show_codex_quota
-          ? '<div class="card" id="claudeQuotaCard"><div class="card-title">' + window.TS.t('Claude Code 配额') + '</div><div id="claudeQuotaContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
-          : '';
+        // Unified subscription-quota card (upstream v0.2.2 PopoverQuotaCard):
+        // one card, provider chips; unconfigured providers render nothing.
+        var quotaCard = '<div class="card" id="quotaProvidersCard" style="display:none"><div class="card-title">' + window.TS.t('订阅额度') + '</div><div id="quotaProvidersContent"></div></div>';
+        var codexQuotaCard = '';
+        var claudeQuotaCard = '';
 
         // ---- Agent-work-rank card (tri-state visibility, upstream v0.2.0) ----
         var rankVisible = settings.agent_work_rank_visibility === 'visible'
@@ -452,7 +451,48 @@
           ? '<div class="card" id="tokenRankCard"><div class="card-title">' + window.TS.t('Agent 消耗榜') + '</div><div id="tokenRankContent" style="color:var(--muted);padding:10px 0">' + window.TS.t('加载中…') + '</div></div>'
           : '';
 
-        return hero + window.TS.todayProjectsCardHTML(t) + metricStrip + codexQuotaCard + claudeQuotaCard + tokenRankCard + window.TS.agentWorkCardHTML(snapshot, settings) + activityCard + rhythmCard + distCards;
+        // ---- Model usage dashboard card (upstream v0.2.2 TodayModelUsageCard) ----
+        var modelRows = (t.models ? Object.keys(t.models).map(function (k) {
+          return { model: k, tokens: t.models[k] || 0 };
+        }).filter(function (r) { return r.tokens > 0; }).sort(function (a, b) {
+          return b.tokens - a.tokens || (a.model < b.model ? -1 : 1);
+        }) : []);
+        var modelTotal = Math.max(1, t.total_tokens || 0);
+        if (modelRows.length > 2) {
+          modelRows = modelRows.filter(function (r, i) { return i < 2 || (r.tokens * 100 / modelTotal) >= 0.1; });
+        }
+        var modelMismatch = modelRows.length && Math.abs(modelRows.reduce(function (a, r) { return a + r.tokens; }, 0) - (t.total_tokens || 0)) > Math.max(1, (t.total_tokens || 0) * 0.001);
+        var modelVisible = modelRows.slice(0, 5);
+        var modelMore = modelRows.length > 5 ? window.TS.tf("还有 %d 个模型", modelRows.length - 5) : '';
+        function modelColorSlot(name) {
+          var h = 14695981039346656037;
+          for (var i = 0; i < name.length; i++) { h ^= name.charCodeAt(i); h = (h * 1099511628211) % 9007199254740991; }
+          return ['var(--green-dark)', 'var(--green)', 'var(--ring3)', 'var(--ring4)'][Math.abs(h) % 4];
+        }
+        var modelUsageCard = modelVisible.length
+          ? '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px"><div class="card-title" style="margin:0">' + window.TS.t('今日模型消耗') + '</div><span style="font-size:12px;font-weight:700;color:var(--muted)">' + window.TS.tf('今日 · %d 个模型', modelRows.length).replace(/%d/, modelRows.length) + '</span></div>' +
+            '<div style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:8px">' + window.TS.t('按模型查看今日 Token、占比与金额估算') + '</div>' +
+            '<div style="display:grid;grid-template-columns:170px 1fr 90px 52px 90px;gap:8px;font-size:11px;font-weight:800;color:var(--muted);padding:0 4px 6px;border-bottom:1px solid var(--track)">' +
+              '<span>' + window.TS.t('模型') + '</span><span></span><span style="text-align:right">Token</span><span style="text-align:right">' + window.TS.t('占比') + '</span><span style="text-align:right">' + window.TS.t('金额估算') + '</span>' +
+            '</div>' +
+            modelVisible.map(function (r) {
+              var pct = r.tokens * 100 / modelTotal;
+              var cost = ((t.cost || 0) * r.tokens / modelTotal).toFixed(2);
+              return '<div style="display:grid;grid-template-columns:170px 1fr 90px 52px 90px;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid color-mix(in srgb,var(--track) 55%,transparent)">' +
+                '<span style="font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:' + modelColorSlot(r.model) + '"></span>' + window.TS.escapeHtmlStr(r.model) + '</span>' +
+                '<span style="height:7px;border-radius:999px;background:var(--track);overflow:hidden"><span style="display:block;height:100%;width:' + Math.max(2, pct).toFixed(1) + '%;border-radius:999px;background:' + modelColorSlot(r.model) + ';opacity:.85"></span></span>' +
+                '<span style="text-align:right;font-size:12.5px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">' + formatTokens(r.tokens, true) + '</span>' +
+                '<span style="text-align:right;font-size:12px;font-weight:700;color:var(--muted)">' + pct.toFixed(0) + '%</span>' +
+                '<span style="text-align:right;font-size:12px;font-weight:700;color:var(--muted)">$' + cost + '</span>' +
+              '</div>';
+            }).join('') +
+            (modelMore ? '<div style="font-size:12px;font-weight:600;color:var(--muted);padding-top:6px">' + modelMore + '</div>' : '') +
+            (modelMismatch ? '<div style="font-size:11px;color:var(--muted);padding-top:6px;font-weight:600">' + window.TS.t('模型明细合计与今日总量不一致；占比按今日总量计算。') + '</div>' : '') +
+            '<div style="font-size:11px;color:var(--muted);padding-top:4px;font-weight:600">' + window.TS.t('按 API 列表价估算，不代表订阅或实际账单。') + '</div>' +
+          '</div>'
+          : '';
+
+        return hero + metricStrip + quotaCard + tokenRankCard + window.TS.agentWorkCardHTML(snapshot, settings) + activityCard + rhythmCard + modelUsageCard + distCards;
       }
       function distributionInner(title, rows, showTodayBadge) {
         var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
@@ -483,50 +523,44 @@
         el.innerHTML = html;
       }
 
-      // Upstream v0.2.0 quota-card behavior: a provider that has NEVER been
-      // read successfully is hidden entirely (never-succeeded sections stay
-      // out of sight); when both are hidden, one placeholder card explains
-      // what would make them appear.
-      function hideQuotaCard(cardId) {
-        var card = document.getElementById(cardId);
-        if (card) card.style.display = 'none';
-        checkQuotaPlaceholder();
-      }
-
-      function checkQuotaPlaceholder() {
-        var c = document.getElementById('quotaCard');
-        var cl = document.getElementById('claudeQuotaCard');
-        var bothHidden = (!c || c.style.display === 'none') && (!cl || cl.style.display === 'none');
-        var ph = document.getElementById('quotaPlaceholder');
-        if (bothHidden && !ph && c) {
-          c.style.display = '';
-          c.id = 'quotaPlaceholder';
-          c.innerHTML = '<div class="card-title">' + window.TS.t('Agent 额度') + '</div>' +
-            '<div style="color:var(--muted);font-weight:600;padding:6px 0">' + window.TS.t('暂未读取到 Agent 额度') + '</div>' +
-            '<div style="font-size:12px;color:var(--muted)">' + window.TS.t('打开并登录 Codex / Claude Code 后会自动显示。') + '</div>';
-        }
-      }
-
-      function loadCodexQuota() {
-        var el = document.getElementById('quotaContent');
-        if (!el) return;
-        invoke('read_codex_quota').then(function (q) {
-          if (!q || !q.available) { hideQuotaCard('quotaCard'); return; }
-          renderQuotaInto('quotaContent', q, 'codex');
-        }).catch(function () {
-          hideQuotaCard('quotaCard');
-        });
-      }
-
-      function loadClaudeQuota() {
-        var el = document.getElementById('claudeQuotaContent');
-        if (!el) return;
-        invoke('read_claude_quota').then(function (q) {
-          if (!q || !q.available) { hideQuotaCard('claudeQuotaCard'); return; }
-          renderQuotaInto('claudeQuotaContent', q, 'claude');
-        }).catch(function () {
-          hideQuotaCard('claudeQuotaCard');
-        });
+      // Unified quota loading (upstream v0.2.2): one card, chips per provider,
+      // low-remaining sorts first, failures keep the last value (never 0%).
+      function loadQuotaProviders(force) {
+        var host = document.getElementById('quotaProvidersContent');
+        var card = document.getElementById('quotaProvidersCard');
+        if (!host || !card) return;
+        invoke('read_quota_providers', { force: !!force }).then(function (r) {
+          var list = (r && r.providers) || [];
+          var displayable = list.filter(function (p) { return p.status === 'available' && p.windows && p.windows.length; });
+          if (!displayable.length) { card.style.display = 'none'; return; }
+          card.style.display = '';
+          displayable.sort(function (a, b) {
+            var la = lowest(a), lb = lowest(b);
+            return la - lb; // lowest remaining first (告急置顶)
+            function lowest(p) {
+              return p.windows.reduce(function (m, w) {
+                var rem = w.total > 0 ? (w.remaining != null ? w.remaining / w.total * 100 : 100 - (w.used_percent || 0)) : (100 - (w.used_percent || 0));
+                return Math.min(m, Math.max(0, Math.min(100, rem)));
+              }, 101);
+            }
+          });
+          host.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' + displayable.map(function (p) {
+            var name = { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok' }[p.provider] || p.provider;
+            var wins = p.windows.slice(0, 2).map(function (w) {
+              var rem = w.total > 0 ? (w.remaining != null ? w.remaining / w.total * 100 : 100 - (w.used_percent || 0)) : (100 - (w.used_percent || 0));
+              rem = Math.max(0, Math.min(100, rem));
+              var low = rem < 20;
+              var title = w.title || { five_hour: '5 小时', seven_day: '7 天', session: '会话', weekly: '本周', monthly_credits: '本月额度', token_window: 'Token 窗', spend: '花费', cursor_models: 'Cursor 模型', other_models: '其他模型' }[w.kind] || w.kind;
+              return '<div style="margin-top:6px">' +
+                '<div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:700"><span style="color:var(--muted)">' + title + '</span><span style="color:' + (low ? '#ea580c' : 'var(--ink)') + '">' + window.TS.t('剩余') + ' ' + Math.round(rem) + '%</span></div>' +
+                '<div style="height:5px;border-radius:999px;background:var(--track);overflow:hidden;margin-top:3px"><div style="height:100%;width:' + Math.max(3, rem).toFixed(0) + '%;background:' + (low ? '#ea580c' : 'var(--green)') + ';border-radius:999px"></div></div>' +
+              '</div>';
+            }).join('');
+            return '<div style="background:var(--canvas);border-radius:14px;padding:10px 12px">' +
+              '<div style="font-size:13.5px;font-weight:800;color:var(--ink)">' + name + '</div>' + wins +
+            '</div>';
+          }).join('') + '</div>';
+        }).catch(function () { card.style.display = 'none'; });
       }
 
       function loadTokenRank() {
@@ -562,25 +596,6 @@
         return String(s || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; });
       }
       function viewStats() {
-        // By-project column (upstream v0.2.0 StatsView): last-30-day project
-        // aggregates, up to 8 rows.
-        var projects30 = (snapshot.projects || []).slice(0, 8);
-        var projectCard = projects30.length
-          ? '<div class="card"><div class="card-title">' + window.TS.t('按项目') + '<span style="float:right;font-size:11px;font-weight:700;color:var(--muted)">' + window.TS.t('近 30 天') + '</span></div>' +
-              projects30.map(function (p) {
-                var top = Math.max(1, (snapshot.projects[0] || {}).tokens || 1);
-                var w = Math.max(4, Math.round((p.tokens || 0) * 100 / top));
-                var agents = Object.keys(p.tools || {}).sort(function (a, b) { return p.tools[b] - p.tools[a]; }).slice(0, 2)
-                  .map(function (n) { return n === 'Claude Code' ? 'Claude' : n; }).join(' · ');
-                return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0">' +
-                  '<div style="flex:0 0 150px;font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + window.TS.escapeHtmlStr(window.TS.projectDisplayName(p.name)) + '</div>' +
-                  '<div style="flex:1;height:7px;border-radius:999px;background:var(--track);overflow:hidden"><div style="height:100%;width:' + w + '%;background:var(--green);border-radius:999px;opacity:.85"></div></div>' +
-                  '<div style="flex:0 0 88px;text-align:right;font-size:12px;font-weight:700;color:var(--muted)">' + formatTokens(p.tokens || 0, true) + '</div>' +
-                  '<div style="flex:0 0 110px;font-size:11px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + window.TS.escapeHtmlStr(agents) + '</div>' +
-                '</div>';
-              }).join('') +
-              '<div style="font-size:11px;color:var(--muted);margin-top:6px;font-weight:600">' + window.TS.t('只显示项目目录名；完整路径仅保存在本机。') + '</div></div>'
-          : '';
         return '<div class="dist-grid">' +
           '<div class="card">' + distributionInner(window.TS.t('按工具'), snapshot.tools) + '</div>' +
           '<div class="card">' + distributionInner(window.TS.t('按模型'), snapshot.models.slice(0, 12)) + '</div>' +
@@ -626,16 +641,7 @@
         }).join('') + '</div>';
         return '<div class="card"><div class="card-title">' + window.TS.t('隐私说明') + '</div>' + numbered + '</div>' +
           '<div class="card"><div class="card-title">' + window.TS.t('本地数据文件') + '</div><div class="card-row" style="justify-content:space-between"><div><b>' + window.TS.t('用量数据') + '</b></div><code style="font-size:12px;color:var(--muted)">%APPDATA%\\TokenStep\\data\\usage.json</code></div><div class="card-row" style="justify-content:space-between"><div><b>' + window.TS.t('设置') + '</b></div><code style="font-size:12px;color:var(--muted)">%APPDATA%\\TokenStep\\config\\settings.json</code></div></div>' +
-          '<div class="card"><div class="card-title">' + window.TS.t('数据源') + '</div>' + (srcs.length ? srcs.map(function (n) { var m = snapshot.sources[n]; return '<div class="card-row" style="justify-content:space-between"><div><b>' + n + '</b></div><div style="color:var(--muted)">' + (m.status || '?') + ' · ' + (m.records || 0) + ' ' + window.TS.t('条') + '</div></div>'; }).join('') : window.TS.t('暂无')) + '</div>' +
-          '<div class="card"><div class="card-title">' + window.TS.t('数据状态说明') + '</div>' +
-            '<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">' +
-              [['fresh', '数据在正常刷新周期内成功获取。'], ['aging', '超过正常刷新周期，最近一次尝试没有失败。'], ['stale', '最近一次尝试失败，当前展示最后成功数据。'], ['partial', '同一轮刷新中部分数据来源失败，其余正常。'], ['never_succeeded', '该数据从未成功获取，不会显示为 0。']].map(function (row) {
-                return '<div style="display:flex;gap:10px;align-items:center"><span style="flex-shrink:0">' + window.TS.freshnessBadgeHTML(row[0]) + '</span><span style="font-size:13px;color:var(--muted-strong)">' + window.TS.t(row[1]) + '</span></div>';
-              }).join('') +
-            '</div>' +
-            '<div style="font-size:12px;color:var(--muted);margin-top:10px;font-weight:600">' + window.TS.t('按 API 列表价估算，不代表订阅或实际账单。') + '</div>' +
-            '<div style="font-size:12px;color:var(--muted);margin-top:6px;font-weight:600">' + window.TS.t('后续如果接入排行榜，会单独做授权和确认，不会默认上传。') + '</div>' +
-          '</div>';
+          '<div class="card"><div class="card-title">' + window.TS.t('数据源') + '</div>' + (srcs.length ? srcs.map(function (n) { var m = snapshot.sources[n]; return '<div class="card-row" style="justify-content:space-between"><div><b>' + n + '</b></div><div style="color:var(--muted)">' + (m.status || '?') + ' · ' + (m.records || 0) + ' ' + window.TS.t('条') + '</div></div>'; }).join('') : window.TS.t('暂无')) + '</div>';
       }
       function viewSettings() {
         var gm = Math.round(settings.daily_goal_tokens / 1000000);
@@ -687,6 +693,24 @@
         html += '<div class="card"><div class="card-title">' + window.TS.t('Agent 消耗榜显示') + '</div>' +
           '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('榜单可见性') + '</div><div class="setting-hint">' + window.TS.t('记录你在 Agent 用量榜的排名。默认隐藏：不读取本地榜单身份、不请求榜单接口。选择「显示」后才会读取本机榜单身份并拉取公开榜单数据。') + '</div></div></div>' +
           '<div id="rankVisSeg" style="display:flex;gap:8px;margin:4px 0 8px">' + segBtn('automatic', window.TS.t('自动检测')) + segBtn('visible', window.TS.t('显示')) + segBtn('hidden', window.TS.t('隐藏')) + '</div>';
+        // ---- Subscription quota providers (upstream v0.2.2) ----
+        html += '<div class="card"><div class="card-title">' + window.TS.t('订阅额度提供商') + '</div>' +
+          '<div style="font-size:12px;color:var(--muted);font-weight:600;margin-bottom:8px">' + window.TS.t('联网项（全部默认关闭）。读取失败时显示「暂不可用」并保留上次值，绝不显示 0%。') + '</div>';
+        function providerToggle(id, name, checked, hint) {
+          return '<div class="setting-row"><div><div class="setting-label">' + name + '</div><div class="setting-hint">' + hint + '</div></div><label class="switch"><input type="checkbox" data-quotaprovider="' + id + '"' + (checked ? ' checked' : '') + '/><span class="slider"></span></label></div>';
+        }
+        html += providerToggle('cursor', 'Cursor', settings.cursor_quota_enabled, window.TS.t('两档额度 + 官方用量事件计入圆环'));
+        html += providerToggle('glm', 'GLM', settings.glm_quota_enabled, window.TS.t('填写 Coding Plan API Key，只进本机凭据存储'));
+        html += providerToggle('kimi', 'Kimi', settings.kimi_quota_enabled, window.TS.t('Kimi 需要 OAuth，不要用开放平台 key'));
+        html += providerToggle('grok', 'Grok', settings.grok_quota_enabled, window.TS.t('Grok 需要 grok login，普通 xAI key 无效'));
+        html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('凭证') + '</div></div></div>';
+        ['glm', 'kimi', 'grok'].forEach(function (acct) {
+          html += '<div class="setting-row"><div><div class="setting-label" style="text-transform:none">' + acct.toUpperCase() + '</div></div>' +
+            '<div style="display:flex;gap:6px"><input type="password" data-quotakey="' + acct + '" placeholder="' + window.TS.t('粘贴') + '" style="width:150px;padding:6px 10px;border:1px solid var(--track);border-radius:8px"/>' +
+            '<button class="btn" data-quotasave="' + acct + '">' + window.TS.t('保存') + '</button></div></div>';
+        });
+        html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('Cursor 代码信号') + '</div><div class="setting-hint">' + window.TS.t('今日 Cursor 代码产出计数（块/文件/模型），不进 Token 统计') + '</div></div><label class="switch"><input type="checkbox" id="cursorSignalToggle"' + (settings.cursor_code_signal_enabled ? ' checked' : '') + '/><span class="slider"></span></label></div>';
+        html += '</div>';
         if (rankVis === 'hidden') {
           html += '<div style="font-size:12px;font-weight:700;color:var(--green-dark);background:color-mix(in srgb,var(--mint) 30%,transparent);border-radius:9px;padding:6px 12px;display:inline-block">' + window.TS.t('零身份读取 · 零网络请求') + '</div>';
         } else {
@@ -698,11 +722,10 @@
         }
         html += '</div>';
         // Experimental agent sources card.
-        // ---- Unified data-source card (upstream v0.2.0 SettingsAgentSourcesCard) ----
+        // ---- Data sources card (upstream v0.2.2 SettingsDataSourcesCard) ----
         var expAgentChecked = settings.show_experimental_agent_sources ? ' checked' : '';
         html += '<div class="card"><div class="card-title">' + window.TS.t('数据来源') + '</div>';
-        html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('启用实验数据源') + '</div><div class="setting-hint">' + window.TS.t('实验源默认关闭；开启后检测到已安装的 Agent 自动纳入统计，可单独关闭某个来源。只读 usage 字段，不读对话正文。') + '</div></div><label class="switch"><input type="checkbox" id="expAgentToggle"' + expAgentChecked + '/><span class="slider"></span></label></div>';
-        html += '<div id="agentSourceGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 18px;margin-top:6px"></div>';
+        html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('启用实验数据源') + '</div><div class="setting-hint">' + window.TS.t('ZCode / Hermes / WorkBuddy，只读 usage 字段，不读对话正文。') + '</div></div><label class="switch"><input type="checkbox" id="expAgentToggle"' + expAgentChecked + '/><span class="slider"></span></label></div>';
         html += '</div>';
         // Update check card.
         var updHint = latestUpdate && latestUpdate.has_update
@@ -859,9 +882,7 @@
         updateFreshnessBadge();
         if (current === 'today') {
           view.innerHTML = viewToday();
-          bindAgentWorkControls();
-          loadCodexQuota();
-          loadClaudeQuota();
+          loadQuotaProviders(false);
           loadTokenRank();
         }
         else if (current === 'history') { view.innerHTML = viewHistory(); var aw = document.getElementById('activityWall'); if (aw) aw.scrollLeft = aw.scrollWidth; }
@@ -942,6 +963,31 @@
           var quotaToggle = document.getElementById('showQuotaToggle');
           if (quotaToggle) quotaToggle.addEventListener('change', function () {
             invoke('set_show_codex_quota', { enabled: quotaToggle.checked }).then(function (s) { settings = s; render(); });
+          });
+          // Quota provider toggles + secrets.
+          document.querySelectorAll('input[data-quotaprovider]').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+              var id = cb.dataset.quotaprovider;
+              if (id === 'cursor') {
+                invoke('set_cursor_quota_enabled', { enabled: cb.checked }).then(function (s) { settings = s; loadQuotaProviders(true); });
+              } else {
+                invoke('set_quota_provider_enabled', { provider: id, enabled: cb.checked }).then(function (s) { settings = s; loadQuotaProviders(true); });
+              }
+            });
+          });
+          document.querySelectorAll('button[data-quotasave]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var acct = btn.dataset.quotasave;
+              var input = document.querySelector('input[data-quotakey="' + acct + '"]');
+              if (!input || !input.value.trim()) return;
+              invoke('save_quota_secret', { account: acct + (acct === 'glm' ? '-api-key' : (acct === 'kimi' ? '-access-token' : '-access-token')), secret: input.value.trim() })
+                .then(function () { input.value = ''; loadQuotaProviders(true); })
+                .catch(function (e) { alert(e && e.message ? e.message : e); });
+            });
+          });
+          var cursorSignal = document.getElementById('cursorSignalToggle');
+          if (cursorSignal) cursorSignal.addEventListener('change', function () {
+            invoke('set_cursor_code_signal_enabled', { enabled: cursorSignal.checked }).then(function (s) { settings = s; });
           });
           // Rank settings card actions + data-sync line.
           var myBtn = document.getElementById('rankMyUsageBtn');
