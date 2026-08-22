@@ -48,8 +48,7 @@ body {
 }
 
 #app {
-  display: flex;
-  flex-direction: column;
+  display: block;
   height: 100vh;
   overflow: hidden;
 }
@@ -170,7 +169,6 @@ body {
   color: var(--ink-soft);
 }
 
-.topbar .nav-sub { display: none; }
 .nav-sub {
   font-size: 13px;
   font-weight: 600;
