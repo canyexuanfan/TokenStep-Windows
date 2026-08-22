@@ -49,27 +49,27 @@ body {
 
 #app {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
 }
 
 /* ---------- Sidebar ---------- */
 .sidebar {
-  width: 226px;
-  flex-shrink: 0;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--surface) 98%, transparent),
-    color-mix(in srgb, var(--green) 5%, transparent),
-    color-mix(in srgb, var(--surface) 98%, transparent)
-  );
-  border-right: 1px solid var(--line);
+  width: 100%;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 22px;
+  border-right: none;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 98%, transparent);
   display: flex;
-  flex-direction: column;
-  padding: 30px 12px 22px;
 }
 
 .brand {
+  flex-shrink: 0;
+
   display: flex;
   gap: 13px;
   align-items: center;
@@ -108,19 +108,21 @@ body {
 
 .nav {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px;
-  border-radius: 16px;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 12px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background 0.15s, box-shadow 0.15s;
+  transition: background 0.15s, box-shadow 0.15s, color 0.15s;
 }
 
 .nav-item:hover {
@@ -168,6 +170,7 @@ body {
   color: var(--ink-soft);
 }
 
+.topbar .nav-sub { display: none; }
 .nav-sub {
   font-size: 13px;
   font-weight: 600;
