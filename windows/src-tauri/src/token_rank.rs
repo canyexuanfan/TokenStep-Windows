@@ -152,33 +152,36 @@ pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
         return cached;
     }
     let url = format!("{}?client=all&range=today&usage_mode=all", ENDPOINT);
-    let client = match crate::net::blocking_client()
-        .timeout(std::time::Duration::from_secs(12))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return err_snapshot("榜单地址不可用"),
-    };
-    let resp = match client
+    // Shared client with connection reuse — the board answers in ~3s and a
+    // fresh TLS handshake per call made slow days feel like failures.
+    static CLIENT: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    let client = CLIENT.get_or_init(|| {
+        crate::net::blocking_client()
+            .user_agent("TokenStep")
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .unwrap_or_default()
+    });
+    let fetched = client
         .get(&url)
         .header("Accept", "application/json")
         .header("Cache-Control", "no-cache")
         .send()
-    {
-        Ok(r) => r,
-        Err(_) => return err_snapshot("暂时无法读取榜单"),
+        .ok()
+        .filter(|r| r.status().is_success())
+        .and_then(|mut r| r.json::<serde_json::Value>().ok())
+        .filter(|body| body.get("success").and_then(|v| v.as_bool()) == Some(true));
+    let body = match fetched {
+        Some(body) => body,
+        None => {
+            // Transient failure keeps the LAST cached snapshot (even past
+            // TTL) — upstream semantics: failures retain the old value.
+            let mut cached = read_fresh_cache(identity.map(|i| i.id))
+                .unwrap_or_else(|| err_snapshot("暂时无法读取榜单"));
+            cached.fetched_at_secs = cached_fetch_stamp();
+            return cached;
+        }
     };
-    if !resp.status().is_success() {
-        return err_snapshot("暂时无法读取榜单");
-    }
-    let body: serde_json::Value = match resp.json() {
-        Ok(v) => v,
-        Err(_) => return err_snapshot("暂时无法读取榜单"),
-    };
-    // API uses success=true; rows live under data.rows.
-    if body.get("success").and_then(|v| v.as_bool()) != Some(true) {
-        return err_snapshot("暂时无法读取榜单");
-    }
     let Some(data) = body.get("data") else {
         return err_snapshot("暂时无法读取榜单");
     };

@@ -368,6 +368,7 @@ fn get_freshness(state: tauri::State<'_, std::sync::Arc<AppState>>) -> serde_jso
         now_epoch,
     );
     serde_json::json!({
+        "refreshing": *state.refreshing.lock(),
         "collection": {
             "kind": collection.as_str(),
             "last_attempted_at": fresh.collection.last_attempted_at,
