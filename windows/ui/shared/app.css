@@ -802,7 +802,7 @@ input[type="number"]:focus {
 }
 .switch input:checked + .slider::before {
   transform: translateX(18px);
-  background: #fff;
+  background: var(--canvas);
   opacity: 1;
 }
 
@@ -1015,7 +1015,7 @@ input[type="number"]:focus {
 }
 
 #view .today-agent-slot #agentWorkCard {
-  background: #ffffff;
+  background: var(--canvas);
 }
 
 #view .today-cost-card {
@@ -1154,7 +1154,7 @@ input[type="number"]:focus {
 }
 
 #view .today-model-detail > .card {
-  background: #ffffff;
+  background: var(--canvas);
 }
 
 @media (max-width: 1120px) {
@@ -1244,9 +1244,9 @@ input[type="number"]:focus {
   min-height: 0;
   margin: 0;
   padding: 19px 20px;
-  border: 1px solid #e7ebee;
+  border: 1px solid var(--line);
   border-radius: 17px;
-  background: #fff;
+  background: var(--canvas);
   box-shadow: 0 7px 22px rgba(26, 37, 48, .055);
   overflow: hidden;
 }
@@ -1260,7 +1260,7 @@ input[type="number"]:focus {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #111827;
+  color: var(--ink);
   font-size: 18px;
   font-weight: 800;
   line-height: 1.2;
@@ -1281,7 +1281,7 @@ input[type="number"]:focus {
   flex: 0 0 auto;
   border: 1px solid #9ca3af;
   border-radius: 50%;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 10px;
   font-weight: 800;
   line-height: 1;
@@ -1327,14 +1327,14 @@ input[type="number"]:focus {
 }
 
 #view .today-ring-center strong {
-  color: #111827;
+  color: var(--ink);
   font-size: 42px;
   font-weight: 850;
   line-height: 1;
 }
 
 #view .today-ring-center span {
-  color: #6b7280;
+  color: var(--muted);
   font-size: 14px;
   font-weight: 650;
   margin-top: 8px;
@@ -1354,13 +1354,13 @@ input[type="number"]:focus {
 }
 
 #view .today-token-summary span {
-  color: #6b7280;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 650;
 }
 
 #view .today-token-summary strong {
-  color: #111827;
+  color: var(--ink);
   font-size: 21px;
   font-weight: 800;
   line-height: 1.1;
@@ -1374,7 +1374,7 @@ input[type="number"]:focus {
 #view .today-token-summary .today-token-rule {
   height: 1px;
   width: 100%;
-  background: #dfe4e7;
+  background: var(--track);
   margin: 2px 0 1px;
 }
 
@@ -1394,7 +1394,7 @@ input[type="number"]:focus {
   border: 1px solid #e1e6e9;
   border-radius: 9px;
   color: #374151;
-  background: #fff;
+  background: var(--canvas);
   font: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -1493,7 +1493,7 @@ input[type="number"]:focus {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 650;
 }
@@ -1519,7 +1519,7 @@ input[type="number"]:focus {
 }
 
 #view .today-quota-window-meta {
-  color: #6b7280;
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -1647,7 +1647,7 @@ input[type="number"]:focus {
   display: flex;
   justify-content: space-between;
   margin: -4px 2px 0 42px;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 650;
 }
@@ -1680,7 +1680,7 @@ input[type="number"]:focus {
   flex-direction: column;
   justify-content: space-between;
   padding: 0 8px 0 0;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 10px;
   font-weight: 650;
   line-height: 1;
@@ -1721,7 +1721,7 @@ input[type="number"]:focus {
   display: flex;
   justify-content: space-between;
   margin: 8px 0 0 43px;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 650;
 }
@@ -1807,7 +1807,7 @@ input[type="number"]:focus {
   height: 7px;
   overflow: hidden;
   border-radius: 999px;
-  background: #edf0f1;
+  background: var(--track);
 }
 
 #view .today-breakdown-track span {
@@ -1819,7 +1819,7 @@ input[type="number"]:focus {
 
 #view .today-breakdown-percent,
 #view .today-breakdown-value {
-  color: #6b7280;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 650;
   text-align: right;
@@ -1891,7 +1891,7 @@ input[type="number"]:focus {
 
 #view .today-cost-columns span {
   display: block;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 13px;
   font-weight: 650;
   margin-bottom: 7px;
@@ -1899,7 +1899,7 @@ input[type="number"]:focus {
 
 #view .today-cost-columns strong {
   display: block;
-  color: #111827;
+  color: var(--ink);
   font-size: 26px;
   font-weight: 800;
   line-height: 1;
@@ -1915,7 +1915,7 @@ input[type="number"]:focus {
   justify-content: space-between;
   gap: 10px;
   margin-top: 28px;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 650;
 }
@@ -2052,13 +2052,13 @@ input[type="number"]:focus {
 }
 
 #view .today-lap-chips span {
-  color: #6b7280;
+  color: var(--muted);
   font-size: 10px;
   font-weight: 650;
 }
 
 #view .today-lap-chips strong {
-  color: #111827;
+  color: var(--ink);
   font-size: 13px;
   font-weight: 800;
 }
@@ -2080,9 +2080,9 @@ input[type="number"]:focus {
   min-height: 78px;
   gap: 12px;
   padding: 13px 18px;
-  border: 1px solid #e7ebee;
+  border: 1px solid var(--line);
   border-radius: 15px;
-  background: #fff;
+  background: var(--canvas);
   box-shadow: 0 6px 18px rgba(26, 37, 48, .04);
 }
 
@@ -2112,7 +2112,7 @@ input[type="number"]:focus {
 }
 
 #view .today-design-metrics b {
-  color: #111827;
+  color: var(--ink);
   font-size: 18px;
   font-weight: 850;
   line-height: 1.1;
@@ -2136,9 +2136,9 @@ input[type="number"]:focus {
   min-height: 238px;
   margin: 0;
   padding: 19px 20px;
-  border: 1px solid #e7ebee;
+  border: 1px solid var(--line);
   border-radius: 17px;
-  background: #fff;
+  background: var(--canvas);
   box-shadow: 0 7px 22px rgba(26, 37, 48, .055);
   overflow: hidden;
 }
@@ -2178,7 +2178,7 @@ input[type="number"]:focus {
   min-width: 0;
   padding: 0 !important;
   overflow: hidden;
-  background: #fff;
+  background: var(--canvas);
 }
 
 #app > main.content > .page {
@@ -2200,8 +2200,8 @@ input[type="number"]:focus {
   row-gap: 0 !important;
   margin: 0 !important;
   padding: 0 28px !important;
-  border-bottom: 1px solid #e5e8eb;
-  background: #fff;
+  border-bottom: 1px solid var(--line);
+  background: var(--canvas);
 }
 
 #app .reference-header > .updated {
@@ -2235,7 +2235,7 @@ input[type="number"]:focus {
 
 #app .reference-brand-title {
   overflow: hidden;
-  color: #111827;
+  color: var(--ink);
   font-size: 18px;
   font-weight: 800;
   letter-spacing: -.02em;
@@ -2259,7 +2259,7 @@ input[type="number"]:focus {
 
 #app .reference-brand-subtitle {
   margin-top: 5px;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 13px;
   font-weight: 600;
 }
@@ -2296,12 +2296,12 @@ input[type="number"]:focus {
 }
 
 #app .reference-header .nav-item:hover {
-  background: #f6faf7;
+  background: color-mix(in srgb, var(--green) 6%, transparent);
 }
 
 #app .reference-header .nav-item.active {
   border-color: transparent;
-  background: #eef9f0;
+  background: color-mix(in srgb, var(--green) 12%, transparent);
   box-shadow: none;
 }
 
@@ -2310,7 +2310,7 @@ input[type="number"]:focus {
   height: 20px;
   border-radius: 0;
   background: transparent;
-  color: #111827;
+  color: var(--ink);
 }
 
 #app .reference-header .nav-item.active .nav-icon {
@@ -2324,7 +2324,7 @@ input[type="number"]:focus {
 }
 
 #app .reference-header .nav-title {
-  color: #111827;
+  color: var(--ink);
   font-size: 15px;
   font-weight: 700;
 }
@@ -2359,7 +2359,7 @@ input[type="number"]:focus {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #111827;
+  color: var(--ink);
 }
 
 #app .reference-header .btn:hover,
@@ -2403,7 +2403,7 @@ input[type="number"]:focus {
   min-height: 0;
   overflow-y: auto;
   padding: 17px 22px 24px;
-  background: #fff;
+  background: var(--canvas);
 }
 
 #view .today-design-top {
@@ -2444,9 +2444,9 @@ input[type="number"]:focus {
   height: 75px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
-  border: 1px solid #e7ebee;
+  border: 1px solid var(--line);
   border-radius: 15px;
-  background: #fff;
+  background: var(--canvas);
   box-shadow: 0 6px 18px rgba(26, 37, 48, .04);
   overflow: hidden;
 }
@@ -2513,11 +2513,11 @@ input[type="number"]:focus {
   padding: 13px 14px;
   border: 1px solid #e1e6e9;
   border-radius: 12px;
-  background: #fff;
+  background: var(--canvas);
 }
 
 #view .today-quota-placeholder strong {
-  color: #111827;
+  color: var(--ink);
   font-size: 14px;
 }
 
@@ -2749,12 +2749,12 @@ input[type="number"]:focus {
   padding: 13px 14px;
   border: 1px solid #e1e6e9;
   border-radius: 12px;
-  background: #fff;
+  background: var(--canvas);
   box-sizing: border-box;
 }
 
 #view .today-quota-placeholder-card strong {
-  color: #111827;
+  color: var(--ink);
   font-size: 14px;
   font-weight: 850;
 }
@@ -2829,7 +2829,7 @@ input[type="number"]:focus {
 
 #view .today-cost-columns span {
   margin-bottom: 8px;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 700;
 }
@@ -2845,7 +2845,7 @@ input[type="number"]:focus {
 }
 
 #view .today-cost-columns > div + div strong {
-  color: #111827;
+  color: var(--ink);
 }
 
 #view .today-cost-footer {
@@ -2855,7 +2855,7 @@ input[type="number"]:focus {
   margin-top: 27px;
   padding-top: 12px;
   border-top: 1px solid #dfe7e1;
-  color: #6b7280;
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
 }
@@ -2873,7 +2873,7 @@ input[type="number"]:focus {
 }
 
 #view .today-cost-delta {
-  color: #6b7280;
+  color: var(--muted);
   font-style: normal;
   font-weight: 750;
 }
