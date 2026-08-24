@@ -27,10 +27,11 @@ const snapshot = {
   sources: {}
 };
 const settings = { theme: 'green', language: 'zhHans', daily_goal_tokens: 2000000, monthly_budget: 1500, refresh_interval_seconds: 60, history_days: 180, agent_work_rank_visibility: 'visible', close_to_tray: true };
+const reset6 = new Date(Date.now() + 6 * 86400000).toISOString();
 const quota = { providers: [
-  { provider: 'openai', status: 'available', windows: [{ kind: 'monthly_credits', title: '本月', used_percent: 70, total: 100, remaining: 30 }] },
-  { provider: 'anthropic', status: 'available', windows: [{ kind: 'monthly_credits', title: '本月', used_percent: 58, total: 100, remaining: 42 }] },
-  { provider: 'google', status: 'available', windows: [{ kind: 'monthly_credits', title: '本月', used_percent: 36, total: 100, remaining: 64 }] },
+  { provider: 'openai', status: 'available', windows: [{ kind: 'monthly_credits', title: '本月', used_percent: 70, total: 1000000, remaining: 300000, resets_at: reset6 }] },
+  { provider: 'anthropic', status: 'available', windows: [{ kind: 'monthly_credits', title: '本月', used_percent: 58, total: 1000000, remaining: 420000, resets_at: reset6 }] },
+  { provider: 'google', status: 'available', windows: [{ kind: 'monthly_credits', title: '本月', used_percent: 36, total: 1000000, remaining: 640000, resets_at: reset6 }] },
   { provider: 'local', status: 'available', windows: [{ kind: 'local', title: '本地运行', used_percent: 0, total: 0, remaining: 0 }] }
 ] };
 

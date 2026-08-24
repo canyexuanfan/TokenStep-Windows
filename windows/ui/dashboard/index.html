@@ -58,7 +58,8 @@
       var SECTIONS = [
         { id:'today', title:'今日', sidebar:'今日消耗', sub:'今天的 Token 使用节奏' },
         { id:'history', title:'历史', sidebar:'历史活动', sub:'长期节奏和所有历史记录' },
-        { id:'privacy', title:'隐私', sidebar:'隐私', sub:'只统计数量，不读取内容' }
+        { id:'stats', title:'统计', sidebar:'统计', sub:'按工具与模型的累计分布' },
+        { id:'settings', title:'设置', sidebar:'设置', sub:'目标、主题与数据来源' }
       ];
 
       // Build the full app shell (same as before but proven-safe).
@@ -71,10 +72,16 @@
       if (referenceHeader) referenceHeader.classList.add('reference-header');
       var referenceBrand = referenceHeader && referenceHeader.firstElementChild;
       if (referenceBrand) {
-        // Real TokenStep logo + live page title (restores the pre-Codex
-        // brand: the design sheet's letter tile must not replace our logo).
+        // Design-sheet brand: real TokenStep logo + product name/tagline.
+        // #pageTitle/#pageSubtitle stay as hidden compat targets because
+        // render()/refreshHeaderI18n() still write the live page title there.
         referenceBrand.className = 'reference-brand';
-        referenceBrand.innerHTML = '<img src="../shared/logo.png" alt="TokenStep" style="width:32px;height:32px;flex-shrink:0"/><div style="min-width:0"><h2 id="pageTitle" style="font-size:19px;font-weight:800;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">今日</h2><p id="pageSubtitle" style="margin:2px 0 0;font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></p></div>';
+        referenceBrand.innerHTML = '<img src="../shared/logo.png" alt="TokenStep" style="width:34px;height:34px;flex-shrink:0;border-radius:9px"/>' +
+          '<div class="reference-brand-copy" style="min-width:0">' +
+            '<div class="reference-brand-title">TokenStep<span>|</span><em>' + window.TS.t('本地 AI Token 使用追踪器') + '（Windows）</em></div>' +
+            '<div class="reference-brand-subtitle">' + window.TS.t('所有数据仅存储在本机设备，不会上传') + '</div>' +
+          '</div>' +
+          '<h2 id="pageTitle" class="reference-visually-hidden">今日</h2><p id="pageSubtitle" class="reference-visually-hidden"></p>';
       }
       var referenceShot = document.getElementById('shotBtn');
       if (referenceShot) referenceShot.innerHTML = '<span class="header-action-icon">' + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>' + '</span><div id="shareMenu" style="display:none;position:absolute;top:100%;right:0;margin-top:6px;background:var(--surface);border:1px solid var(--track);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,0.12);padding:6px;min-width:200px;z-index:50"></div>';
@@ -600,13 +607,30 @@
           }
           if (!ordered.length) return '<div class="today-design-empty">' + window.TS.t('等待下一次同步') + '</div>';
           var max = Math.max.apply(null, [1].concat(ordered.map(function (row) { return row.value; })));
-          return ordered.map(function (row) {
+          // Design-sheet brand logos for known clients (local SVG assets).
+          var clientLogos = {
+            'Codex': '../shared/logos/openai.svg',
+            'Claude Code': '../shared/logos/anthropic.svg',
+            'Cursor': '../shared/logos/cursor.svg',
+            'Copilot': '../shared/logos/githubcopilot.svg'
+          };
+          // Design-sheet categorical palette for model rows (by rank order).
+          var modelPalette = ['var(--green)', '#e07b39', '#0d9488', '#2563eb', '#9ca3af'];
+          return ordered.map(function (row, rowIndex) {
             var label = kind === 'client' ? clientName(row.name) : row.name;
             var pct = totalValue ? row.value * 100 / totalValue : 0;
-            var color = window.TS.tokenToolColor(row.name);
-            var initial = escape(String(label || '?').slice(0, 1).toUpperCase());
+            var color = kind === 'client' ? window.TS.tokenToolColor(row.name) : modelPalette[Math.min(rowIndex, modelPalette.length - 1)];
+            var mark;
+            if (kind === 'client' && clientLogos[row.name]) {
+              mark = '<span class="today-source-mark today-source-logo"><img src="' + clientLogos[row.name] + '" alt=""/></span>';
+            } else if (kind === 'model') {
+              mark = '<span class="today-source-dot" style="background:' + color + '"></span>';
+            } else {
+              var initial = escape(String(label || '?').slice(0, 1).toUpperCase());
+              mark = '<span class="today-source-mark" style="--source-color:' + color + '">' + initial + '</span>';
+            }
             return '<div class="today-breakdown-row">' +
-              '<div class="today-breakdown-name"><span class="today-source-mark" style="--source-color:' + color + '">' + initial + '</span><span title="' + escape(label) + '">' + escape(label) + '</span></div>' +
+              '<div class="today-breakdown-name">' + mark + '<span title="' + escape(label) + '">' + escape(label) + '</span></div>' +
               '<div class="today-breakdown-track"><span style="width:' + Math.max(3, row.value * 100 / max).toFixed(1) + '%;background:' + color + '"></span></div>' +
               '<span class="today-breakdown-percent">' + pct.toFixed(1) + '%</span>' +
               '<span class="today-breakdown-value">' + fullTokens(row.value) + '</span>' +
@@ -620,42 +644,47 @@
           }
           var rhythmMax = Math.max.apply(null, rhythm.buckets.map(function (item) { return Number(item.tokens || 0); }).concat([1]));
           var rhythmScaleMax = Math.max(40000, Math.ceil(rhythmMax / 40000) * 40000);
-          var scale = [1, .75, .5, .25, 0].map(function (ratio) {
+          var scale = [1, .75, .5, .25].map(function (ratio) {
             return '<span>' + Math.round(rhythmScaleMax * ratio / 1000) + 'K</span>';
           }).join('');
           var axis = '<div class="today-rhythm-axis"><span>12:00</span><span>16:00</span><span>20:00</span><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span></div>';
-          return '<div class="today-rhythm-plot"><div class="today-rhythm-scale">' + scale + '</div><div class="today-rhythm-graph">' + window.TS.hourlyBarsHTML(rhythm) + '</div></div>' + axis;
+          return '<div class="today-rhythm-plot"><div class="today-rhythm-scale"><span class="today-scale-unit">Token</span>' + scale + '</div><div class="today-rhythm-graph">' + window.TS.rhythmAreaHTML(rhythm) + '</div></div>' + axis;
         }
 
-        var lapProgress = '<div class="today-lap-progress"><div class="today-lap-title">' + window.TS.t('圈数进度') + ' ' + infoIcon(window.TS.t('圈数进度')) + '</div><div class="today-lap-chips"><div><span>' + window.TS.t('已完成圈数') + '</span><strong>' + lap.completedLaps + ' ' + window.TS.t('圈') + '</strong></div><div><span>' + window.TS.t('当前圈数进度') + '</span><strong>' + formatPercent(lap.currentLapPercent) + '</strong></div></div></div>';
-        var tokenCard = '<section class="card today-design-card today-token-card"><div class="today-design-card-title">' + window.TS.t('今日 Token 消耗') + ' ' + infoIcon(window.TS.t('今日 Token 消耗')) + '</div><div class="today-token-layout"><div class="today-design-ring"><div class="today-ring-svg">' + ringSvg(progress, 220, 18) + '</div><div class="today-ring-center"><strong>' + fullTokens(total) + '</strong><span>' + progressPct + '% · ' + window.TS.t('已达成') + '</span></div></div><div class="today-token-summary"><div><span>' + window.TS.t('总消耗') + '</span><strong>' + fullTokens(total) + '</strong></div><div><span>' + window.TS.t('每日目标') + '</span><strong>' + fullTokens(goal) + '</strong></div><div class="today-token-rule"></div><div><span>' + window.TS.t('剩余可用') + '</span><strong class="today-token-green">' + fullTokens(remaining) + '</strong></div><div><span>' + window.TS.t('预计耗尽时间') + '</span><strong>' + etaText() + '</strong></div></div></div>' + lapProgress + '</section>';
+        var lapProgress = '<div class="today-lap-progress"><div class="today-lap-title">' + window.TS.t('圈数进度') + ' ' + infoIcon(window.TS.t('圈数进度')) + '</div><div class="today-lap-chips"><div><span>' + window.TS.t('已完成圈数') + '</span><strong>' + lap.completedLaps + ' ' + window.TS.t('圈') + '</strong></div><div><span>' + window.TS.t('当前圈数进度') + '</span><strong>' + Math.round(lap.currentLapPercent) + '%</strong></div></div></div>';
+        var tokenCard = '<section class="card today-design-card today-token-card"><div class="today-design-card-title">' + window.TS.t('今日 Token 消耗') + ' ' + infoIcon(window.TS.t('今日 Token 消耗')) + '</div><div class="today-token-layout"><div class="today-design-ring"><div class="today-ring-svg">' + ringSvg(progress, 220, 18) + '</div><div class="today-ring-center"><strong>' + progressPct + '%</strong><span>' + window.TS.t('已达成') + '</span></div></div><div class="today-token-summary"><div><span>' + window.TS.t('总消耗') + '</span><strong>' + fullTokens(total) + '</strong></div><div><span>' + window.TS.t('每日目标') + '</span><strong>' + fullTokens(goal) + '</strong></div><div class="today-token-rule"></div><div><span>' + window.TS.t('剩余可用') + '</span><strong class="today-token-green">' + fullTokens(remaining) + '</strong></div><div><span>' + window.TS.t('预计耗尽时间') + '</span><strong>' + etaText() + '</strong></div></div></div>' + lapProgress + '</section>';
         var rhythm = (snapshot.rhythms || []).filter(function (item) { return item.date === window.TS.todayKey(); })[0];
         var rhythmCard = '<section class="card today-design-card today-rhythm-card"><div class="today-design-card-head"><div class="today-design-card-title">' + window.TS.t('活动节奏') + ' <span class="today-design-subtitle">（' + window.TS.t('最近 24 小时') + '）</span> ' + infoIcon(window.TS.t('按本机 Token 记录展示活跃节奏，不代表实际工时或生产力。')) + '</div><button class="today-chart-select" type="button">' + window.TS.t('按小时') + '⌄</button></div>' + rhythmChart(rhythm) + '</section>';
-        var activityMax = Math.max.apply(null, [goal].concat(rows30.map(function (item) { return Number(item.total_tokens || 0); })).concat([1]));
-        var activityScaleMax = Math.max(500000, Math.ceil(activityMax / 500000) * 500000);
+        var activityChart = window.TS.intensityActivityBarsHTML(rows30, goal);
+        var activityScaleMax = activityChart.scaleMax || 500000;
         function activityScaleLabel(value) {
           if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
           if (value >= 1000) return Math.round(value / 1000) + 'K';
           return String(Math.round(value));
         }
-        var activityScale = [1, .75, .5, .25, 0].map(function (ratio) { return '<span>' + activityScaleLabel(activityScaleMax * ratio) + '</span>'; }).join('');
+        var activityScale = [1, .75, .5, .25].map(function (ratio) { return '<span>' + activityScaleLabel(activityScaleMax * ratio) + '</span>'; }).join('');
         var activityDates = '<div class="today-bar-axis"><span>' + (rows30[0] ? rows30[0].date.slice(5) : '') + '</span><span>' + (rows30[Math.floor(Math.max(0, rows30.length - 1) / 2)] ? rows30[Math.floor(Math.max(0, rows30.length - 1) / 2)].date.slice(5) : '') + '</span><span>' + (rows30[rows30.length - 1] ? rows30[rows30.length - 1].date.slice(5) : '') + '</span></div>';
         var activityLegend = '<div class="today-intensity-legend"><span><i class="today-intensity-dot low"></i>' + window.TS.t('低') + ' (&lt;50%)</span><span><i class="today-intensity-dot medium"></i>' + window.TS.t('中') + ' (50–90%)</span><span><i class="today-intensity-dot high"></i>' + window.TS.t('高') + ' (≥90%)</span></div>';
-        var activityCard = '<section class="card today-design-card today-activity-card"><div class="today-design-card-head"><div class="today-design-card-title">' + window.TS.t('30 天活动热力图') + ' ' + infoIcon(window.TS.t('颜色越深，用量越高；描边是今天')) + '</div><button class="today-chart-select" type="button">' + window.TS.t('按天') + '⌄</button></div><div class="today-bar-plot"><div class="today-bar-scale">' + activityScale + '</div><div class="today-bar-chart">' + window.TS.stackedActivityBarsHTML(rows30, goal) + '</div></div>' + activityDates + activityLegend + '</section>';
-        var metricStrip = '<div class="today-design-metrics"><div><span class="today-metric-icon">▤</span><div><strong>' + window.TS.t('累计 Token 消耗') + '</strong><b>' + fullTokens(snapshot.totals.tokens) + '</b><small>' + window.TS.t('自开始追踪以来的总消耗') + '</small></div></div><div><span class="today-metric-icon">▣</span><div><strong>' + window.TS.t('活跃天数') + '</strong><b>' + snapshot.totals.active_days + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('有用量记录的天数') + '</small></div></div><div><span class="today-metric-icon">◎</span><div><strong>' + window.TS.t('达标天数') + '</strong><b>' + goalDays + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('达到或超过每日目标的天数') + '</small></div></div></div>';
+        var activityCard = '<section class="card today-design-card today-activity-card"><div class="today-design-card-head"><div class="today-design-card-title">' + window.TS.t('30 天活动热力图') + ' ' + infoIcon(window.TS.t('颜色越深，用量越高；描边是今天')) + '</div><button class="today-chart-select" type="button">' + window.TS.t('按天') + '⌄</button></div><div class="today-bar-plot"><div class="today-bar-scale"><span class="today-scale-unit">Token</span>' + activityScale + '</div><div class="today-bar-chart">' + (activityChart.html || activityChart) + '</div></div>' + activityDates + activityLegend + '</section>';
+        var metricIcons = {
+          database: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
+          calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 9h16M9 14l2 2 4-4"/></svg>',
+          target: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>'
+        };
+        var metricStrip = '<div class="today-design-metrics"><div><span class="today-metric-icon">' + metricIcons.database + '</span><div><strong>' + window.TS.t('累计 Token 消耗') + '</strong><b>' + fullTokens(snapshot.totals.tokens) + '</b><small>' + window.TS.t('自开始追踪以来的总消耗') + '</small></div></div><div><span class="today-metric-icon">' + metricIcons.calendar + '</span><div><strong>' + window.TS.t('活跃天数') + '</strong><b>' + snapshot.totals.active_days + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('有用量记录的天数') + '</small></div></div><div><span class="today-metric-icon">' + metricIcons.target + '</span><div><strong>' + window.TS.t('达标天数') + '</strong><b>' + goalDays + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('达到或超过每日目标的天数') + '</small></div></div></div>';
         var clientCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按客户端') + ' ' + infoIcon(window.TS.t('按客户端')) + '</div>' + breakdownRows(day.tools, 'client') + '</section>';
         var modelCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按模型') + ' ' + infoIcon(window.TS.t('按模型')) + '</div>' + breakdownRows(day.models, 'model') + '</section>';
         var quotaCard = '<section class="card today-design-card today-quota-card" id="quotaProvidersCard"><div class="today-design-card-title">' + window.TS.t('订阅额度') + ' ' + infoIcon(window.TS.t('订阅额度')) + '</div><div id="quotaProvidersContent">' + quotaPlaceholderHTML('等待同步') + '</div></section>';
         var rankVisible = settings.agent_work_rank_visibility === 'visible' || (settings.agent_work_rank_visibility === 'automatic' && window.__tsHasRankIdentity === true);
         var rankCard = rankVisible ? '<section class="card today-design-card today-rank-card" id="tokenRankCard"><div class="today-design-card-title">' + window.TS.t('Agent 消耗榜') + ' <span class="today-design-subtitle">（' + window.TS.t('今日') + '）</span> ' + infoIcon(window.TS.t('Agent 消耗榜')) + '</div><div id="tokenRankContent" class="today-rank-content">' + window.TS.t('加载中…') + '</div></section>' : '';
         var agentWorkCard = window.TS.agentWorkCardHTML(snapshot, settings);
-        var monthlyAverage = (snapshot.daily || []).slice(-30).reduce(function (sum, item) { return sum + Number(item.total_tokens || 0); }, 0) / Math.max(1, Math.min(30, (snapshot.daily || []).slice(-30).length));
+        var weekCost = (snapshot.daily || []).slice(-7).reduce(function (sum, item) { return sum + Number(item.cost || 0); }, 0);
         var previousDaily = (snapshot.daily || []).filter(function (item) { return item.date && item.date < day.date; }).slice(-1)[0];
         var previousCost = previousDaily ? Number(previousDaily.cost || 0) : 0;
         var costDelta = previousCost > 0 ? ((Number(day.cost || 0) - previousCost) / previousCost) * 100 : null;
         var costDeltaText = costDelta == null ? window.TS.t('等待同步') : ((costDelta <= 0 ? '↓ ' : '↑ ') + Math.abs(costDelta).toFixed(1) + '%');
-        var costCard = '<section class="card today-design-card today-cost-card"><div class="today-design-card-title">' + window.TS.t('费用估算') + ' ' + infoIcon(window.TS.t('按 API 列表价估算，不代表订阅或实际账单。')) + '</div><div class="today-cost-columns"><div><span>' + window.TS.t('今日预估') + '</span><strong>' + formatMoney(day.cost) + '</strong></div><div><span>' + window.TS.t('本月预估') + '</span><strong>' + formatMoney((day.cost || 0) * 30) + '</strong></div></div><div class="today-cost-footer"><span><em class="today-cost-delta">' + window.TS.t('较昨日') + ' ' + costDeltaText + '</em></span><span><b>' + window.TS.t('预算') + ' ' + formatMoney(settings.monthly_budget || 1500) + '</b></span></div></section>';
-        var privacyCard = '<section class="card today-design-card today-privacy-card"><div class="today-design-card-title">' + window.TS.t('数据留在本机') + ' ' + infoIcon(window.TS.t('所有数据只在本机计算，不上传到任何服务器')) + '</div><div class="today-privacy-list"><div><span>✓</span>' + window.TS.t('所有数据只在本机计算，不上传到任何服务器') + '</div><div><span>✓</span>' + window.TS.t('不默认上传数据') + '</div><div><span>✓</span>' + window.TS.t('完全由你掌控与隐私') + '</div></div><div class="today-privacy-art">' + window.TS.ICONS.shield + '</div></section>';
+        var costCard = '<section class="card today-design-card today-cost-card"><div class="today-design-card-title">' + window.TS.t('费用估算') + ' ' + infoIcon(window.TS.t('按 API 列表价估算，不代表订阅或实际账单。')) + '</div><div class="today-cost-columns"><div><span>' + window.TS.t('今日预估') + '</span><strong>' + formatMoney(day.cost) + '</strong></div><div><span>' + window.TS.t('本周预估') + '</span><strong>' + formatMoney(weekCost) + '</strong></div></div><div class="today-cost-footer"><span><em class="today-cost-delta">' + window.TS.t('较昨日') + ' ' + costDeltaText + '</em></span><span><b>' + window.TS.t('预算') + ' ¥ ' + Number(settings.monthly_budget || 1500).toLocaleString() + '</b></span></div></section>';
+        var privacyCard = '<section class="card today-design-card today-privacy-card"><div class="today-design-card-title">' + window.TS.t('数据留在本机') + ' ' + infoIcon(window.TS.t('所有数据只在本机计算，不上传到任何服务器')) + '</div><div class="today-privacy-list"><div><span>✓</span>' + window.TS.t('所有数据仅存储在本机') + '</div><div><span>✓</span>' + window.TS.t('数据不会上传到任何服务器') + '</div><div><span>✓</span>' + window.TS.t('完全由你掌控与隐私') + '</div></div><div class="today-privacy-art"><svg viewBox="0 0 24 24"><path d="M12 2.6l7.6 2.9v5.3c0 4.7-3.2 8.1-7.6 9.4-4.4-1.3-7.6-4.7-7.6-9.4V5.5z" fill="color-mix(in srgb, var(--mint) 32%, #ffffff)" stroke="var(--green)" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.7 10.7V9.3a2.3 2.3 0 0 1 4.6 0v1.4" fill="none" stroke="var(--green)" stroke-width="1.3" stroke-linecap="round"/><rect x="8.7" y="10.7" width="6.6" height="5.1" rx="1.2" fill="var(--green)"/><circle cx="12" cy="13.2" r=".85" fill="#fff"/></svg></div></section>';
 
         return '<div class="today-design-page"><div class="today-design-top">' + tokenCard + rhythmCard + activityCard + '</div>' + metricStrip + '<div class="today-design-middle">' + clientCard + modelCard + quotaCard + '</div><div class="today-design-bottom">' + rankCard + agentWorkCard + costCard + privacyCard + '</div></div>';
       }
@@ -714,25 +743,41 @@
               }, 101);
             }
           });
-          host.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' + displayable.map(function (p) {
+          var quotaLogos = { openai: '../shared/logos/openai.svg', anthropic: '../shared/logos/anthropic.svg', google: '../shared/logos/google.svg' };
+          var quotaColors = { openai: 'var(--green)', codex: 'var(--green)', anthropic: '#f59e0b', claude: '#f59e0b', google: '#2563eb', local: '#9ca3af' };
+          var serverIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>';
+          function quotaMark(provider, name) {
+            if (quotaLogos[provider]) return '<span class="today-quota-logo"><img src="' + quotaLogos[provider] + '" alt=""/></span>';
+            if (provider === 'local') return '<span class="today-quota-logo today-quota-server">' + serverIcon + '</span>';
+            return '<span class="today-source-mark" style="--source-color:#9ca3af">' + window.TS.escapeHtmlStr(String(name || '?').slice(0, 1).toUpperCase()) + '</span>';
+          }
+          function quotaWan(value) {
+            var v = Math.max(0, Math.round(Number(value || 0)));
+            return v >= 10000 ? window.TS.formatTokens(v, true) : v.toLocaleString();
+          }
+          function quotaResetText(w) {
+            var iso = w.resets_at || w.reset_at;
+            var ms = iso && Date.parse(iso);
+            if (!ms || isNaN(ms)) return window.TS.t('本地运行');
+            var days = Math.ceil((ms - Date.now()) / 86400000);
+            if (days <= 0) return window.TS.t('重置：即将');
+            return window.TS.t('重置') + '：' + days + ' ' + window.TS.t('天后');
+          }
+          host.innerHTML = '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' + displayable.map(function (p) {
             var name = p.displayName || p.display_name || { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', local: window.TS.t('本地模型') }[p.provider] || p.provider;
-            var wins = p.windows.slice(0, 2).map(function (w) {
-              var rem = w.total > 0 ? (w.remaining != null ? w.remaining / w.total * 100 : 100 - (w.used_percent || 0)) : (100 - (w.used_percent || 0));
-              rem = Math.max(0, Math.min(100, rem));
-              var low = rem < 20;
-              var title = w.title || { five_hour: '5 小时', seven_day: '7 天', session: '会话', weekly: '本周', monthly_credits: '本月额度', token_window: 'Token 窗', spend: '花费', cursor_models: 'Cursor 模型', other_models: '其他模型' }[w.kind] || w.kind;
-              var used = Math.max(0, Math.min(100, w.used_percent != null ? Number(w.used_percent) : 100 - rem));
-              var color = p.provider === 'anthropic' ? '#f59e0b' : (p.provider === 'google' ? '#2563eb' : 'var(--green)');
-              var usageLabel = w.total > 0 ? Math.round(used) + '% ' + window.TS.t('已用') : '—';
-              var totalLabel = w.total > 0 ? Math.round(w.total * used / 100) + ' / ' + Math.round(w.total) : window.TS.t('不设上限');
-              return '<div class="today-quota-window" style="--quota-color:' + color + '">' +
-                '<div class="today-quota-window-title"><span>' + window.TS.t(title) + '</span><strong>' + usageLabel + '</strong></div>' +
-                '<div class="today-quota-track"><span style="width:' + Math.max(0, Math.min(100, used)).toFixed(0) + '%"></span></div>' +
-              '<div class="today-quota-window-meta"><span>' + totalLabel + '</span><span>' + (w.resets_at || w.reset_at ? window.TS.t('重置') : window.TS.t('本地运行')) + (w.resets_at || w.reset_at ? '：' + window.TS.t('即将') : '') + '</span></div>' +
-              '</div>';
-            }).join('');
-            return '<div class="today-quota-provider">' +
-              '<div class="today-quota-provider-title">' + name + '</div>' + wins +
+            var color = quotaColors[p.provider] || 'var(--green)';
+            var w = p.windows[0] || {};
+            var used = Math.max(0, Math.min(100, w.used_percent != null ? Number(w.used_percent) : (w.total > 0 && w.remaining != null ? 100 - w.remaining / w.total * 100 : 0)));
+            var unlimited = !(w.total > 0);
+            var usedLabel = unlimited ? '—' : Math.round(used) + '% ' + window.TS.t('已用');
+            var amountLabel = unlimited ? window.TS.t('不设上限') : quotaWan(w.total * used / 100) + ' / ' + quotaWan(w.total);
+            var resetLabel = unlimited ? window.TS.t('本地运行') : quotaResetText(w);
+            return '<div class="today-quota-provider" style="--quota-color:' + color + '">' +
+              '<div class="today-quota-provider-title">' + quotaMark(p.provider, name) + '<span>' + name + '</span></div>' +
+              '<div class="today-quota-used">' + usedLabel + '</div>' +
+              '<div class="today-quota-track"><span style="width:' + (unlimited ? 0 : used).toFixed(0) + '%"></span></div>' +
+              '<div class="today-quota-amount">' + amountLabel + '</div>' +
+              '<div class="today-quota-reset">' + resetLabel + '</div>' +
             '</div>';
           }).join('') + '</div>';
         }).catch(function () {
@@ -765,11 +810,11 @@
         function slot(rank, order) {
           var entry = entryFor(rank);
           var name = entry ? esc(entry.name || window.TS.t('未命名项目')) : window.TS.t('等待同步');
-          var tokens = entry ? window.TS.formatTokens(entry.total_tokens || 0) : '—';
+          var tokens = entry ? Math.max(0, Math.round(Number(entry.total_tokens || 0))).toLocaleString() : '—';
           var crownClass = rank === 1 ? 'gold' : (rank === 2 ? 'silver' : 'bronze');
           return '<div class="today-rank-slot rank-' + rank + (entry ? '' : ' is-empty') + '" style="--rank-order:' + order + '">' +
             '<div class="today-rank-crown ' + crownClass + '">♛</div>' +
-            '<div class="today-rank-podium"><strong>' + tokens + '</strong><span>' + name + '</span><small>#' + rank + '</small></div>' +
+            '<div class="today-rank-podium"><div class="today-rank-badge ' + crownClass + '">' + rank + '</div><span>' + name + '</span><strong>' + tokens + '</strong></div>' +
           '</div>';
         }
         var status = r.error ? esc(r.error) : (r.available
@@ -783,14 +828,18 @@
       }
 
       function quotaPlaceholderHTML(status) {
+        var serverIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>';
         var providers = [
-          { name: 'OpenAI', tone: 'green' },
-          { name: 'Anthropic', tone: 'amber' },
-          { name: 'Google', tone: 'blue' },
-          { name: window.TS.t('本地模型'), tone: 'local' }
+          { name: 'OpenAI', tone: 'green', logo: '../shared/logos/openai.svg' },
+          { name: 'Anthropic', tone: 'amber', logo: '../shared/logos/anthropic.svg' },
+          { name: 'Google', tone: 'blue', logo: '../shared/logos/google.svg' },
+          { name: window.TS.t('本地模型'), tone: 'local', icon: serverIcon }
         ];
         return '<div class="today-quota-placeholder">' + providers.map(function (p) {
-          return '<div class="today-quota-placeholder-card ' + p.tone + '"><strong>' + p.name + '</strong><div class="today-quota-placeholder-value">—</div><div class="today-quota-placeholder-track"></div><small>' + window.TS.t(status || '等待同步') + '</small></div>';
+          var mark = p.logo
+            ? '<span class="today-quota-logo"><img src="' + p.logo + '" alt=""/></span>'
+            : '<span class="today-quota-logo today-quota-server">' + p.icon + '</span>';
+          return '<div class="today-quota-placeholder-card ' + p.tone + '"><div class="today-quota-provider-title">' + mark + '<strong>' + p.name + '</strong></div><div class="today-quota-placeholder-value">—</div><div class="today-quota-placeholder-track"></div><small>' + window.TS.t(status || '等待同步') + '</small></div>';
         }).join('') + '</div>';
       }
 

@@ -1523,94 +1523,50 @@ input[type="number"]:focus {
   font-size: 11px;
 }
 
-#view .today-design-bottom > #agentWorkCard > div:first-child {
-  margin-bottom: 7px !important;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:first-child > div > div:first-child {
-  font-size: 17px !important;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:first-child > div > div:nth-child(2) {
-  display: none;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) {
-  display: flex !important;
+/* Agent 工作强度 (design-sheet icon rows) */
+#view #agentWorkCard .aw-rows {
+  display: flex;
   flex-direction: column;
-  gap: 0 !important;
-  margin-bottom: 0 !important;
+  margin-top: 16px;
 }
 
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) > div {
-  display: grid !important;
-  grid-template-columns: 15px minmax(0, 1fr) auto;
+#view #agentWorkCard .aw-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 25px;
-  padding: 3px 0 !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  text-align: left !important;
+  gap: 9px;
+  min-height: 30px;
 }
 
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) > div::before,
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div::before {
-  grid-column: 1;
-  grid-row: 1;
+#view #agentWorkCard .aw-icon {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
   color: var(--green-dark);
-  font-size: 11px;
+}
+
+#view #agentWorkCard .aw-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+#view #agentWorkCard .aw-label {
+  overflow: hidden;
+  color: var(--muted-strong);
+  font-size: 12.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view #agentWorkCard .aw-value {
+  color: var(--ink);
+  font-size: 12.5px;
   font-weight: 800;
-  text-align: center;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) > div:nth-child(1)::before { content: '◉'; }
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) > div:nth-child(2)::before { content: '⌁'; }
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) > div:nth-child(3)::before { content: '◌'; }
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) > div > div:first-child {
-  grid-column: 3;
-  grid-row: 1;
-  font-size: 12px !important;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(2) > div > div:last-child {
-  grid-column: 2;
-  grid-row: 1;
-  margin: 0 !important;
-  color: #6b7280 !important;
-  font-size: 11px !important;
-  font-weight: 650 !important;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) {
-  margin-top: 3px;
-  padding-top: 4px !important;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div {
-  display: grid !important;
-  grid-template-columns: 15px minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: 24px;
-  padding: 3px 0 !important;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div > span {
-  font-size: 11px !important;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div > span:first-child {
-  grid-column: 2;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div > span:last-child {
-  grid-column: 3;
-}
-
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div:nth-child(1)::before { content: '◫'; }
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div:nth-child(2)::before { content: '◌'; }
-#view .today-design-bottom > #agentWorkCard > div:nth-child(3) > div:nth-child(3)::before { content: '↗'; }
 
 #view .today-rhythm-grid {
   stroke: #e7ebed;
@@ -1771,9 +1727,9 @@ input[type="number"]:focus {
 
 #view .today-breakdown-row {
   display: grid;
-  grid-template-columns: minmax(92px, .92fr) minmax(70px, 1fr) 43px 72px;
+  grid-template-columns: minmax(118px, 1.15fr) minmax(56px, .9fr) 42px 68px;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   min-height: 31px;
 }
 
@@ -1952,14 +1908,14 @@ input[type="number"]:focus {
 
 #view .today-privacy-art {
   position: absolute;
-  right: 18px;
-  bottom: 12px;
-  width: 92px;
-  height: 92px;
+  right: 16px;
+  bottom: 16px;
+  width: 104px;
+  height: 104px;
   display: grid;
   place-items: center;
-  color: color-mix(in srgb, var(--green) 62%, #fff);
-  opacity: .22;
+  color: var(--green);
+  opacity: .92;
 }
 
 #view .today-privacy-art svg {
@@ -2222,7 +2178,7 @@ input[type="number"]:focus {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: #2da44e;
+  background: var(--green);
   color: #fff;
   font-size: 30px;
   font-weight: 850;
@@ -2790,24 +2746,11 @@ input[type="number"]:focus {
 #view .today-cost-card {
   position: relative;
   overflow: hidden;
-  background: radial-gradient(circle at 95% 8%, rgba(45, 164, 78, .1), transparent 34%), linear-gradient(145deg, #ffffff 0%, #f2fbf4 100%);
+  background: radial-gradient(circle at 95% 8%, color-mix(in srgb, var(--green) 10%, transparent), transparent 34%), linear-gradient(145deg, var(--surface) 0%, color-mix(in srgb, var(--mint) 18%, var(--surface)) 100%);
 }
 
 #view .today-cost-card::before {
-  position: absolute;
-  top: 54px;
-  right: 18px;
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  border: 1px solid color-mix(in srgb, var(--green) 18%, transparent);
-  border-radius: 50%;
-  color: color-mix(in srgb, var(--green-dark) 72%, #ffffff);
-  content: '¥';
-  font-size: 20px;
-  font-weight: 850;
-  opacity: .24;
+  content: none;
 }
 
 #view .today-cost-columns {
@@ -2824,7 +2767,7 @@ input[type="number"]:focus {
 
 #view .today-cost-columns > div + div {
   padding-left: 18px;
-  border-left: 1px solid #dfe7e1;
+  border-left: 1px solid color-mix(in srgb, var(--green) 14%, #e3e7e9);
 }
 
 #view .today-cost-columns span {
@@ -2854,7 +2797,7 @@ input[type="number"]:focus {
   align-items: center;
   margin-top: 27px;
   padding-top: 12px;
-  border-top: 1px solid #dfe7e1;
+  border-top: 1px solid color-mix(in srgb, var(--green) 14%, #e3e7e9);
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
@@ -2898,4 +2841,165 @@ input[type="number"]:focus {
   #view .today-rank-podium {
     height: 80px;
   }
+}
+
+/* ---------- Design-sheet fidelity pass (2026-08) ---------- */
+/* Y-axis unit label ("Token") above the scale numbers. */
+#view .today-scale-unit {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-align: right;
+}
+
+#view .today-rhythm-scale,
+#view .today-bar-scale {
+  justify-content: flex-start;
+  gap: 0;
+}
+
+#view .today-rhythm-scale span:not(.today-scale-unit),
+#view .today-bar-scale span:not(.today-scale-unit) {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+
+/* 30-day heatmap: dashed goal line + "目标 X" tag. */
+#view .today-bar-chart .activity .goal-line {
+  height: 0;
+  border-top: 1.5px dashed var(--muted-faint);
+  background: transparent;
+  opacity: .85;
+  z-index: 2;
+}
+
+#view .today-bar-chart .activity .goal-tag {
+  position: absolute;
+  right: 2px;
+  z-index: 2;
+  padding-bottom: 4px;
+  transform: translateY(-100%);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* Brand logos in breakdown rows (按客户端). */
+#view .today-source-logo {
+  background: var(--surface);
+  border: 1px solid var(--track);
+}
+
+#view .today-source-logo img {
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+/* Colored dot for model rows (按模型). */
+#view .today-source-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+/* Subscription quota provider cards (订阅额度). */
+#view .today-quota-provider-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#view .today-quota-provider-title > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .today-quota-logo {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--track);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted-strong);
+}
+
+#view .today-quota-logo img {
+  display: block;
+  width: 13px;
+  height: 13px;
+}
+
+#view .today-quota-logo.today-quota-server svg {
+  width: 14px;
+  height: 14px;
+}
+
+#view .today-quota-used {
+  margin-top: 10px;
+  color: var(--quota-color, var(--green));
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+#view .today-quota-provider .today-quota-track {
+  margin-top: 7px;
+}
+
+#view .today-quota-amount {
+  margin-top: 7px;
+  color: var(--muted-strong);
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#view .today-quota-reset {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+/* Agent 消耗榜 podium badge (rank number circle). */
+#view .today-rank-badge {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 850;
+  box-shadow: 0 2px 5px rgba(31, 41, 55, .18);
+}
+
+#view .today-rank-badge.gold { background: linear-gradient(135deg, #f7c948, #f0a11c); }
+#view .today-rank-badge.silver { background: linear-gradient(135deg, #c3ccd6, #96a3b1); }
+#view .today-rank-badge.bronze { background: linear-gradient(135deg, #d6955c, #b26f3a); }
+
+#view .today-rank-podium span {
+  margin-top: 0;
+}
+
+#view .today-rank-podium strong {
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rhythm area chart fills its plot box. */
+#view .today-rhythm-graph svg {
+  height: 100% !important;
 }

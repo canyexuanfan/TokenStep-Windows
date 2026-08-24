@@ -89,7 +89,7 @@ function formatTokens(value, compact = false) {
 function formatMoney(value) {
   const n = Number(value || 0);
   return (
-    "$" +
+    "¥" +
     n.toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -2084,6 +2084,10 @@ function tokenToolColor(tool) {
       return "rgb(128,71,235)"; // violet
     case "ZCode":
       return "rgb(51,133,235)"; // blue (port of upstream v0.1.44)
+    case "Cursor":
+      return "rgb(13,148,136)"; // teal (design sheet client color)
+    case "Copilot":
+      return "rgb(37,99,235)"; // blue (design sheet client color)
     case "Codex via CC Switch":
     case "Claude Code via CC Switch":
     case "Gemini via CC Switch":
@@ -2275,6 +2279,100 @@ function hourlyAxisHTML() {
   );
 }
 
+// ---- Design-sheet rhythm area chart ----
+// Smooth Catmull-Rom area chart that fills its container (viewBox is scaled
+// with preserveAspectRatio="none"), with a peak dot + floating value label.
+// Colors come from themeColors so the chart follows the active theme.
+function rhythmAreaHTML(rhythm) {
+  if (!rhythm || !rhythm.buckets || !rhythm.buckets.length)
+    return '<div class="empty">' + t("暂无节奏数据") + "</div>";
+  var buckets = rhythm.buckets;
+  var max = Math.max.apply(null, buckets.map(function (b) { return b.tokens || 0; }).concat([1]));
+  var W = 600, H = 184, padX = 4, padTop = 26, padBottom = 6;
+  var stepX = (W - padX * 2) / 23;
+  var pts = buckets.map(function (b, i) {
+    var tokens = b.tokens || 0;
+    return { x: padX + i * stepX, y: padTop + (1 - tokens / max) * (H - padTop - padBottom), v: tokens };
+  });
+  var linePath = "M" + pts[0].x.toFixed(1) + "," + pts[0].y.toFixed(1);
+  for (var i = 0; i < pts.length - 1; i++) {
+    var p0 = pts[i - 1] || pts[i];
+    var p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    var cp1x = p1.x + (p2.x - p0.x) / 6;
+    var cp1y = p1.y + (p2.y - p0.y) / 6;
+    var cp2x = p2.x - (p3.x - p1.x) / 6;
+    var cp2y = p2.y - (p3.y - p1.y) / 6;
+    linePath += " C" + cp1x.toFixed(1) + "," + cp1y.toFixed(1) + " " + cp2x.toFixed(1) + "," + cp2y.toFixed(1) + " " + p2.x.toFixed(1) + "," + p2.y.toFixed(1);
+  }
+  var areaPath = linePath + " L" + pts[pts.length - 1].x.toFixed(1) + "," + (H - padBottom) + " L" + pts[0].x.toFixed(1) + "," + (H - padBottom) + " Z";
+  var gid = "rhArea_" + Math.random().toString(36).slice(2, 8);
+  var green = themeColors.green;
+  var overlay = "";
+  if (rhythm.peak_hour != null && pts[rhythm.peak_hour]) {
+    var pp = pts[rhythm.peak_hour];
+    var label = Math.round(pp.v).toLocaleString();
+    var hour = String(rhythm.peak_hour).padStart(2, "0") + ":00";
+    // Keep the tooltip inside the plot horizontally.
+    var cx = Math.max(34, Math.min(W - 34, pp.x));
+    overlay =
+      '<circle cx="' + pp.x.toFixed(1) + '" cy="' + pp.y.toFixed(1) + '" r="5" fill="' + green + '" stroke="#fff" stroke-width="2.5"/>' +
+      '<g transform="translate(' + cx.toFixed(1) + ',' + Math.max(2, pp.y - 24).toFixed(1) + ')">' +
+        '<rect x="-30" y="-13" width="60" height="26" rx="7" fill="#fff" stroke="rgba(0,0,0,0.07)"/>' +
+        '<text x="0" y="-2" text-anchor="middle" font-size="8.5" font-weight="600" fill="#9ca3af">' + hour + '</text>' +
+        '<text x="0" y="9" text-anchor="middle" font-size="9.5" font-weight="800" fill="#1f2937">' + label + '</text>' +
+      '</g>';
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="display:block;width:100%;height:100%">' +
+    '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="' + green + '" stop-opacity="0.28"/>' +
+      '<stop offset="100%" stop-color="' + green + '" stop-opacity="0.02"/>' +
+    '</linearGradient></defs>' +
+    '<path d="' + areaPath + '" fill="url(#' + gid + ')"/>' +
+    '<path d="' + linePath + '" fill="none" stroke="' + green + '" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>' +
+    overlay +
+    "</svg>";
+}
+
+// ---- Design-sheet 30-day intensity bars ----
+// Single-hue bars colored by goal intensity (theme-aware contributionColor),
+// rounded tops, plus a dashed goal line with a "目标 X" label.
+// Legend mapping: <50% low / 50-90% medium / >=90% high.
+function intensityActivityBarsHTML(rows, goal) {
+  if (!rows || !rows.length) return '<div class="empty">' + t("暂无活动数据") + "</div>";
+  var rawMax = Math.max.apply(null, [goal].concat(rows.map(function (d) { return d.total_tokens || 0; })).concat([1]));
+  var step = 500000;
+  var scaleMax = Math.max(step, Math.ceil(rawMax / step) * step);
+  // Keep the goal line (and its label) visible below the top edge even when
+  // the goal itself is the chart maximum.
+  var goalPct = Math.min(94, (goal / scaleMax) * 100);
+  function intensityColor(tokens) {
+    if (!(tokens > 0)) return themeColors.track;
+    var p = tokens / Math.max(goal, 1);
+    if (p >= 0.9) return themeColors.activity4;
+    if (p >= 0.5) return themeColors.activity3;
+    return themeColors.activity1;
+  }
+  var bars = rows.map(function (d) {
+    var tokens = d.total_tokens || 0;
+    var h = Math.max(2.2, (tokens / scaleMax) * 100);
+    return '<div class="bar" style="height:' + h.toFixed(1) + '%;background:' + intensityColor(tokens) + '" title="' + d.date + ' ' + formatTokens(tokens) + '"></div>';
+  }).join("");
+  var goalLabel = goal >= 1000000 ? (goal / 1000000).toFixed(1) + "M" : formatTokens(goal, true);
+  // Near the top edge the label would be clipped by the plot's overflow, so
+  // it flips below the dashed line; otherwise it floats above it.
+  var tagTransform = goalPct > 85 ? "translateY(4px)" : "translateY(-100%)";
+  var tagPadding = goalPct > 85 ? "padding-top:4px" : "padding-bottom:4px";
+  return {
+    scaleMax: scaleMax,
+    html:
+      '<div class="activity" style="margin-top:0">' +
+      '<div class="goal-line" style="bottom:' + goalPct.toFixed(1) + '%"></div>' +
+      '<div class="goal-tag" style="bottom:' + goalPct.toFixed(1) + '%;transform:' + tagTransform + ';' + tagPadding + '">' + t("目标") + " " + goalLabel + "</div>" +
+      bars +
+      "</div>",
+  };
+}
+
 // Map a RhythmTag (snake_case from the backend) to its localized title key.
 // Keep in sync with i18n.js (each value here is an i18n key).
 var RHYTHM_TAG_TITLE = {
@@ -2453,8 +2551,9 @@ function applyTheme(name) {
   themeColors.ring4 = v["--ring4"];
 }
 
-// ---- Agent Work card (port of upstream v0.2.2 TodayAgentIntensityCard) ----
-// Simplified in v0.2.2: three big numbers + input/cache/output KV rows.
+// ---- Agent Work card (design-sheet layout) ----
+// Five icon rows: 模型请求 / 工具调用 / 缓存命中率 / 输入 Tokens / 输出 Tokens.
+// Data source unchanged (snapshot.agent_work, upstream v0.2.2 fields).
 function agentWorkCardHTML(snapshot, settings) {
   var agentWork = snapshot.agent_work || [];
   var today = agentWork.filter(function (w) { return w.date === todayKey(); })[0]
@@ -2465,34 +2564,28 @@ function agentWorkCardHTML(snapshot, settings) {
   if (today.cache_coverage_complete && today.input_tokens > 0 && today.cached_input_tokens <= today.input_tokens) {
     cacheRate = formatPercent((today.cached_input_tokens / today.input_tokens) * 100);
   }
-
-  function big(label, value) {
-    return '<div style="background:var(--canvas);border-radius:14px;padding:12px 14px;text-align:center">' +
-      '<div style="font-size:24px;font-weight:800;color:var(--ink);line-height:1.1">' + value + '</div>' +
-      '<div style="font-size:12px;font-weight:700;color:var(--muted);margin-top:3px">' + label + '</div>' +
-    '</div>';
+  function full(value) {
+    return Math.max(0, Math.round(Number(value || 0))).toLocaleString();
   }
-  function kv(label, value) {
-    return '<div style="display:flex;justify-content:space-between;padding:4px 0">' +
-      '<span style="font-size:13px;font-weight:600;color:var(--muted)">' + label + '</span>' +
-      '<span style="font-size:13px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">' + value + '</span>' +
-    '</div>';
+  var rowIcons = {
+    requests: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>',
+    tools: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18l3 3 5.7-5.7a4.5 4.5 0 0 0 6-6L14 13l-3-3 3.7-3.7z"/></svg>',
+    cache: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/></svg>',
+    input: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>',
+    output: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 14l5-5 5 5"/><path d="M4 3h16"/></svg>',
+  };
+  function row(icon, label, value) {
+    return '<div class="aw-row"><span class="aw-icon">' + icon + '</span><span class="aw-label">' + label + '</span><span class="aw-value">' + value + '</span></div>';
   }
 
-  return '<div class="card" id="agentWorkCard">' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">' +
-      '<div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + t("Agent 工作强度") + '</div>' +
-      '<div style="font-size:14px;font-weight:600;color:var(--muted);margin-top:4px">' + t("本版补全：请求数 / 工具调用 / 输出") + '</div></div>' +
-    '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px">' +
-      big(t("模型请求"), today.model_request_count || 0) +
-      big(t("工具调用"), today.tool_call_count || 0) +
-      big(t("缓存命中"), cacheRate) +
-    '</div>' +
-    '<div style="border-top:1px solid var(--track);padding-top:8px">' +
-      kv(t("输入"), formatTokens(today.input_tokens || 0, true)) +
-      kv(t("缓存读取"), formatTokens(today.cached_input_tokens || 0, true)) +
-      kv(t("输出"), formatTokens(today.output_tokens || 0, true)) +
+  return '<div class="card today-design-card" id="agentWorkCard">' +
+    '<div class="today-design-card-title">' + t("Agent 工作强度") + ' <span class="today-design-info" title="' + t("按本机 Token 记录展示活跃强度，不代表实际工时或生产力。") + '">i</span></div>' +
+    '<div class="aw-rows">' +
+      row(rowIcons.requests, t("模型请求"), full(today.model_request_count) + ' ' + t("次")) +
+      row(rowIcons.tools, t("工具调用"), full(today.tool_call_count) + ' ' + t("次")) +
+      row(rowIcons.cache, t("缓存命中率"), cacheRate) +
+      row(rowIcons.input, t("输入 Tokens"), full(today.input_tokens)) +
+      row(rowIcons.output, t("输出 Tokens"), full(today.output_tokens)) +
     '</div>' +
   '</div>';
 }
@@ -2629,6 +2722,8 @@ window.TS = {
   quotaWindowHTML,
   hourlyBarsHTML,
   hourlyAxisHTML,
+  rhythmAreaHTML,
+  intensityActivityBarsHTML,
   rhythmTagTitle,
   renderShareDailyCard,
   renderTodayOverview,
