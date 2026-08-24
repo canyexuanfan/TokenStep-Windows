@@ -2598,3 +2598,304 @@ input[type="number"]:focus {
 #view .today-design-page { gap: 14px; }
 #view .today-token-layout { gap: 42px; }
 #view .today-lap-progress { transform: translateY(14px); }
+
+/* ---------- Today polish: ranking, subscription quota, cost estimate ---------- */
+#view .today-rank-content {
+  min-height: 0;
+  padding-top: 8px;
+}
+
+#view .today-rank-board {
+  display: grid;
+  grid-template-columns: .92fr 1.12fr .92fr;
+  align-items: end;
+  gap: 12px;
+  height: 145px;
+  padding: 0 3px;
+}
+
+#view .today-rank-slot {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: end;
+}
+
+#view .today-rank-crown {
+  height: 23px;
+  color: #c8ced4;
+  font-size: 25px;
+  line-height: 23px;
+  filter: drop-shadow(0 2px 2px rgba(31, 41, 55, .1));
+}
+
+#view .today-rank-crown.gold { color: #f2b01e; }
+#view .today-rank-crown.silver { color: #aeb7c1; }
+#view .today-rank-crown.bronze { color: #c9844b; }
+
+#view .today-rank-podium {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 82px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: end;
+  padding: 10px 8px 9px;
+  border: 1px solid #e6eaed;
+  border-radius: 10px 10px 5px 5px;
+  background: linear-gradient(180deg, #f1f3f4 0%, #ffffff 100%);
+  box-sizing: border-box;
+  text-align: center;
+}
+
+#view .today-rank-slot.rank-1 .today-rank-podium {
+  height: 112px;
+  border-color: #e1e6e8;
+  background: linear-gradient(180deg, #e9ebed 0%, #ffffff 100%);
+}
+
+#view .today-rank-podium strong {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--green-dark);
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .today-rank-slot.rank-1 .today-rank-podium strong {
+  font-size: 16px;
+}
+
+#view .today-rank-podium span {
+  overflow: hidden;
+  width: 100%;
+  margin-top: 4px;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .today-rank-podium small {
+  margin-top: 4px;
+  color: #9ca3af;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#view .today-rank-slot.is-empty .today-rank-podium {
+  border-style: dashed;
+  background: linear-gradient(180deg, #f7f8f8 0%, #ffffff 100%);
+}
+
+#view .today-rank-slot.is-empty .today-rank-podium strong,
+#view .today-rank-slot.is-empty .today-rank-podium span {
+  color: #a6adb4;
+}
+
+#view .today-rank-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid #edf0f1;
+  color: #8b949e;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+#view .today-rank-foot > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .today-rank-mine {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--green-dark);
+  background: color-mix(in srgb, var(--mint) 28%, transparent);
+  font-weight: 800;
+}
+
+#view .today-quota-card {
+  min-width: 0;
+}
+
+#view .today-quota-placeholder {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 142px;
+}
+
+#view .today-quota-placeholder-card {
+  display: flex;
+  min-width: 0;
+  min-height: 142px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 13px 14px;
+  border: 1px solid #e1e6e9;
+  border-radius: 12px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+#view .today-quota-placeholder-card strong {
+  color: #111827;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+#view .today-quota-placeholder-value {
+  margin-top: 8px;
+  color: #a4abb2;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+#view .today-quota-placeholder-track {
+  height: 8px;
+  margin: 5px 0 4px;
+  border-radius: 999px;
+  background: #e8ebed;
+}
+
+#view .today-quota-placeholder-card small {
+  overflow: hidden;
+  color: #8b949e;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .today-quota-placeholder-card.green .today-quota-placeholder-track,
+#view .today-quota-placeholder-card.amber .today-quota-placeholder-track,
+#view .today-quota-placeholder-card.blue .today-quota-placeholder-track,
+#view .today-quota-placeholder-card.local .today-quota-placeholder-track { background: #e8ebed; }
+
+#view .today-cost-card {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 95% 8%, rgba(45, 164, 78, .1), transparent 34%), linear-gradient(145deg, #ffffff 0%, #f2fbf4 100%);
+}
+
+#view .today-cost-card::before {
+  position: absolute;
+  top: 54px;
+  right: 18px;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--green) 18%, transparent);
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--green-dark) 72%, #ffffff);
+  content: '¥';
+  font-size: 20px;
+  font-weight: 850;
+  opacity: .24;
+}
+
+#view .today-cost-columns {
+  position: relative;
+  z-index: 1;
+  gap: 0;
+  margin-top: 29px;
+}
+
+#view .today-cost-columns > div {
+  min-width: 0;
+  padding: 0 13px 0 0;
+}
+
+#view .today-cost-columns > div + div {
+  padding-left: 18px;
+  border-left: 1px solid #dfe7e1;
+}
+
+#view .today-cost-columns span {
+  margin-bottom: 8px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#view .today-cost-columns strong {
+  letter-spacing: -.045em;
+  font-size: 27px;
+  font-weight: 850;
+}
+
+#view .today-cost-columns > div:first-child strong {
+  color: var(--green-dark);
+}
+
+#view .today-cost-columns > div + div strong {
+  color: #111827;
+}
+
+#view .today-cost-footer {
+  position: relative;
+  z-index: 1;
+  align-items: center;
+  margin-top: 27px;
+  padding-top: 12px;
+  border-top: 1px solid #dfe7e1;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+#view .today-cost-footer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .today-cost-footer b {
+  color: #374151;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+#view .today-cost-delta {
+  color: #6b7280;
+  font-style: normal;
+  font-weight: 750;
+}
+
+#view .today-cost-delta::first-letter {
+  color: var(--green-dark);
+}
+
+@media (max-width: 720px) {
+  #view .today-rank-board,
+  #view .today-quota-placeholder {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  #view .today-rank-slot,
+  #view .today-rank-slot.rank-1,
+  #view .today-rank-slot.rank-2,
+  #view .today-rank-slot.rank-3 {
+    height: 100px;
+  }
+  #view .today-rank-slot.rank-1 .today-rank-podium,
+  #view .today-rank-podium {
+    height: 80px;
+  }
+}

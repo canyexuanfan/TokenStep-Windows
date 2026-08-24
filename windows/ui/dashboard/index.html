@@ -643,12 +643,16 @@
         var metricStrip = '<div class="today-design-metrics"><div><span class="today-metric-icon">▤</span><div><strong>' + window.TS.t('累计 Token 消耗') + '</strong><b>' + fullTokens(snapshot.totals.tokens) + '</b><small>' + window.TS.t('自开始追踪以来的总消耗') + '</small></div></div><div><span class="today-metric-icon">▣</span><div><strong>' + window.TS.t('活跃天数') + '</strong><b>' + snapshot.totals.active_days + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('有用量记录的天数') + '</small></div></div><div><span class="today-metric-icon">◎</span><div><strong>' + window.TS.t('达标天数') + '</strong><b>' + goalDays + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('达到或超过每日目标的天数') + '</small></div></div></div>';
         var clientCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按客户端') + ' ' + infoIcon(window.TS.t('按客户端')) + '</div>' + breakdownRows(day.tools, 'client') + '</section>';
         var modelCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按模型') + ' ' + infoIcon(window.TS.t('按模型')) + '</div>' + breakdownRows(day.models, 'model') + '</section>';
-        var quotaCard = '<section class="card today-design-card today-quota-card" id="quotaProvidersCard" style="display:none"><div class="today-design-card-title">' + window.TS.t('订阅额度') + ' ' + infoIcon(window.TS.t('订阅额度')) + '</div><div id="quotaProvidersContent"></div></section>';
+        var quotaCard = '<section class="card today-design-card today-quota-card" id="quotaProvidersCard"><div class="today-design-card-title">' + window.TS.t('订阅额度') + ' ' + infoIcon(window.TS.t('订阅额度')) + '</div><div id="quotaProvidersContent">' + quotaPlaceholderHTML('等待同步') + '</div></section>';
         var rankVisible = settings.agent_work_rank_visibility === 'visible' || (settings.agent_work_rank_visibility === 'automatic' && window.__tsHasRankIdentity === true);
         var rankCard = rankVisible ? '<section class="card today-design-card today-rank-card" id="tokenRankCard"><div class="today-design-card-title">' + window.TS.t('Agent 消耗榜') + ' <span class="today-design-subtitle">（' + window.TS.t('今日') + '）</span> ' + infoIcon(window.TS.t('Agent 消耗榜')) + '</div><div id="tokenRankContent" class="today-rank-content">' + window.TS.t('加载中…') + '</div></section>' : '';
         var agentWorkCard = window.TS.agentWorkCardHTML(snapshot, settings);
         var monthlyAverage = (snapshot.daily || []).slice(-30).reduce(function (sum, item) { return sum + Number(item.total_tokens || 0); }, 0) / Math.max(1, Math.min(30, (snapshot.daily || []).slice(-30).length));
-        var costCard = '<section class="card today-design-card today-cost-card"><div class="today-design-card-title">' + window.TS.t('费用估算') + ' ' + infoIcon(window.TS.t('按 API 列表价估算，不代表订阅或实际账单。')) + '</div><div class="today-cost-columns"><div><span>' + window.TS.t('今日预估') + '</span><strong>' + formatMoney(day.cost) + '</strong></div><div><span>' + window.TS.t('本月预估') + '</span><strong>' + formatMoney((day.cost || 0) * 30) + '</strong></div></div><div class="today-cost-footer"><span>' + window.TS.t('预算') + ' ' + formatMoney(settings.monthly_budget || 1500) + '</span><span>' + window.TS.t('本月均值') + ' ' + fullTokens(monthlyAverage) + '</span></div></section>';
+        var previousDaily = (snapshot.daily || []).filter(function (item) { return item.date && item.date < day.date; }).slice(-1)[0];
+        var previousCost = previousDaily ? Number(previousDaily.cost || 0) : 0;
+        var costDelta = previousCost > 0 ? ((Number(day.cost || 0) - previousCost) / previousCost) * 100 : null;
+        var costDeltaText = costDelta == null ? window.TS.t('等待同步') : ((costDelta <= 0 ? '↓ ' : '↑ ') + Math.abs(costDelta).toFixed(1) + '%');
+        var costCard = '<section class="card today-design-card today-cost-card"><div class="today-design-card-title">' + window.TS.t('费用估算') + ' ' + infoIcon(window.TS.t('按 API 列表价估算，不代表订阅或实际账单。')) + '</div><div class="today-cost-columns"><div><span>' + window.TS.t('今日预估') + '</span><strong>' + formatMoney(day.cost) + '</strong></div><div><span>' + window.TS.t('本月预估') + '</span><strong>' + formatMoney((day.cost || 0) * 30) + '</strong></div></div><div class="today-cost-footer"><span><em class="today-cost-delta">' + window.TS.t('较昨日') + ' ' + costDeltaText + '</em></span><span><b>' + window.TS.t('预算') + ' ' + formatMoney(settings.monthly_budget || 1500) + '</b></span></div></section>';
         var privacyCard = '<section class="card today-design-card today-privacy-card"><div class="today-design-card-title">' + window.TS.t('数据留在本机') + ' ' + infoIcon(window.TS.t('所有数据只在本机计算，不上传到任何服务器')) + '</div><div class="today-privacy-list"><div><span>✓</span>' + window.TS.t('所有数据只在本机计算，不上传到任何服务器') + '</div><div><span>✓</span>' + window.TS.t('不默认上传数据') + '</div><div><span>✓</span>' + window.TS.t('完全由你掌控与隐私') + '</div></div><div class="today-privacy-art">' + window.TS.ICONS.shield + '</div></section>';
 
         return '<div class="today-design-page"><div class="today-design-top">' + tokenCard + rhythmCard + activityCard + '</div>' + metricStrip + '<div class="today-design-middle">' + clientCard + modelCard + quotaCard + '</div><div class="today-design-bottom">' + rankCard + agentWorkCard + costCard + privacyCard + '</div></div>';
@@ -691,8 +695,12 @@
         if (!host || !card) return;
         invoke('read_quota_providers', { force: !!force }).then(function (r) {
           var list = (r && r.providers) || [];
-          var displayable = list.filter(function (p) { return p.status === 'available' && p.windows && p.windows.length; });
-          if (!displayable.length) { card.style.display = 'none'; return; }
+          var displayable = list.filter(function (p) { return (p.status === 'available' || p.status === 'Available') && p.windows && p.windows.length; });
+          if (!displayable.length) {
+            card.style.display = '';
+            host.innerHTML = quotaPlaceholderHTML(list.length ? '等待同步' : '等待同步');
+            return;
+          }
           card.style.display = '';
           displayable.sort(function (a, b) {
             var la = lowest(a), lb = lowest(b);
@@ -705,7 +713,7 @@
             }
           });
           host.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' + displayable.map(function (p) {
-            var name = { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', local: window.TS.t('本地模型') }[p.provider] || p.provider;
+            var name = p.displayName || p.display_name || { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', local: window.TS.t('本地模型') }[p.provider] || p.provider;
             var wins = p.windows.slice(0, 2).map(function (w) {
               var rem = w.total > 0 ? (w.remaining != null ? w.remaining / w.total * 100 : 100 - (w.used_percent || 0)) : (100 - (w.used_percent || 0));
               rem = Math.max(0, Math.min(100, rem));
@@ -718,14 +726,70 @@
               return '<div class="today-quota-window" style="--quota-color:' + color + '">' +
                 '<div class="today-quota-window-title"><span>' + window.TS.t(title) + '</span><strong>' + usageLabel + '</strong></div>' +
                 '<div class="today-quota-track"><span style="width:' + Math.max(0, Math.min(100, used)).toFixed(0) + '%"></span></div>' +
-                '<div class="today-quota-window-meta"><span>' + totalLabel + '</span><span>' + (w.reset_at ? window.TS.t('重置') : window.TS.t('本地运行')) + (w.reset_at ? '：' + window.TS.t('即将') : '') + '</span></div>' +
+              '<div class="today-quota-window-meta"><span>' + totalLabel + '</span><span>' + (w.resets_at || w.reset_at ? window.TS.t('重置') : window.TS.t('本地运行')) + (w.resets_at || w.reset_at ? '：' + window.TS.t('即将') : '') + '</span></div>' +
               '</div>';
             }).join('');
             return '<div class="today-quota-provider">' +
               '<div class="today-quota-provider-title">' + name + '</div>' + wins +
             '</div>';
           }).join('') + '</div>';
-        }).catch(function () { card.style.display = 'none'; });
+        }).catch(function () {
+          card.style.display = '';
+          host.innerHTML = quotaPlaceholderHTML('等待同步');
+        });
+      }
+
+      function rankBoardHTML(r) {
+        r = r || {};
+        var esc = window.TS.escapeHtmlStr;
+        var entries = [];
+        function addEntry(entry) {
+          if (!entry) return;
+          var key = entry.user_id || entry.name || entry.rank;
+          if (!entries.some(function (item) { return (item.user_id || item.name || item.rank) === key; })) entries.push(entry);
+        }
+        addEntry(r.top);
+        addEntry(r.mine);
+        entries.sort(function (a, b) { return (a.rank || 999) - (b.rank || 999); });
+
+        function entryFor(rank) {
+          return entries.filter(function (entry) { return Number(entry.rank || 0) === rank; })[0] || null;
+        }
+        var knownTokens = entries.reduce(function (sum, entry) { return sum + Math.max(0, Number(entry.total_tokens || 0)); }, 0);
+        var otherTokens = Math.max(0, Number(r.total_tokens || 0) - knownTokens);
+        if (!entryFor(3) && otherTokens > 0) {
+          entries.push({ rank: 3, name: window.TS.t('其他'), total_tokens: otherTokens, synthetic: true });
+        }
+        function slot(rank, order) {
+          var entry = entryFor(rank);
+          var name = entry ? esc(entry.name || window.TS.t('未命名项目')) : window.TS.t('等待同步');
+          var tokens = entry ? window.TS.formatTokens(entry.total_tokens || 0) : '—';
+          var crownClass = rank === 1 ? 'gold' : (rank === 2 ? 'silver' : 'bronze');
+          return '<div class="today-rank-slot rank-' + rank + (entry ? '' : ' is-empty') + '" style="--rank-order:' + order + '">' +
+            '<div class="today-rank-crown ' + crownClass + '">♛</div>' +
+            '<div class="today-rank-podium"><strong>' + tokens + '</strong><span>' + name + '</span><small>#' + rank + '</small></div>' +
+          '</div>';
+        }
+        var status = r.error ? esc(r.error) : (r.available
+          ? ((r.total_ranked_users || 0) + ' ' + window.TS.t('人') + ' · ' + window.TS.t('今日'))
+          : window.TS.t('等待同步'));
+        var mineMeta = r.mine && r.mine.rank > 3
+          ? '<span class="today-rank-mine">' + window.TS.t('我的排名') + ' #' + r.mine.rank + '</span>'
+          : '';
+        return '<div class="today-rank-board">' + slot(2, 0) + slot(1, 1) + slot(3, 2) + '</div>' +
+          '<div class="today-rank-foot"><span>' + status + '</span>' + mineMeta + '</div>';
+      }
+
+      function quotaPlaceholderHTML(status) {
+        var providers = [
+          { name: 'OpenAI', tone: 'green' },
+          { name: 'Anthropic', tone: 'amber' },
+          { name: 'Google', tone: 'blue' },
+          { name: window.TS.t('本地模型'), tone: 'local' }
+        ];
+        return '<div class="today-quota-placeholder">' + providers.map(function (p) {
+          return '<div class="today-quota-placeholder-card ' + p.tone + '"><strong>' + p.name + '</strong><div class="today-quota-placeholder-value">—</div><div class="today-quota-placeholder-track"></div><small>' + window.TS.t(status || '等待同步') + '</small></div>';
+        }).join('') + '</div>';
       }
 
       function loadTokenRank() {
@@ -737,8 +801,11 @@
           window.__tsHasRankIdentity = !!(r && r.identity);
           var n = document.getElementById('tokenRankContent');
           if (!n) return;
-          if (!r || (!r.available && !r.identity && !r.error)) return; // hidden mode
-          n.innerHTML = window.TS.agentRankCardContentHTML(r || {});
+          if (!r || (!r.available && !r.identity && !r.error)) {
+            n.innerHTML = rankBoardHTML(r || {});
+            return;
+          }
+          n.innerHTML = rankBoardHTML(r || {});
           // Upstream: tapping the card opens the personal page when linked,
           // else the leaderboard page.
           var card = document.getElementById('tokenRankCard');
