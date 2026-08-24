@@ -105,6 +105,10 @@ pub struct TokenRankSnapshot {
     pub total_tokens: i64,
     /// Number of ranked users.
     pub total_ranked_users: i64,
+    /// Top rows of the board (up to 5) — additive pass-through of data the
+    /// API already returns; lets the UI render ranks 4/5 without extra calls.
+    #[serde(default)]
+    pub rows: Vec<TokenRankEntry>,
     /// When this data was fetched (epoch secs) — drives the "N 人 · X 分钟前"
     /// header (cache hits re-stamp from the cache file).
     #[serde(default)]
@@ -204,6 +208,7 @@ pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
         mine,
         total_tokens,
         total_ranked_users: total_ranked,
+        rows: entries.iter().take(5).cloned().collect(),
         fetched_at_secs: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())

@@ -1335,15 +1335,15 @@ input[type="number"]:focus {
 
 #view .today-ring-center span {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 650;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 
 #view .today-token-summary {
   display: flex;
   flex-direction: column;
-  gap: 13px;
+  gap: 15px;
   min-width: 0;
 }
 
@@ -1355,13 +1355,13 @@ input[type="number"]:focus {
 
 #view .today-token-summary span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 650;
 }
 
 #view .today-token-summary strong {
   color: var(--ink);
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 800;
   line-height: 1.1;
   white-space: nowrap;
@@ -1425,7 +1425,7 @@ input[type="number"]:focus {
   grid-template-columns: 42px minmax(0, 1fr);
   align-items: stretch;
   gap: 0;
-  margin-top: 27px;
+  margin-top: 18px;
 }
 
 #view .today-rhythm-scale {
@@ -1532,23 +1532,25 @@ input[type="number"]:focus {
 
 #view #agentWorkCard .aw-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
-  min-height: 30px;
+  min-height: 31px;
 }
 
 #view #agentWorkCard .aw-icon {
   display: grid;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   place-items: center;
+  border-radius: 7px;
   color: var(--green-dark);
+  background: color-mix(in srgb, var(--mint) 26%, transparent);
 }
 
 #view #agentWorkCard .aw-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
 }
 
 #view #agentWorkCard .aw-label {
@@ -1628,7 +1630,7 @@ input[type="number"]:focus {
   display: grid;
   grid-template-columns: 43px minmax(0, 1fr);
   align-items: stretch;
-  margin-top: 30px;
+  margin-top: 18px;
 }
 
 #view .today-bar-scale {
@@ -1900,22 +1902,30 @@ input[type="number"]:focus {
 }
 
 #view .today-privacy-list span {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  place-items: center;
   color: var(--green);
-  font-size: 17px;
-  font-weight: 900;
-  line-height: .9;
+}
+
+#view .today-privacy-list span svg {
+  width: 100%;
+  height: 100%;
 }
 
 #view .today-privacy-art {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-  width: 104px;
-  height: 104px;
+  top: 50%;
+  right: 22px;
+  width: 150px;
+  height: 150px;
   display: grid;
   place-items: center;
   color: var(--green);
   opacity: .92;
+  transform: translateY(-50%);
 }
 
 #view .today-privacy-art svg {
@@ -2368,27 +2378,27 @@ input[type="number"]:focus {
 }
 
 #view .today-design-top > .today-design-card {
-  height: 359px;
+  height: 353px;
 }
 
 #view .today-token-card {
-  min-height: 359px;
+  min-height: 353px;
 }
 
 #view .today-token-layout {
   min-height: 208px;
   height: 208px;
-  grid-template-columns: minmax(180px, 1fr) minmax(145px, .9fr);
-  gap: 32px;
+  grid-template-columns: minmax(200px, 1.45fr) minmax(145px, 1fr);
+  gap: 14px;
 }
 
 #view .today-design-ring {
-  width: min(182px, 100%);
+  width: min(190px, 100%);
   transform: translateY(-8px);
 }
 
 #view .today-ring-center strong {
-  font-size: 40px;
+  font-size: 56px;
 }
 
 #view .today-rhythm-svg {
@@ -2396,8 +2406,8 @@ input[type="number"]:focus {
 }
 
 #view .today-design-metrics {
-  min-height: 75px;
-  height: 75px;
+  min-height: 85px;
+  height: 85px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   border: 1px solid var(--line);
@@ -2408,7 +2418,7 @@ input[type="number"]:focus {
 }
 
 #view .today-design-metrics > div {
-  min-height: 75px;
+  min-height: 85px;
   padding: 12px 18px;
   border: 0;
   border-radius: 0;
@@ -2445,8 +2455,8 @@ input[type="number"]:focus {
 
 #view .today-design-bottom > .today-design-card,
 #view .today-design-bottom > #agentWorkCard {
-  min-height: 226px;
-  height: 226px;
+  min-height: 239px;
+  height: 239px;
 }
 
 #view .today-design-bottom > #agentWorkCard {
@@ -2552,7 +2562,7 @@ input[type="number"]:focus {
 
 /* Final geometry refinements after live v3 comparison. */
 #view .today-design-page { gap: 14px; }
-#view .today-token-layout { gap: 42px; }
+#view .today-token-layout { gap: 14px; }
 #view .today-lap-progress { transform: translateY(14px); }
 
 /* ---------- Today polish: ranking, subscription quota, cost estimate ---------- */
@@ -2592,6 +2602,7 @@ input[type="number"]:focus {
 #view .today-rank-crown.bronze { color: #c9844b; }
 
 #view .today-rank-podium {
+  position: relative;
   display: flex;
   width: 100%;
   min-width: 0;
@@ -2600,17 +2611,90 @@ input[type="number"]:focus {
   align-items: center;
   justify-content: end;
   padding: 10px 8px 9px;
-  border: 1px solid #e6eaed;
-  border-radius: 10px 10px 5px 5px;
-  background: linear-gradient(180deg, #f1f3f4 0%, #ffffff 100%);
+  border: 0;
+  border-radius: 10px;
+  background: #f3f4f5;
   box-sizing: border-box;
   text-align: center;
 }
 
 #view .today-rank-slot.rank-1 .today-rank-podium {
   height: 112px;
-  border-color: #e1e6e8;
-  background: linear-gradient(180deg, #e9ebed 0%, #ffffff 100%);
+  background: #edeff0;
+}
+
+#view .today-rank-badge {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  box-shadow: 0 2px 5px rgba(31, 41, 55, .18);
+}
+
+#view .today-rank-badge.gold { background: #f2b01e; }
+#view .today-rank-badge.silver { background: #aeb7c1; }
+#view .today-rank-badge.bronze { background: #c9844b; }
+
+/* Design-sheet: podium on the left, ranks 4/5 (+其他) list on the right. */
+#view .today-rank-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+
+#view .today-rank-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+#view .today-rank-list > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+#view .today-rank-list .today-rank-list-no {
+  flex: 0 0 auto;
+  width: 14px;
+  color: #9ca3af;
+  font-weight: 750;
+  text-align: center;
+}
+
+#view .today-rank-list .today-rank-list-name {
+  overflow: hidden;
+  flex: 1;
+  color: #4b5563;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .today-rank-list .today-rank-list-value {
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+#view .today-rank-list > div.today-rank-list-mine .today-rank-list-name,
+#view .today-rank-list > div.today-rank-list-mine .today-rank-list-value {
+  color: var(--green-dark);
 }
 
 #view .today-rank-podium strong {
@@ -2854,16 +2938,17 @@ input[type="number"]:focus {
 
 #view .today-rhythm-scale,
 #view .today-bar-scale {
-  justify-content: flex-start;
+  position: relative;
+  justify-content: space-between;
   gap: 0;
+  padding-top: 18px;
 }
 
-#view .today-rhythm-scale span:not(.today-scale-unit),
-#view .today-bar-scale span:not(.today-scale-unit) {
-  flex: 1;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
+#view .today-rhythm-scale .today-scale-unit,
+#view .today-bar-scale .today-scale-unit {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 /* 30-day heatmap: dashed goal line + "目标 X" tag. */
@@ -2971,24 +3056,6 @@ input[type="number"]:focus {
   font-size: 11px;
   font-weight: 650;
 }
-
-/* Agent 消耗榜 podium badge (rank number circle). */
-#view .today-rank-badge {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  margin-bottom: 6px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 12.5px;
-  font-weight: 850;
-  box-shadow: 0 2px 5px rgba(31, 41, 55, .18);
-}
-
-#view .today-rank-badge.gold { background: linear-gradient(135deg, #f7c948, #f0a11c); }
-#view .today-rank-badge.silver { background: linear-gradient(135deg, #c3ccd6, #96a3b1); }
-#view .today-rank-badge.bronze { background: linear-gradient(135deg, #d6955c, #b26f3a); }
 
 #view .today-rank-podium span {
   margin-top: 0;
