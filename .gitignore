@@ -52,3 +52,5 @@ reporter_*/
 # Local investigation notes (contain token-rank/opentoken reverse-engineering
 # findings, credentials paths, uninstall scripts) — kept local only.
 questions/
+.tmp/
+nul
