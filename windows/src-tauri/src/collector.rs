@@ -418,7 +418,11 @@ fn collect_codex_jsonl(
         records.extend(file_records.clone());
 
         // Persist with fork metadata + this file's own anchors so future
-        // children (and cache hits) can inherit.
+        // children (and cache hits) can inherit. Anchors are thinned before
+        // persisting: a 40k-event rollout would otherwise write 40k
+        // cumulative snapshots (~9 MB) into the cache per file — the measured
+        // cause of a 2 GB collector-cache.json after five days. The in-run
+        // `anchors_by_session` keeps the full set for this run's children.
         let anchors: Vec<CachedAnchor> = events
             .iter()
             .filter_map(|e| {
@@ -442,7 +446,7 @@ fn collect_codex_jsonl(
             &session_id,
             parent,
             created_at,
-            anchors.clone(),
+            thin_anchors(anchors.clone()),
         );
         // Publish anchors for children of this session.
         if parent_ids.contains(&session_id) {
@@ -592,6 +596,77 @@ fn codex_anchor_at_or_before(created_at: Option<f64>, anchors: &[CachedAnchor]) 
         return None;
     }
     Some(anchor.usage())
+}
+
+/// Cap on persisted per-file anchors. `codex_anchor_at_or_before` only needs
+/// monotone ts coverage for fork-base lookups, so an evenly spaced sample
+/// preserves them with bounded staleness while keeping the cache small.
+const CODEX_MAX_PERSISTED_ANCHORS: usize = 256;
+
+/// Keep the first, the exact last, and an evenly spaced sample of `anchors`.
+fn thin_anchors(anchors: Vec<CachedAnchor>) -> Vec<CachedAnchor> {
+    let n = anchors.len();
+    if n <= CODEX_MAX_PERSISTED_ANCHORS {
+        return anchors;
+    }
+    let mut kept: Vec<CachedAnchor> = Vec::with_capacity(CODEX_MAX_PERSISTED_ANCHORS + 1);
+    let step = (n - 1) as f64 / (CODEX_MAX_PERSISTED_ANCHORS - 1) as f64;
+    let mut last_idx = usize::MAX;
+    for i in 0..CODEX_MAX_PERSISTED_ANCHORS {
+        let idx = ((i as f64) * step).round() as usize;
+        if idx == last_idx {
+            continue;
+        }
+        last_idx = idx;
+        kept.push(anchors[idx].clone());
+    }
+    // The exact final cumulative is the best base for children created near
+    // the parent's end — always keep it verbatim.
+    if kept.last().map(|a| a.ts) != Some(anchors[n - 1].ts) {
+        kept.push(anchors[n - 1].clone());
+    }
+    kept
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+
+    fn sample(n: usize) -> Vec<CachedAnchor> {
+        (0..n)
+            .map(|i| CachedAnchor {
+                ts: i as f64,
+                total: (i + 1) as i64 * 1000,
+                input: 0,
+                output: 0,
+                cache_creation: 0,
+                cache_read: 0,
+                reasoning: 0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn thin_anchors_small_set_untouched() {
+        let a = sample(100);
+        let thinned = thin_anchors(a.clone());
+        assert_eq!(thinned.len(), 100);
+        assert_eq!(thinned, a);
+    }
+
+    #[test]
+    fn thin_anchors_bounds_and_endpoints() {
+        let a = sample(40_000);
+        let thinned = thin_anchors(a);
+        assert!(thinned.len() <= CODEX_MAX_PERSISTED_ANCHORS + 1);
+        // First and exact last survive; ts stays monotonic for binary search.
+        assert_eq!(thinned.first().map(|x| x.ts), Some(0.0));
+        assert_eq!(thinned.last().map(|x| x.ts), Some(39_999.0));
+        assert_eq!(thinned.last().map(|x| x.total), Some(40_000_000));
+        for w in thinned.windows(2) {
+            assert!(w[0].ts <= w[1].ts);
+        }
+    }
 }
 
 /// Freshness check for a cache entry against live file metadata.
@@ -1659,7 +1734,10 @@ fn share(part: i64, whole: i64) -> f64 {
 /// Extract the local hour-of-day (0-23) from an ISO timestamp. Port of
 /// Current collector cache version. Bump on schema changes to force a full
 /// rebuild from source. v5 = agent work aggregation + accounting revision tracking.
-const COLLECTOR_CACHE_VERSION: i32 = 10;
+/// v11 = anchors thinned to CODEX_MAX_PERSISTED_ANCHORS per file; v10 caches
+/// wrote every cumulative snapshot and could reach gigabytes, so they are
+/// discarded instead of parsed.
+const COLLECTOR_CACHE_VERSION: i32 = 11;
 
 /// Current Codex accounting revision (mirrors macOS `codexAccountingRevision`).
 /// The Win port does not yet implement the rev6-8 incremental accounting, but
@@ -1870,7 +1948,7 @@ struct CachedUsageFile {
 }
 
 /// One cumulative anchor point: (epoch secs, usage snapshot).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct CachedAnchor {
     ts: f64,
     total: i64,
@@ -1947,7 +2025,27 @@ impl Default for CollectorCache {
 }
 
 fn load_cache() -> CollectorCache {
-    let Ok(text) = fs::read_to_string(paths::collector_cache_json()) else {
+    let path = paths::collector_cache_json();
+    let Ok(mut file) = fs::File::open(&path) else {
+        return CollectorCache::default();
+    };
+    // Cheap head probe: a bloated legacy cache can be gigabytes; a full serde
+    // parse would cost GBs of RAM before the version check discards it. The
+    // version key is always the first field both pretty and compact.
+    use std::io::Read;
+    let mut head = [0u8; 256];
+    let n = file.read(&mut head).unwrap_or(0);
+    let head = String::from_utf8_lossy(&head[..n]);
+    if let Some(pos) = head.find("\"version\"") {
+        let rest = head[pos + 9..].trim_start_matches([' ', ':', '\n', '\r', '\t']);
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+        if let Ok(v) = digits.parse::<i32>() {
+            if v != COLLECTOR_CACHE_VERSION {
+                return CollectorCache::default();
+            }
+        }
+    }
+    let Ok(text) = fs::read_to_string(&path) else {
         return CollectorCache::default();
     };
     match serde_json::from_str::<CollectorCache>(&text) {
@@ -1964,7 +2062,9 @@ fn save_cache(cache: &CollectorCache) {
             return;
         }
     }
-    if let Ok(text) = serde_json::to_string_pretty(cache) {
+    // Compact form: the cache is machine-only, and pretty printing a
+    // multi-hundred-MB file inflates size and write time for nothing.
+    if let Ok(text) = serde_json::to_string(cache) {
         let _ = fs::write(path, text);
     }
 }

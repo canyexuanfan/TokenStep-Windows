@@ -28,6 +28,14 @@
 - 订阅额度卡不再因异步读取时机暂时消失，provider 返回后沿用真实额度窗口渲染。
 - 费用估算按参考图优化为今日/本月双金额、较昨日变化和预算底栏；未改后端计算接口。
 
+### 0.1.9 稳定性修复（缓存 2GB + 设置页打不开）
+
+- **采集器缓存无界增长修复**：v10 把每个 Codex 事件的累计快照全部写入 `codex_anchors`，5 天膨胀到 2.08 GB（31.6 万条记录仅占约 135MB，其余 1.9GB 全是快照；单文件可达数万条、同秒重复）。现在持久化前抽稀为最多 256 个锚点（首尾保留 + 等距采样，`thin_anchors`，含单元测试）；缓存版本升至 v11 自动作废旧文件；`load_cache` 增加 256 字节头部版本探测（版本不符不再解析整个文件）；`save_cache` 改紧凑序列化。
+- **设置页打不开修复**：tab 重构后 SECTIONS 不含 `settings`，`render()` 对 `section.title` 的无保护访问在点 ⚙ 时抛 TypeError，设置视图永远渲染不出来（自 0.1.8 tab 重构起潜伏；Codex 重构版曾因把 settings 混入 SECTIONS 而短暂掩盖）。现在非导航视图安全跳过标题更新，设置页 12 张卡与 5 个主题色块恢复可用。
+- 隐私页「本地数据文件」路径文案修正：`data\usage.json`（实际不存在）→ 真实的 `cache\collector-cache.json`。
+- 新增 `windows/scripts/cdp-verify.ps1`：通过 WebView2 远程调试协议（CDP）对真实运行的应用做端到端验证（等待真实数据 → 今日页 → 历史/隐私 tab → 设置页 → 真实切换主题并还原 → 缓存体积/内存），替代易误判的 mock harness。
+- 计量口径说明：经字段构成核实，Codex 日均 12~28 亿 token 为真实用量（input+cache_read 主导，长上下文每轮全量重发），非计量 bug。
+
 ## [0.1.8] - 上游 v0.2.1/v0.2.2 同步：Cursor 官方用量 + 多供应商额度 + 模型仪表盘
 
 ### 新增
@@ -178,6 +186,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), adhere
 ## [Unreleased]
 
 (In development. See [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md).)
+
+## [0.1.9] - Today page redesign + stability fixes
+
+### Changed
+
+- Today page re-laid-out per the GPT-Image-2 reference design (progress, rhythm, activity, breakdown, quota, rank, cost cards).
+- Rank card: three-column podium layout with real leaderboard data and empty-waiting state; quota card keeps real provider windows; cost card shows today/this-month amounts with day-over-day delta.
+
+### Fixed
+
+- Collector cache unbounded growth: v10 persisted every Codex cumulative snapshot into `codex_anchors`, reaching 2.08 GB in five days. Anchors are now thinned to at most 256 per file (first/last kept verbatim, plus an even sample); cache version bumped to v11 so legacy files are discarded without being parsed; `load_cache` probes the version from the first 256 bytes before parsing; `save_cache` writes compact JSON.
+- Settings page could not open: after the header-tab restructure `SECTIONS` no longer contained `settings`, and the unguarded `section.title` lookup in `render()` threw a TypeError before the settings branch ran. Non-nav views now skip the title update; all 12 settings cards and 5 theme swatches are reachable again.
+- Privacy page "local data files" path now shows the real `cache\collector-cache.json` instead of a nonexistent `data\usage.json`.
+
+### Added
+
+- `windows/scripts/cdp-verify.ps1`: end-to-end verification of the real running app over the WebView2 remote-debugging protocol (waits for live data, checks today/history/privacy tabs, opens settings, switches theme and restores, reports cache size and memory).
 
 ## [0.1.8] - Upstream v0.2.1/v0.2.2: Cursor official usage + multi-provider quotas + model dashboard
 

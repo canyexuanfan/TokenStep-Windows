@@ -873,7 +873,7 @@
           return '<div style="display:flex;gap:12px;align-items:flex-start"><span style="flex-shrink:0;width:24px;height:24px;border-radius:50%;background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green-dark);font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center">' + (i+1) + '</span><span style="font-size:15px;line-height:1.5;color:var(--muted-strong);padding-top:2px">' + txt + '</span></div>';
         }).join('') + '</div>';
         return '<div class="card"><div class="card-title">' + window.TS.t('隐私说明') + '</div>' + numbered + '</div>' +
-          '<div class="card"><div class="card-title">' + window.TS.t('本地数据文件') + '</div><div class="card-row" style="justify-content:space-between"><div><b>' + window.TS.t('用量数据') + '</b></div><code style="font-size:12px;color:var(--muted)">%APPDATA%\\TokenStep\\data\\usage.json</code></div><div class="card-row" style="justify-content:space-between"><div><b>' + window.TS.t('设置') + '</b></div><code style="font-size:12px;color:var(--muted)">%APPDATA%\\TokenStep\\config\\settings.json</code></div></div>' +
+          '<div class="card"><div class="card-title">' + window.TS.t('本地数据文件') + '</div><div class="card-row" style="justify-content:space-between"><div><b>' + window.TS.t('用量数据') + '</b></div><code style="font-size:12px;color:var(--muted)">%APPDATA%\\TokenStep\\cache\\collector-cache.json</code></div><div class="card-row" style="justify-content:space-between"><div><b>' + window.TS.t('设置') + '</b></div><code style="font-size:12px;color:var(--muted)">%APPDATA%\\TokenStep\\config\\settings.json</code></div></div>' +
           '<div class="card"><div class="card-title">' + window.TS.t('数据源') + '</div>' + (srcs.length ? srcs.map(function (n) { var m = snapshot.sources[n]; return '<div class="card-row" style="justify-content:space-between"><div><b>' + n + '</b></div><div style="color:var(--muted)">' + (m.status || '?') + ' · ' + (m.records || 0) + ' ' + window.TS.t('条') + '</div></div>'; }).join('') : window.TS.t('暂无')) + '</div>';
       }
       function viewSettings() {
@@ -1054,6 +1054,13 @@
       if (!host) return;
       invoke('get_freshness').then(function (f) {
       if (!f || !f.collection) return;
+      // A collect pass is running: the attempt timestamp was already stamped
+      // at its START, so judging from it would flash "同步失败" mid-pass
+      // (worst on a cold cache, where the first full rebuild takes minutes).
+      if (f.refreshing) {
+      host.innerHTML = window.TS.freshnessBadgeHTML('syncing');
+      return;
+      }
       var kind = f.collection.kind || 'never_succeeded';
       var suffix = '';
       if ((kind === 'stale' || kind === 'aging') && f.collection.last_succeeded_at) {
@@ -1097,9 +1104,15 @@
 
       function render() {
         document.querySelectorAll('.nav-item').forEach(function (el) { el.classList.toggle('active', el.dataset.id === current); });
-        var section = SECTIONS.filter(function (s) { return s.id === current; })[0];
-        document.getElementById('pageTitle').textContent = window.TS.t(section.title);
-        document.getElementById('pageSubtitle').textContent = window.TS.t(section.sub);
+        // 'settings' is reached via the header gear, not the nav — SECTIONS
+        // has no entry for it, so guard the lookup (unguarded access threw a
+        // TypeError and killed render() before the settings branch ran).
+        var section = SECTIONS.filter(function (s) { return s.id === current; })[0]
+          || (current === 'settings' ? { title: '设置', sub: '' } : null);
+        if (section) {
+          document.getElementById('pageTitle').textContent = window.TS.t(section.title);
+          document.getElementById('pageSubtitle').textContent = window.TS.t(section.sub);
+        }
         var view = document.getElementById('view');
         // Recalibration notice banner (checked once per render cycle).
         invoke('get_recalibration_notice').then(function (show) {

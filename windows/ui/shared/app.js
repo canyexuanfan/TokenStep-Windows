@@ -2508,10 +2508,11 @@ function recalibrationNoticeHTML() {
 
 
 // ---- Freshness badge (port of upstream G-V1 FreshnessBadge) ----
-// kind: never_succeeded / fresh / aging / stale / partial / disabled
+// kind: never_succeeded / fresh / syncing / aging / stale / partial / disabled
 function freshnessBadgeHTML(kind) {
   var map = {
     fresh:        { color: "var(--green)",  bg: "color-mix(in srgb,var(--green) 12%,transparent)",  icon: "●", label: t("已同步") },
+    syncing:      { color: "var(--green)",  bg: "color-mix(in srgb,var(--green) 12%,transparent)",  icon: "⟳", label: t("同步中") },
     aging:        { color: "#d97706",       bg: "color-mix(in srgb,#d97706 12%,transparent)",        icon: "◐", label: t("数据待更新") },
     stale:        { color: "#dc2626",       bg: "color-mix(in srgb,#dc2626 12%,transparent)",        icon: "▲", label: t("同步失败") },
     partial:      { color: "#d97706",       bg: "color-mix(in srgb,#d97706 12%,transparent)",        icon: "◑", label: t("部分来源失败") },
