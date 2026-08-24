@@ -81,8 +81,14 @@
       if (referenceSettings) referenceSettings.innerHTML = ICONS.gear;
 
       // Nav
+      var referenceNavIcons = {
+        today: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 9h16M8 13h3M8 16h3"/></svg>',
+        history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4M16 3v4M4 9h16M8 13h8M8 16h5"/></svg>',
+        stats: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V11M10 20V5M16 20v-8M22 20H2"/></svg>',
+        settings: ICONS.gear
+      };
       document.getElementById('nav').innerHTML = SECTIONS.map(function (s) {
-        return '<div class="nav-item ' + (s.id === current ? 'active' : '') + '" data-id="' + s.id + '" title="' + s.sub + '"><div class="nav-icon">' + s.icon + '</div><div class="nav-title">' + s.title + '</div></div>';
+        return '<div class="nav-item ' + (s.id === current ? 'active' : '') + '" data-id="' + s.id + '" title="' + s.sub + '"><div class="nav-icon">' + (referenceNavIcons[s.id] || s.icon) + '</div><div class="nav-title">' + s.title + '</div></div>';
       }).join('');
       document.querySelectorAll('.nav-item').forEach(function (el) {
         el.addEventListener('click', function () { current = el.dataset.id; render(); });
@@ -536,12 +542,13 @@
         var day = todayDaily();
         var total = Number(day.total_tokens || 0);
         var goal = Math.max(1, Number(settings.daily_goal_tokens || 1));
-        var progress = Math.max(0, Math.min(1, total / goal));
-        var progressPct = Math.round(progress * 100);
-        var remaining = Math.max(0, goal - total);
+        var lap = window.TS.lapProgress(total, goal);
+        var progress = lap.currentLapProgress;
+        var progressPct = Math.round(lap.currentLapPercent);
+        var lapRemainder = total % goal;
+        var remaining = total > 0 && lapRemainder === 0 ? 0 : Math.max(0, goal - lapRemainder);
         var rows30 = (snapshot.daily || []).slice(-30);
         var goalDays = (snapshot.daily || []).filter(function (item) { return Number(item.total_tokens || 0) >= goal; }).length;
-        var lap = window.TS.lapProgress(total, goal);
         var escape = window.TS.escapeHtmlStr;
 
         function infoIcon(label) {
@@ -572,12 +579,26 @@
 
         function breakdownRows(source, kind) {
           var totalValue = Number(day.total_tokens || 0);
-          var list = Object.keys(source || {}).map(function (name) {
+          var rows = Object.keys(source || {}).map(function (name) {
             return { name: name, value: Number(source[name] || 0) };
-          }).filter(function (row) { return row.value > 0; }).sort(function (a, b) { return b.value - a.value; }).slice(0, 5);
-          if (!list.length) return '<div class="today-design-empty">' + window.TS.t('等待下一次同步') + '</div>';
-          var max = Math.max.apply(null, [1].concat(list.map(function (row) { return row.value; })));
-          return list.map(function (row) {
+          }).filter(function (row) { return row.value > 0; });
+          var ordered;
+          if (kind === 'client') {
+            var pinned = ['Codex', 'Claude Code'].filter(function (name) {
+              return rows.some(function (row) { return row.name === name && row.value > 0; });
+            });
+            var rest = rows.filter(function (row) { return pinned.indexOf(row.name) < 0; }).sort(function (a, b) { return b.value - a.value; });
+            ordered = pinned.map(function (name) { return rows.filter(function (row) { return row.name === name; })[0]; }).concat(rest);
+            if (ordered.length > 2) ordered = ordered.filter(function (row, index) { return index < 2 || row.value * 100 / Math.max(1, totalValue) >= 0.1; });
+            ordered = ordered.slice(0, 5);
+          } else {
+            ordered = rows.sort(function (a, b) { return b.value - a.value; });
+            if (ordered.length > 2) ordered = ordered.filter(function (row, index) { return index < 2 || row.value * 100 / Math.max(1, totalValue) >= 0.1; });
+            ordered = ordered.slice(0, 5);
+          }
+          if (!ordered.length) return '<div class="today-design-empty">' + window.TS.t('等待下一次同步') + '</div>';
+          var max = Math.max.apply(null, [1].concat(ordered.map(function (row) { return row.value; })));
+          return ordered.map(function (row) {
             var label = kind === 'client' ? clientName(row.name) : row.name;
             var pct = totalValue ? row.value * 100 / totalValue : 0;
             var color = window.TS.tokenToolColor(row.name);
@@ -595,42 +616,36 @@
           if (!rhythm || !rhythm.buckets || !rhythm.buckets.length) {
             return '<div class="today-design-empty today-rhythm-empty">' + window.TS.t('暂无节奏数据') + '</div>';
           }
-          var buckets = rhythm.buckets.slice(0, 24);
-          var width = 650, height = 184, left = 42, right = 10, top = 10, bottom = 26;
-          var chartWidth = width - left - right, chartHeight = height - top - bottom;
-          var max = Math.max.apply(null, buckets.map(function (item) { return Number(item.tokens || 0); }).concat([1]));
-          var points = buckets.map(function (item, index) {
-            return { x: left + (buckets.length === 1 ? chartWidth / 2 : index * chartWidth / (buckets.length - 1)), y: top + chartHeight - (Number(item.tokens || 0) / max) * chartHeight, value: Number(item.tokens || 0) };
-          });
-          var line = 'M' + points[0].x + ',' + points[0].y;
-          for (var i = 0; i < points.length - 1; i++) {
-            var p0 = points[i - 1] || points[i], p1 = points[i], p2 = points[i + 1], p3 = points[i + 2] || p2;
-            line += ' C' + (p1.x + (p2.x - p0.x) / 6) + ',' + (p1.y + (p2.y - p0.y) / 6) + ' ' + (p2.x - (p3.x - p1.x) / 6) + ',' + (p2.y - (p3.y - p1.y) / 6) + ' ' + p2.x + ',' + p2.y;
-          }
-          var area = line + ' L' + points[points.length - 1].x + ',' + (top + chartHeight) + ' L' + points[0].x + ',' + (top + chartHeight) + ' Z';
-          var grid = [0, 0.25, 0.5, 0.75, 1].map(function (ratio) {
-            var y = top + chartHeight - ratio * chartHeight;
-            return '<line x1="' + left + '" y1="' + y + '" x2="' + (width - right) + '" y2="' + y + '" class="today-rhythm-grid"/><text x="0" y="' + (y + 4) + '" class="today-rhythm-label">' + fullTokens(max * ratio) + '</text>';
+          var rhythmMax = Math.max.apply(null, rhythm.buckets.map(function (item) { return Number(item.tokens || 0); }).concat([1]));
+          var rhythmScaleMax = Math.max(40000, Math.ceil(rhythmMax / 40000) * 40000);
+          var scale = [1, .75, .5, .25, 0].map(function (ratio) {
+            return '<span>' + Math.round(rhythmScaleMax * ratio / 1000) + 'K</span>';
           }).join('');
-          var marks = [0, 6, 12, 18, Math.max(0, buckets.length - 1)].filter(function (value, index, array) { return array.indexOf(value) === index; });
-          var xLabels = marks.map(function (index) { return '<span>' + String(index).padStart(2, '0') + ':00</span>'; }).join('');
-          var peak = rhythm.peak_hour != null ? points[Math.min(points.length - 1, Number(rhythm.peak_hour))] : null;
-          var peakHtml = peak ? '<circle cx="' + peak.x + '" cy="' + peak.y + '" r="5" class="today-rhythm-peak"/><circle cx="' + peak.x + '" cy="' + peak.y + '" r="10" class="today-rhythm-peak-halo"/>' : '';
-          return '<svg viewBox="0 0 ' + width + ' ' + height + '" class="today-rhythm-svg" role="img" aria-label="' + escape(window.TS.t('活动节奏')) + '"><defs><linearGradient id="todayRhythmFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--green)" stop-opacity=".28"/><stop offset="1" stop-color="var(--green)" stop-opacity=".02"/></linearGradient></defs>' + grid + '<path d="' + area + '" fill="url(#todayRhythmFill)"/><path d="' + line + '" class="today-rhythm-line"/>' + peakHtml + '</svg><div class="today-rhythm-axis">' + xLabels + '</div>';
+          var axis = '<div class="today-rhythm-axis"><span>12:00</span><span>16:00</span><span>20:00</span><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span></div>';
+          return '<div class="today-rhythm-plot"><div class="today-rhythm-scale">' + scale + '</div><div class="today-rhythm-graph">' + window.TS.hourlyBarsHTML(rhythm) + '</div></div>' + axis;
         }
 
         var lapProgress = '<div class="today-lap-progress"><div class="today-lap-title">' + window.TS.t('圈数进度') + ' ' + infoIcon(window.TS.t('圈数进度')) + '</div><div class="today-lap-chips"><div><span>' + window.TS.t('已完成圈数') + '</span><strong>' + lap.completedLaps + ' ' + window.TS.t('圈') + '</strong></div><div><span>' + window.TS.t('当前圈数进度') + '</span><strong>' + formatPercent(lap.currentLapPercent) + '</strong></div></div></div>';
         var tokenCard = '<section class="card today-design-card today-token-card"><div class="today-design-card-title">' + window.TS.t('今日 Token 消耗') + ' ' + infoIcon(window.TS.t('今日 Token 消耗')) + '</div><div class="today-token-layout"><div class="today-design-ring"><div class="today-ring-svg">' + ringSvg(progress, 220, 18) + '</div><div class="today-ring-center"><strong>' + progressPct + '%</strong><span>' + window.TS.t('已达成') + '</span></div></div><div class="today-token-summary"><div><span>' + window.TS.t('总消耗') + '</span><strong>' + fullTokens(total) + '</strong></div><div><span>' + window.TS.t('每日目标') + '</span><strong>' + fullTokens(goal) + '</strong></div><div class="today-token-rule"></div><div><span>' + window.TS.t('剩余可用') + '</span><strong class="today-token-green">' + fullTokens(remaining) + '</strong></div><div><span>' + window.TS.t('预计耗尽时间') + '</span><strong>' + etaText() + '</strong></div></div></div>' + lapProgress + '</section>';
         var rhythm = (snapshot.rhythms || []).filter(function (item) { return item.date === window.TS.todayKey(); })[0];
         var rhythmCard = '<section class="card today-design-card today-rhythm-card"><div class="today-design-card-head"><div class="today-design-card-title">' + window.TS.t('活动节奏') + ' <span class="today-design-subtitle">（' + window.TS.t('最近 24 小时') + '）</span> ' + infoIcon(window.TS.t('按本机 Token 记录展示活跃节奏，不代表实际工时或生产力。')) + '</div><button class="today-chart-select" type="button">' + window.TS.t('按小时') + '⌄</button></div>' + rhythmChart(rhythm) + '</section>';
-        var activityCard = '<section class="card today-design-card today-activity-card"><div class="today-design-card-head"><div class="today-design-card-title">' + window.TS.t('30 天活动热力图') + ' ' + infoIcon(window.TS.t('颜色越深，用量越高；描边是今天')) + '</div><button class="today-chart-select" type="button">' + window.TS.t('按天') + '⌄</button></div><div class="today-bar-chart">' + window.TS.stackedActivityBarsHTML(rows30, goal) + '</div><div class="today-bar-foot"><span>' + window.TS.t('少') + '</span>' + window.TS.tokenToolLegendHTML(rows30) + '<span>' + window.TS.t('多') + '</span></div></section>';
+        var activityMax = Math.max.apply(null, [goal].concat(rows30.map(function (item) { return Number(item.total_tokens || 0); })).concat([1]));
+        var activityScaleMax = Math.max(500000, Math.ceil(activityMax / 500000) * 500000);
+        function activityScaleLabel(value) {
+          if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+          if (value >= 1000) return Math.round(value / 1000) + 'K';
+          return String(Math.round(value));
+        }
+        var activityScale = [1, .75, .5, .25, 0].map(function (ratio) { return '<span>' + activityScaleLabel(activityScaleMax * ratio) + '</span>'; }).join('');
+        var activityDates = '<div class="today-bar-axis"><span>' + (rows30[0] ? rows30[0].date.slice(5) : '') + '</span><span>' + (rows30[Math.floor(Math.max(0, rows30.length - 1) / 2)] ? rows30[Math.floor(Math.max(0, rows30.length - 1) / 2)].date.slice(5) : '') + '</span><span>' + (rows30[rows30.length - 1] ? rows30[rows30.length - 1].date.slice(5) : '') + '</span></div>';
+        var activityLegend = '<div class="today-intensity-legend"><span><i class="today-intensity-dot low"></i>' + window.TS.t('低') + ' (&lt;50%)</span><span><i class="today-intensity-dot medium"></i>' + window.TS.t('中') + ' (50–90%)</span><span><i class="today-intensity-dot high"></i>' + window.TS.t('高') + ' (≥90%)</span></div>';
+        var activityCard = '<section class="card today-design-card today-activity-card"><div class="today-design-card-head"><div class="today-design-card-title">' + window.TS.t('30 天活动热力图') + ' ' + infoIcon(window.TS.t('颜色越深，用量越高；描边是今天')) + '</div><button class="today-chart-select" type="button">' + window.TS.t('按天') + '⌄</button></div><div class="today-bar-plot"><div class="today-bar-scale">' + activityScale + '</div><div class="today-bar-chart">' + window.TS.stackedActivityBarsHTML(rows30, goal) + '</div></div>' + activityDates + activityLegend + '</section>';
         var metricStrip = '<div class="today-design-metrics"><div><span class="today-metric-icon">▤</span><div><strong>' + window.TS.t('累计 Token 消耗') + '</strong><b>' + fullTokens(snapshot.totals.tokens) + '</b><small>' + window.TS.t('自开始追踪以来的总消耗') + '</small></div></div><div><span class="today-metric-icon">▣</span><div><strong>' + window.TS.t('活跃天数') + '</strong><b>' + snapshot.totals.active_days + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('有用量记录的天数') + '</small></div></div><div><span class="today-metric-icon">◎</span><div><strong>' + window.TS.t('达标天数') + '</strong><b>' + goalDays + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('达到或超过每日目标的天数') + '</small></div></div></div>';
         var clientCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按客户端') + ' ' + infoIcon(window.TS.t('按客户端')) + '</div>' + breakdownRows(day.tools, 'client') + '</section>';
         var modelCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按模型') + ' ' + infoIcon(window.TS.t('按模型')) + '</div>' + breakdownRows(day.models, 'model') + '</section>';
         var quotaCard = '<section class="card today-design-card today-quota-card" id="quotaProvidersCard" style="display:none"><div class="today-design-card-title">' + window.TS.t('订阅额度') + ' ' + infoIcon(window.TS.t('订阅额度')) + '</div><div id="quotaProvidersContent"></div></section>';
         var rankVisible = settings.agent_work_rank_visibility === 'visible' || (settings.agent_work_rank_visibility === 'automatic' && window.__tsHasRankIdentity === true);
-        var rankBody = rankVisible ? '<div id="tokenRankContent" class="today-rank-content">' + window.TS.t('加载中…') + '</div>' : '<div class="today-rank-locked">' + window.TS.t('默认关闭') + '</div>';
-        var rankCard = '<section class="card today-design-card today-rank-card"' + (rankVisible ? ' id="tokenRankCard"' : '') + '><div class="today-design-card-title">' + window.TS.t('Agent 消耗榜') + ' <span class="today-design-subtitle">（' + window.TS.t('今日') + '）</span> ' + infoIcon(window.TS.t('Agent 消耗榜')) + '</div>' + rankBody + '</section>';
+        var rankCard = rankVisible ? '<section class="card today-design-card today-rank-card" id="tokenRankCard"><div class="today-design-card-title">' + window.TS.t('Agent 消耗榜') + ' <span class="today-design-subtitle">（' + window.TS.t('今日') + '）</span> ' + infoIcon(window.TS.t('Agent 消耗榜')) + '</div><div id="tokenRankContent" class="today-rank-content">' + window.TS.t('加载中…') + '</div></section>' : '';
         var agentWorkCard = window.TS.agentWorkCardHTML(snapshot, settings);
         var monthlyAverage = (snapshot.daily || []).slice(-30).reduce(function (sum, item) { return sum + Number(item.total_tokens || 0); }, 0) / Math.max(1, Math.min(30, (snapshot.daily || []).slice(-30).length));
         var costCard = '<section class="card today-design-card today-cost-card"><div class="today-design-card-title">' + window.TS.t('费用估算') + ' ' + infoIcon(window.TS.t('按 API 列表价估算，不代表订阅或实际账单。')) + '</div><div class="today-cost-columns"><div><span>' + window.TS.t('今日预估') + '</span><strong>' + formatMoney(day.cost) + '</strong></div><div><span>' + window.TS.t('本月预估') + '</span><strong>' + formatMoney((day.cost || 0) * 30) + '</strong></div></div><div class="today-cost-footer"><span>' + window.TS.t('预算') + ' ' + formatMoney(settings.monthly_budget || 1500) + '</span><span>' + window.TS.t('本月均值') + ' ' + fullTokens(monthlyAverage) + '</span></div></section>';
@@ -677,13 +692,7 @@
         invoke('read_quota_providers', { force: !!force }).then(function (r) {
           var list = (r && r.providers) || [];
           var displayable = list.filter(function (p) { return p.status === 'available' && p.windows && p.windows.length; });
-          if (!displayable.length) {
-            card.style.display = '';
-            host.innerHTML = '<div class="today-quota-placeholder">' + ['OpenAI', 'Anthropic', 'Google', window.TS.t('本地模型')].map(function (name) {
-              return '<div><strong>' + name + '</strong><span>—</span><small>' + window.TS.t('等待同步') + '</small></div>';
-            }).join('') + '</div>';
-            return;
-          }
+          if (!displayable.length) { card.style.display = 'none'; return; }
           card.style.display = '';
           displayable.sort(function (a, b) {
             var la = lowest(a), lb = lowest(b);
@@ -696,19 +705,24 @@
             }
           });
           host.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' + displayable.map(function (p) {
-            var name = { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok' }[p.provider] || p.provider;
+            var name = { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', local: window.TS.t('本地模型') }[p.provider] || p.provider;
             var wins = p.windows.slice(0, 2).map(function (w) {
               var rem = w.total > 0 ? (w.remaining != null ? w.remaining / w.total * 100 : 100 - (w.used_percent || 0)) : (100 - (w.used_percent || 0));
               rem = Math.max(0, Math.min(100, rem));
               var low = rem < 20;
               var title = w.title || { five_hour: '5 小时', seven_day: '7 天', session: '会话', weekly: '本周', monthly_credits: '本月额度', token_window: 'Token 窗', spend: '花费', cursor_models: 'Cursor 模型', other_models: '其他模型' }[w.kind] || w.kind;
-              return '<div style="margin-top:6px">' +
-                '<div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:700"><span style="color:var(--muted)">' + title + '</span><span style="color:' + (low ? '#ea580c' : 'var(--ink)') + '">' + window.TS.t('剩余') + ' ' + Math.round(rem) + '%</span></div>' +
-                '<div style="height:5px;border-radius:999px;background:var(--track);overflow:hidden;margin-top:3px"><div style="height:100%;width:' + Math.max(3, rem).toFixed(0) + '%;background:' + (low ? '#ea580c' : 'var(--green)') + ';border-radius:999px"></div></div>' +
+              var used = Math.max(0, Math.min(100, w.used_percent != null ? Number(w.used_percent) : 100 - rem));
+              var color = p.provider === 'anthropic' ? '#f59e0b' : (p.provider === 'google' ? '#2563eb' : 'var(--green)');
+              var usageLabel = w.total > 0 ? Math.round(used) + '% ' + window.TS.t('已用') : '—';
+              var totalLabel = w.total > 0 ? Math.round(w.total * used / 100) + ' / ' + Math.round(w.total) : window.TS.t('不设上限');
+              return '<div class="today-quota-window" style="--quota-color:' + color + '">' +
+                '<div class="today-quota-window-title"><span>' + window.TS.t(title) + '</span><strong>' + usageLabel + '</strong></div>' +
+                '<div class="today-quota-track"><span style="width:' + Math.max(0, Math.min(100, used)).toFixed(0) + '%"></span></div>' +
+                '<div class="today-quota-window-meta"><span>' + totalLabel + '</span><span>' + (w.reset_at ? window.TS.t('重置') : window.TS.t('本地运行')) + (w.reset_at ? '：' + window.TS.t('即将') : '') + '</span></div>' +
               '</div>';
             }).join('');
-            return '<div style="background:var(--canvas);border-radius:14px;padding:10px 12px">' +
-              '<div style="font-size:13.5px;font-weight:800;color:var(--ink)">' + name + '</div>' + wins +
+            return '<div class="today-quota-provider">' +
+              '<div class="today-quota-provider-title">' + name + '</div>' + wins +
             '</div>';
           }).join('') + '</div>';
         }).catch(function () { card.style.display = 'none'; });
@@ -1037,7 +1051,7 @@
           loadQuotaProviders(false);
           loadTokenRank();
         }
-        else if (current === 'history') { view.innerHTML = viewHistory(); var aw = document.getElementById('activityWall'); if (aw) aw.scrollLeft = aw.scrollWidth; }
+        else if (current === 'history') { view.innerHTML = viewHistory() + '<div style="height:18px"></div>' + viewStats(); var aw = document.getElementById('activityWall'); if (aw) aw.scrollLeft = aw.scrollWidth; }
         else if (current === 'stats') view.innerHTML = viewStats();
         else if (current === 'privacy') view.innerHTML = viewPrivacy();
         else if (current === 'settings') {
