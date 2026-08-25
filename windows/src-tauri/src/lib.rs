@@ -530,11 +530,11 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
                                 p.get("provider")
                                     .and_then(|v| v.as_str())
                                     .map(|id| {
-                                        quota::QuotaProvider::Codex.id() != id
-                                            && quota::QuotaProvider::Claude.id() != id
-                                            && enabled
-                                                .iter()
-                                                .any(|e| e.id() == id)
+                                        let legacy_visible = s.show_codex_quota
+                                            && (quota::QuotaProvider::Codex.id() == id
+                                                || quota::QuotaProvider::Claude.id() == id);
+                                        legacy_visible
+                                            || enabled.iter().any(|e| e.id() == id)
                                     })
                                     .unwrap_or(false)
                             });

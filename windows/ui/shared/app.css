@@ -2378,11 +2378,11 @@ input[type="number"]:focus {
 }
 
 #view .today-design-top > .today-design-card {
-  height: 353px;
+  height: 359px;
 }
 
 #view .today-token-card {
-  min-height: 353px;
+  min-height: 359px;
 }
 
 #view .today-token-layout {
@@ -2406,8 +2406,8 @@ input[type="number"]:focus {
 }
 
 #view .today-design-metrics {
-  min-height: 85px;
-  height: 85px;
+  min-height: 75px;
+  height: 75px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   border: 1px solid var(--line);
@@ -2418,8 +2418,8 @@ input[type="number"]:focus {
 }
 
 #view .today-design-metrics > div {
-  min-height: 85px;
-  padding: 12px 18px;
+  min-height: 75px;
+  padding: 10px 18px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2449,14 +2449,14 @@ input[type="number"]:focus {
 }
 
 #view .today-design-bottom {
-  grid-template-columns: minmax(500px, 2.5fr) minmax(210px, 1fr) minmax(250px, 1.2fr) minmax(360px, 1.8fr);
+  grid-template-columns: minmax(500px, 2.48fr) minmax(210px, 1fr) minmax(250px, 1.2fr) minmax(360px, 1.8fr);
   gap: 12px;
 }
 
 #view .today-design-bottom > .today-design-card,
 #view .today-design-bottom > #agentWorkCard {
-  min-height: 239px;
-  height: 239px;
+  min-height: 226px;
+  height: 226px;
 }
 
 #view .today-design-bottom > #agentWorkCard {
@@ -2568,16 +2568,34 @@ input[type="number"]:focus {
 /* ---------- Today polish: ranking, subscription quota, cost estimate ---------- */
 #view .today-rank-content {
   min-height: 0;
-  padding-top: 8px;
+  padding-top: 17px;
+}
+
+/* The reference sheet uses a compact ranking heading with a deliberately
+   larger breathing space before the podium. Keep the card's outer geometry
+   intact while aligning the heading baseline independently. */
+#view .today-rank-card {
+  padding-top: 13px;
+}
+
+#view .today-rank-card .today-design-card-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+#view .today-rank-card .today-design-subtitle {
+  font-size: 14px;
+  font-weight: 600;
 }
 
 #view .today-rank-board {
   display: grid;
-  grid-template-columns: .92fr 1.12fr .92fr;
+  grid-template-columns: 1.08fr 1.08fr .92fr;
   align-items: end;
-  gap: 12px;
+  gap: 3px;
   height: 145px;
-  padding: 0 3px;
+  padding: 0;
 }
 
 #view .today-rank-slot {
@@ -2609,7 +2627,7 @@ input[type="number"]:focus {
   height: 82px;
   flex-direction: column;
   align-items: center;
-  justify-content: end;
+  justify-content: center;
   padding: 10px 8px 9px;
   border: 0;
   border-radius: 10px;
@@ -2619,8 +2637,19 @@ input[type="number"]:focus {
 }
 
 #view .today-rank-slot.rank-1 .today-rank-podium {
-  height: 112px;
+  height: 124px;
   background: #edeff0;
+}
+
+#view .today-rank-slot.rank-2 .today-rank-podium {
+  padding-top: 16px;
+  padding-bottom: 3px;
+}
+
+#view .today-rank-slot.rank-3 .today-rank-podium {
+  height: 68px;
+  justify-content: end;
+  padding-bottom: 7px;
 }
 
 #view .today-rank-badge {
@@ -2647,7 +2676,7 @@ input[type="number"]:focus {
 /* Design-sheet: podium on the left, ranks 4/5 (+其他) list on the right. */
 #view .today-rank-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2.15fr) minmax(128px, .85fr);
   align-items: center;
   gap: 16px;
 }
@@ -2656,8 +2685,10 @@ input[type="number"]:focus {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  justify-content: center;
-  gap: 12px;
+  align-self: start;
+  justify-content: flex-start;
+  gap: 19px;
+  margin-top: 8px;
 }
 
 #view .today-rank-list > div {
@@ -2681,7 +2712,7 @@ input[type="number"]:focus {
   overflow: hidden;
   flex: 1;
   color: #4b5563;
-  font-weight: 650;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2689,7 +2720,7 @@ input[type="number"]:focus {
 #view .today-rank-list .today-rank-list-value {
   flex: 0 0 auto;
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 700;
 }
 
 #view .today-rank-list > div.today-rank-list-mine .today-rank-list-name,
@@ -2715,12 +2746,13 @@ input[type="number"]:focus {
 #view .today-rank-podium span {
   overflow: hidden;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 0;
   color: #374151;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transform: translateY(-5px);
 }
 
 #view .today-rank-podium small {
@@ -3057,16 +3089,261 @@ input[type="number"]:focus {
   font-weight: 650;
 }
 
+/* Quota cards follow the design-sheet rhythm: one compact title row, then
+   percentage, track, detail and reset metadata. The older broad selectors
+   added margins to every nested div, which pushed Codex cards below the card
+   boundary when only a percentage window was available. */
+#view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-provider,
+#view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-placeholder-card {
+  min-height: 142px;
+  box-sizing: border-box;
+  background: #fff !important;
+}
+
+#view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-provider > div:first-child,
+#view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-provider > div:not(:first-child) {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+#view .today-quota-card #quotaProvidersContent .today-quota-provider-title {
+  font-size: 14px !important;
+  font-weight: 650 !important;
+}
+
+#view .today-quota-card #quotaProvidersContent .today-quota-placeholder-card {
+  background: #fff !important;
+}
+
 #view .today-rank-podium span {
   margin-top: 0;
 }
 
 #view .today-rank-podium strong {
-  margin-top: 3px;
+  margin-top: 4px;
   font-variant-numeric: tabular-nums;
+  transform: translateY(-2px);
+}
+
+/* Name/value baselines are intentionally not mathematically centered in the
+   reference: the name sits a little higher and the green value sits below it. */
+#view .today-rank-slot.rank-1 .today-rank-podium span {
+  transform: translateY(-10px);
+}
+
+#view .today-rank-slot.rank-1 .today-rank-podium strong {
+  transform: translateY(-4px);
+}
+
+#view .today-rank-slot.rank-3 .today-rank-podium span {
+  transform: translateY(-3px);
+}
+
+#view .today-rank-slot.rank-3 .today-rank-podium strong {
+  transform: translateY(-3px);
+}
+
+/* Desktop header: match the reference spacing while keeping the right edge
+   anchored so GitHub controls stay in the same position. */
+@media (min-width: 1181px) {
+  #app .reference-brand-title em {
+    font-size: 17px;
+  }
+
+  #app .reference-brand-title {
+    letter-spacing: 0;
+  }
+
+  #app .reference-brand-subtitle {
+    font-size: 14px;
+  }
+
+  #app .reference-header .nav {
+    transform: translateX(16px);
+  }
+
+  #app .reference-header #settingsBtn,
+  #app .reference-header #refreshBtn {
+    width: 44px;
+    height: 44px;
+  }
+
+  #app .reference-header #shotBtn .header-action-icon svg,
+  #app .reference-header #settingsBtn svg,
+  #app .reference-header #refreshBtn svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  #app .reference-header .github-row {
+    gap: 16px !important;
+    padding-left: 22px !important;
+  }
+
+  #app .reference-header .github-row svg {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* Reference header alignment: keep the desktop spacing and tighten only the
+   controls that compete for width in a narrow window. */
+@media (max-width: 1180px) {
+  #app .reference-header {
+    grid-template-columns: minmax(250px, 1fr) auto max-content !important;
+    column-gap: 10px !important;
+    padding: 0 14px !important;
+  }
+
+  #app .reference-brand {
+    gap: 10px !important;
+  }
+
+  #app .reference-brand-logo {
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 8px;
+    font-size: 24px;
+  }
+
+  #app .reference-brand-title {
+    font-size: 15px;
+  }
+
+  #app .reference-brand-subtitle {
+    margin-top: 3px;
+    font-size: 11px;
+  }
+
+  #app .reference-header .nav {
+    gap: 2px;
+  }
+
+  #app .reference-header .nav-item {
+    min-height: 36px;
+    gap: 5px;
+    padding: 7px 8px;
+  }
+
+  #app .reference-header .nav-icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  #app .reference-header .nav-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  #app .reference-header .nav-title {
+    font-size: 13px;
+  }
+
+  #app .reference-header > :nth-child(3) {
+    gap: 2px !important;
+  }
+
+  #app .reference-header .sync-status {
+    min-height: 32px;
+    margin-right: 2px !important;
+    padding: 5px 7px;
+    font-size: 12px;
+  }
+
+  #app .reference-header .btn,
+  #app .reference-header .github-row button {
+    width: 32px;
+    height: 32px;
+  }
+
+  #app .reference-header .btn svg,
+  #app .reference-header .github-row svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  #app .reference-header > :nth-child(3) > #shotBtn {
+    width: 36px;
+    margin-left: 2px;
+    padding-left: 6px !important;
+  }
+
+  #app .reference-header .github-row {
+    gap: 0 !important;
+    margin-left: 2px !important;
+    padding-left: 4px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  #app .reference-brand-subtitle {
+    display: none;
+  }
+
+  #app .reference-brand-title {
+    font-size: 13px;
+  }
+
+  #app .reference-brand-title em {
+    font-size: 12px;
+  }
+
+  #app .reference-header .nav-item {
+    gap: 4px;
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  #app .reference-header .nav-title {
+    font-size: 12px;
+  }
+
+  #app .reference-header .sync-status {
+    padding-right: 6px;
+    padding-left: 6px;
+    font-size: 11px;
+  }
+
+  #app .reference-header .btn,
+  #app .reference-header .github-row button {
+    width: 30px;
+    height: 30px;
+  }
+
+  #app .reference-header > :nth-child(3) > #shotBtn {
+    width: 34px;
+  }
+}
+
+/* Header actions share one optical center line. Keep the star action icon-only
+   while retaining its click/state behavior and tooltip. */
+#app .reference-header > :nth-child(3) > #shotBtn,
+#app .reference-header > :nth-child(3) > #settingsBtn,
+#app .reference-header > :nth-child(3) > #refreshBtn,
+#app .reference-header .github-row button {
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+
+#app .reference-header .github-row button svg,
+#app .reference-header .header-action-icon svg {
+  display: block;
+}
+
+#app .reference-header #githubStarBtn {
+  gap: 0 !important;
+}
+
+#app .reference-header #githubStarCount {
+  display: none !important;
 }
 
 /* Rhythm area chart fills its plot box. */
 #view .today-rhythm-graph svg {
   height: 100% !important;
+}
+#view .ts-token-value,
+#app .ts-token-value {
+  cursor: help;
 }

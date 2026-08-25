@@ -86,6 +86,15 @@ function formatTokens(value, compact = false) {
   return String(Math.round(value));
 }
 
+// HTML token counter for the UI: keep the compact 万/亿 display while making
+// the exact numeric value available through the native hover tooltip.
+function formatTokenHTML(value, compact = false) {
+  let n = Math.max(0, Math.round(Number(value || 0)));
+  if (!Number.isFinite(n)) n = 0;
+  const exact = n.toLocaleString();
+  return '<span class="ts-token-value" title="' + exact + '" aria-label="' + exact + '">' + formatTokens(n, compact) + '</span>';
+}
+
 function formatMoney(value) {
   const n = Number(value || 0);
   return (
@@ -400,6 +409,10 @@ function renderShareDailyCard(canvas, opts) {
   // sync with that function. Empty data → entries.length 0 → 66px panel.
   const breakdownToolH = 16 * 2 + 34 + Math.max(toolEntries.length, 1) * 25;
   const breakdownModelH = 16 * 2 + 34 + Math.max(modelEntries.length, 1) * 25;
+  // Keep the measured height in sync with drawShareTrendPanel(). The former
+  // caller used trendH without defining it, so every daily-card screenshot
+  // failed before the canvas could be exported.
+  const trendH = 162;
   const blocks = [headerH, heroH, metricStripH, breakdownToolH, breakdownModelH, trendH];
   const spacing = 14;
   const totalH = pad + blocks.reduce(function (a, b) { return a + b; }, 0) + spacing * (blocks.length - 1) + 14 /* gap before footer */ + footerH + pad;
@@ -2310,7 +2323,7 @@ function rhythmAreaHTML(rhythm) {
   var overlay = "";
   if (rhythm.peak_hour != null && pts[rhythm.peak_hour]) {
     var pp = pts[rhythm.peak_hour];
-    var label = Math.round(pp.v).toLocaleString();
+    var label = formatTokens(pp.v, true);
     var hour = String(rhythm.peak_hour).padStart(2, "0") + ":00";
     // Keep the tooltip inside the plot horizontally.
     var cx = Math.max(34, Math.min(W - 34, pp.x));
@@ -2357,7 +2370,7 @@ function intensityActivityBarsHTML(rows, goal) {
     var h = Math.max(2.2, (tokens / scaleMax) * 100);
     return '<div class="bar" style="height:' + h.toFixed(1) + '%;background:' + intensityColor(tokens) + '" title="' + d.date + ' ' + formatTokens(tokens) + '"></div>';
   }).join("");
-  var goalLabel = goal >= 1000000 ? (goal / 1000000).toFixed(1) + "M" : formatTokens(goal, true);
+  var goalLabel = formatTokens(goal, true);
   // Near the top edge the label would be clipped by the plot's overflow, so
   // it flips below the dashed line; otherwise it floats above it.
   var tagTransform = goalPct > 85 ? "translateY(4px)" : "translateY(-100%)";
@@ -2567,6 +2580,9 @@ function agentWorkCardHTML(snapshot, settings) {
   function full(value) {
     return Math.max(0, Math.round(Number(value || 0))).toLocaleString();
   }
+  function tokenValue(value) {
+    return formatTokenHTML(value);
+  }
   var rowIcons = {
     requests: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="10" y="10" width="4" height="4"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>',
     tools: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4.5 4.5 0 0 0-6 6L3 18l3 3 5.7-5.7a4.5 4.5 0 0 0 6-6L14 13l-3-3 3.7-3.7z"/></svg>',
@@ -2584,8 +2600,8 @@ function agentWorkCardHTML(snapshot, settings) {
       row(rowIcons.requests, t("模型请求"), full(today.model_request_count) + ' ' + t("次")) +
       row(rowIcons.tools, t("工具调用"), full(today.tool_call_count) + ' ' + t("次")) +
       row(rowIcons.cache, t("缓存命中率"), cacheRate) +
-      row(rowIcons.input, t("输入 Tokens"), full(today.input_tokens)) +
-      row(rowIcons.output, t("输出 Tokens"), full(today.output_tokens)) +
+      row(rowIcons.input, t("输入 Tokens"), tokenValue(today.input_tokens)) +
+      row(rowIcons.output, t("输出 Tokens"), tokenValue(today.output_tokens)) +
     '</div>' +
   '</div>';
 }
@@ -2658,7 +2674,7 @@ function agentRankCardContentHTML(r) {
     ? '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px">' + escapeHtmlStr(status) + '</div>'
     : '';
   var head = r.top
-    ? '<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">' + t("今日榜首") + ' · ' + escapeHtmlStr(r.top.name) + ' · ' + formatTokens(r.top.total_tokens, true) + '</div>'
+    ? '<div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px">' + t("今日榜首") + ' · ' + escapeHtmlStr(r.top.name) + ' · ' + formatTokenHTML(r.top.total_tokens, true) + '</div>'
     : '';
   if (r.mine) {
     var ranked = Math.max(1, r.total_ranked_users || 1);
@@ -2682,8 +2698,8 @@ function agentRankCardContentHTML(r) {
       '<div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:3px">' +
         window.TS.tf("第 %d / %d · 超过 %d%% 参榜用户", r.mine.rank, ranked, pct).replace(/%%/g, "%") + '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
-        '<span style="font-size:12px;font-weight:700;color:var(--ink);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("我的今日 Token") + ' ' + formatTokens(r.mine.total_tokens, true) + '</span>' +
-        '<span style="font-size:12px;font-weight:700;color:var(--muted);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("全榜今日 Token") + ' ' + (r.total_tokens ? formatTokens(r.total_tokens, true) : t("等待同步")) + '</span>' +
+        '<span style="font-size:12px;font-weight:700;color:var(--ink);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("我的今日 Token") + ' ' + formatTokenHTML(r.mine.total_tokens, true) + '</span>' +
+        '<span style="font-size:12px;font-weight:700;color:var(--muted);background:var(--canvas);border-radius:999px;padding:4px 12px">' + t("全榜今日 Token") + ' ' + (r.total_tokens ? formatTokenHTML(r.total_tokens, true) : t("等待同步")) + '</span>' +
       '</div>';
   }
   // Visible but not linked / not on today's board.
@@ -2700,6 +2716,7 @@ window.TS = {
   t,
   tf,
   formatTokens,
+  formatTokenHTML,
   formatMoney,
   formatPercent,
   formatGeneratedTime,

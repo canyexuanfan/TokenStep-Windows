@@ -42,6 +42,7 @@
       // Restore the full dashboard logic here, using verified data.
       var invoke = window.TS.invoke;
       var formatTokens = window.TS.formatTokens;
+      var tokenHTML = window.TS.formatTokenHTML;
       var formatMoney = window.TS.formatMoney;
       var formatPercent = window.TS.formatPercent;
       var formatInterval = window.TS.formatInterval;
@@ -76,7 +77,7 @@
         // #pageTitle/#pageSubtitle stay as hidden compat targets because
         // render()/refreshHeaderI18n() still write the live page title there.
         referenceBrand.className = 'reference-brand';
-        referenceBrand.innerHTML = '<img src="../shared/logo.png" alt="TokenStep" style="width:34px;height:34px;flex-shrink:0;border-radius:9px"/>' +
+        referenceBrand.innerHTML = '<div class="reference-brand-logo" role="img" aria-label="TokenStep">T</div>' +
           '<div class="reference-brand-copy" style="min-width:0">' +
             '<div class="reference-brand-title">TokenStep<span>|</span><em>' + window.TS.t('本地 AI Token 使用追踪器') + '（Windows）</em></div>' +
             '<div class="reference-brand-subtitle">' + window.TS.t('所有数据仅存储在本机设备，不会上传') + '</div>' +
@@ -370,7 +371,7 @@
         return rows.map(function (r) {
           var width = Math.max(1, (r.tokens / max) * 100);
           var color = window.TS.tokenToolColor(nameFn(r));
-          return '<div class="usage-row"><div class="usage-name">' + nameFn(r) + '</div><div class="usage-track"><div class="usage-fill" style="width:' + width + '%;background:' + color + '"></div></div><div class="usage-amount">' + formatTokens(r.tokens) + ' · ' + ((r.percent || 0)).toFixed(1) + '%</div></div>';
+          return '<div class="usage-row"><div class="usage-name">' + nameFn(r) + '</div><div class="usage-track"><div class="usage-fill" style="width:' + width + '%;background:' + color + '"></div></div><div class="usage-amount">' + tokenHTML(r.tokens) + ' · ' + ((r.percent || 0)).toFixed(1) + '%</div></div>';
         }).join('');
       }
 
@@ -391,35 +392,35 @@
           else visible = [lap.completedLaps - 1];
           for (var i = 0; i < visible.length; i++) {
             var n = visible[i];
-            lapChips += '<div class="lap-chip"><div class="lc-title">✓ ' + window.TS.tf('%d圈完成', n) + '</div><div class="lc-detail">' + formatTokens(n * settings.daily_goal_tokens, true) + '</div></div>';
+            lapChips += '<div class="lap-chip"><div class="lc-title">✓ ' + window.TS.tf('%d圈完成', n) + '</div><div class="lc-detail">' + tokenHTML(n * settings.daily_goal_tokens, true) + '</div></div>';
           }
           lapChips += '<div class="lap-chip active" style="color:' + lap.color + '"><div class="lc-title">↻ ' + window.TS.tf('%@进行中', lap.lapTitle) + '</div><div class="lc-detail">' + formatPercent(lap.currentLapPercent) + '</div></div>';
         }
         var hero = '<div class="card"><div style="display:flex;align-items:center;gap:34px;flex-wrap:wrap">' +
           '<div class="ring-wrap" style="width:204px;height:204px;flex-shrink:0">' + ringSvg(lap.currentLapProgress, 204, 20) +
-            '<div class="ring-center" style="width:160px"><div class="ring-value" style="font-size:' + (hasNoData ? '20px;color:var(--muted)' : '42px') + '">' + (hasNoData ? window.TS.t('暂无数据') : formatTokens(t.total_tokens)) + '</div><div class="ring-goal">/ ' + formatTokens(settings.daily_goal_tokens, true) + ' ' + window.TS.t('每圈') + '</div></div>' +
+            '<div class="ring-center" style="width:160px"><div class="ring-value" style="font-size:' + (hasNoData ? '20px;color:var(--muted)' : '42px') + '">' + (hasNoData ? window.TS.t('暂无数据') : tokenHTML(t.total_tokens)) + '</div><div class="ring-goal">/ ' + tokenHTML(settings.daily_goal_tokens, true) + ' ' + window.TS.t('每圈') + '</div></div>' +
           '</div>' +
           '<div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:18px">' +
             '<div style="display:flex;flex-direction:column;gap:8px">' +
               '<div style="font-size:35px;font-weight:800;color:' + lap.color + '">' + lap.lapTitle + ' · ' + formatPercent(lap.currentLapPercent) + '</div>' +
-              '<div style="font-size:20px;font-weight:700;color:var(--muted)">' + window.TS.t('已完成 ') + formatTokens(lap.completedLaps * settings.daily_goal_tokens, true) + '</div>' +
-              '<div style="font-size:20px;font-weight:700;color:var(--muted)">' + window.TS.t('每圈目标 ') + formatTokens(settings.daily_goal_tokens, true) + '</div>' +
+              '<div style="font-size:20px;font-weight:700;color:var(--muted)">' + window.TS.t('已完成 ') + tokenHTML(lap.completedLaps * settings.daily_goal_tokens, true) + '</div>' +
+              '<div style="font-size:20px;font-weight:700;color:var(--muted)">' + window.TS.t('每圈目标 ') + tokenHTML(settings.daily_goal_tokens, true) + '</div>' +
             '</div>' +
             (lapChips ? '<div><div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:10px">' + window.TS.t('圈数进度') + '</div><div class="lap-chips">' + lapChips + '</div></div>' : '') +
-            '<div style="display:flex;gap:10px;flex-wrap:wrap"><span class="pill"><span class="pill-label">' + window.TS.t('消耗金额') + '</span><span class="pill-value">' + formatMoney(t.cost) + '</span></span><span class="pill"><span class="pill-label">' + window.TS.t('本月均值') + '</span><span class="pill-value">' + formatTokens(monthAvg, true) + '</span></span></div>' +
+            '<div style="display:flex;gap:10px;flex-wrap:wrap"><span class="pill"><span class="pill-label">' + window.TS.t('消耗金额') + '</span><span class="pill-value">' + formatMoney(t.cost) + '</span></span><span class="pill"><span class="pill-label">' + window.TS.t('本月均值') + '</span><span class="pill-value">' + tokenHTML(monthAvg, true) + '</span></span></div>' +
           '</div>' +
         '</div></div>';
 
         // ---- Metric strip: 3 compact cards (累计/活跃/达标) ----
         var metricStrip = '<div class="metric-strip">' +
-          '<div class="metric-mini"><div class="mm-label">' + window.TS.t('累计 Token 消耗') + '</div><div class="mm-value">' + formatTokens(snapshot.totals.tokens, true) + '</div><div class="mm-detail">' + window.TS.t('所有本机记录') + '</div></div>' +
+          '<div class="metric-mini"><div class="mm-label">' + window.TS.t('累计 Token 消耗') + '</div><div class="mm-value">' + tokenHTML(snapshot.totals.tokens, true) + '</div><div class="mm-detail">' + window.TS.t('所有本机记录') + '</div></div>' +
           '<div class="metric-mini"><div class="mm-label">' + window.TS.t('活跃天数') + '</div><div class="mm-value">' + snapshot.totals.active_days + ' ' + window.TS.t('天') + '</div><div class="mm-detail">' + window.TS.t('有 AI 使用的日期') + '</div></div>' +
           '<div class="metric-mini"><div class="mm-label">' + window.TS.t('达标天数') + '</div><div class="mm-value">' + goalDays + ' ' + window.TS.t('天') + '</div><div class="mm-detail">' + window.TS.t('达到每日目标') + '</div></div>' +
         '</div>';
 
         // ---- 30-day activity bars card ----
         var last30 = snapshot.daily.slice(-30);
-        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 30 天') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.t('柱越高，用量越多；颜色代表客户端') + '</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('今天') + ' ' + formatTokens(t.total_tokens, true) + '</span></div>' + window.TS.stackedActivityBarsHTML(last30, settings.daily_goal_tokens) + window.TS.tokenToolLegendHTML(last30) + '</div>';
+        var activityCard = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px"><div><div style="font-size:20px;font-weight:800;color:var(--ink)">' + window.TS.t('最近 30 天') + '</div><div style="font-size:16px;font-weight:600;color:var(--muted);margin-top:4px">' + window.TS.t('柱越高，用量越多；颜色代表客户端') + '</div></div><span class="pill" style="background:color-mix(in srgb,var(--mint) 28%,transparent)">' + window.TS.t('今天') + ' ' + tokenHTML(t.total_tokens, true) + '</span></div>' + window.TS.stackedActivityBarsHTML(last30, settings.daily_goal_tokens) + window.TS.tokenToolLegendHTML(last30) + '</div>';
 
         // ---- Distribution cards: TODAY's client + model split (not all-time) ----
         // Port of upstream d0af1c4: show today's breakdown, not the cumulative
@@ -513,7 +514,7 @@
               return '<div style="display:grid;grid-template-columns:170px 1fr 90px 52px 90px;gap:8px;align-items:center;padding:7px 4px;border-bottom:1px solid color-mix(in srgb,var(--track) 55%,transparent)">' +
                 '<span style="font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:' + modelColorSlot(r.model) + '"></span>' + window.TS.escapeHtmlStr(r.model) + '</span>' +
                 '<span style="height:7px;border-radius:999px;background:var(--track);overflow:hidden"><span style="display:block;height:100%;width:' + Math.max(2, pct).toFixed(1) + '%;border-radius:999px;background:' + modelColorSlot(r.model) + ';opacity:.85"></span></span>' +
-                '<span style="text-align:right;font-size:12.5px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">' + formatTokens(r.tokens, true) + '</span>' +
+                '<span style="text-align:right;font-size:12.5px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums">' + tokenHTML(r.tokens, true) + '</span>' +
                 '<span style="text-align:right;font-size:12px;font-weight:700;color:var(--muted)">' + pct.toFixed(0) + '%</span>' +
                 '<span style="text-align:right;font-size:12px;font-weight:700;color:var(--muted)">$' + cost + '</span>' +
               '</div>';
@@ -526,7 +527,7 @@
 
         var rhythmFallback = '<div class="card today-empty-card"><div class="today-empty-icon">⌁</div><div class="card-title">' + window.TS.t('最近 24 小时波动') + '</div><div class="today-empty-copy">' + window.TS.t('暂无活动数据') + '</div></div>';
         var agentWorkCard = window.TS.agentWorkCardHTML(snapshot, settings);
-        var costCard = '<div class="card today-cost-card"><div class="today-panel-eyebrow">' + window.TS.t('今日') + '</div><div class="card-title">' + window.TS.t('消耗金额') + '</div><div class="today-cost-value">' + formatMoney(t.cost) + '</div><div class="today-cost-caption">' + window.TS.t('按 API 列表价估算，不代表订阅或实际账单。') + '</div><div class="today-cost-divider"></div><div class="today-cost-row"><span>' + window.TS.t('本月均值') + '</span><strong>' + formatTokens(monthAvg, true) + '</strong></div><div class="today-cost-row"><span>' + window.TS.t('累计 Token 消耗') + '</span><strong>' + formatTokens(snapshot.totals.tokens, true) + '</strong></div></div>';
+        var costCard = '<div class="card today-cost-card"><div class="today-panel-eyebrow">' + window.TS.t('今日') + '</div><div class="card-title">' + window.TS.t('消耗金额') + '</div><div class="today-cost-value">' + formatMoney(t.cost) + '</div><div class="today-cost-caption">' + window.TS.t('按 API 列表价估算，不代表订阅或实际账单。') + '</div><div class="today-cost-divider"></div><div class="today-cost-row"><span>' + window.TS.t('本月均值') + '</span><strong>' + tokenHTML(monthAvg, true) + '</strong></div><div class="today-cost-row"><span>' + window.TS.t('累计 Token 消耗') + '</span><strong>' + tokenHTML(snapshot.totals.tokens, true) + '</strong></div></div>';
         var privacyCard = '<div class="card today-privacy-card"><div class="today-privacy-icon">🛡</div><div class="card-title">' + window.TS.t('本地统计') + '</div><div class="today-privacy-lead">' + window.TS.t('代码与对话不会离开这台电脑') + '</div><div class="today-check-list">' + [window.TS.t('只统计 token 数量'), window.TS.t('不读取代码与对话'), window.TS.t('不默认上传数据')].map(function (txt) { return '<div><span>✓</span>' + txt + '</div>'; }).join('') + '</div><div class="today-local-badge">' + window.TS.t('本机') + '</div></div>';
 
         return '<div class="today-reference-page">' +
@@ -564,8 +565,8 @@
           return '<span class="today-design-info" title="' + escape(label || '') + '">i</span>';
         }
 
-        function fullTokens(value) {
-          return Math.max(0, Math.round(Number(value || 0))).toLocaleString();
+        function fullTokens(value, compact) {
+          return tokenHTML(value, !!compact);
         }
 
         function etaText() {
@@ -645,7 +646,7 @@
           var rhythmMax = Math.max.apply(null, rhythm.buckets.map(function (item) { return Number(item.tokens || 0); }).concat([1]));
           var rhythmScaleMax = Math.max(40000, Math.ceil(rhythmMax / 40000) * 40000);
           var scale = [1, .75, .5, .25, 0].map(function (ratio) {
-            return '<span>' + (ratio === 0 ? '0' : Math.round(rhythmScaleMax * ratio / 1000) + 'K') + '</span>';
+            return '<span>' + (ratio === 0 ? '0' : formatTokens(rhythmScaleMax * ratio, true)) + '</span>';
           }).join('');
           var axis = '<div class="today-rhythm-axis"><span>12:00</span><span>16:00</span><span>20:00</span><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span></div>';
           return '<div class="today-rhythm-plot"><div class="today-rhythm-scale"><span class="today-scale-unit">Token</span>' + scale + '</div><div class="today-rhythm-graph">' + window.TS.rhythmAreaHTML(rhythm) + '</div></div>' + axis;
@@ -658,9 +659,7 @@
         var activityChart = window.TS.intensityActivityBarsHTML(rows30, goal);
         var activityScaleMax = activityChart.scaleMax || 500000;
         function activityScaleLabel(value) {
-          if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
-          if (value >= 1000) return Math.round(value / 1000) + 'K';
-          return String(Math.round(value));
+          return formatTokens(value, true);
         }
         var activityScale = [1, .75, .5, .25, 0].map(function (ratio) { return '<span>' + (ratio === 0 ? '0' : activityScaleLabel(activityScaleMax * ratio)) + '</span>'; }).join('');
         var activityDates = '<div class="today-bar-axis"><span>' + (rows30[0] ? rows30[0].date.slice(5) : '') + '</span><span>' + (rows30[Math.floor(Math.max(0, rows30.length - 1) / 2)] ? rows30[Math.floor(Math.max(0, rows30.length - 1) / 2)].date.slice(5) : '') + '</span><span>' + (rows30[rows30.length - 1] ? rows30[rows30.length - 1].date.slice(5) : '') + '</span></div>';
@@ -674,7 +673,7 @@
         var metricStrip = '<div class="today-design-metrics"><div><span class="today-metric-icon">' + metricIcons.database + '</span><div><strong>' + window.TS.t('累计 Token 消耗') + '</strong><b>' + fullTokens(snapshot.totals.tokens) + '</b><small>' + window.TS.t('自开始追踪以来的总消耗') + '</small></div></div><div><span class="today-metric-icon">' + metricIcons.calendar + '</span><div><strong>' + window.TS.t('活跃天数') + '</strong><b>' + snapshot.totals.active_days + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('有用量记录的天数') + '</small></div></div><div><span class="today-metric-icon">' + metricIcons.target + '</span><div><strong>' + window.TS.t('达标天数') + '</strong><b>' + goalDays + ' ' + window.TS.t('天') + '</b><small>' + window.TS.t('达到或超过每日目标的天数') + '</small></div></div></div>';
         var clientCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按客户端') + ' ' + infoIcon(window.TS.t('按客户端')) + '</div>' + breakdownRows(day.tools, 'client') + '</section>';
         var modelCard = '<section class="card today-design-card today-breakdown-card"><div class="today-design-card-title">' + window.TS.t('按模型') + ' ' + infoIcon(window.TS.t('按模型')) + '</div>' + breakdownRows(day.models, 'model') + '</section>';
-        var quotaCard = '<section class="card today-design-card today-quota-card" id="quotaProvidersCard"><div class="today-design-card-title">' + window.TS.t('订阅额度') + ' ' + infoIcon(window.TS.t('订阅额度')) + '</div><div id="quotaProvidersContent">' + quotaPlaceholderHTML('等待同步') + '</div></section>';
+        var quotaCard = '<section class="card today-design-card today-quota-card" id="quotaProvidersCard"><div class="today-design-card-title">' + window.TS.t('订阅额度') + ' ' + infoIcon(window.TS.t('订阅额度')) + '</div><div id="quotaProvidersContent">' + quotaPlaceholderHTML('同步中…') + '</div></section>';
         var rankVisible = settings.agent_work_rank_visibility === 'visible' || (settings.agent_work_rank_visibility === 'automatic' && window.__tsHasRankIdentity === true);
         var rankCard = rankVisible ? '<section class="card today-design-card today-rank-card" id="tokenRankCard"><div class="today-design-card-title">' + window.TS.t('Agent 消耗榜') + ' <span class="today-design-subtitle">（' + window.TS.t('今日') + '）</span> ' + infoIcon(window.TS.t('Agent 消耗榜')) + '</div><div id="tokenRankContent" class="today-rank-content">' + window.TS.t('加载中…') + '</div></section>' : '';
         var agentWorkCard = window.TS.agentWorkCardHTML(snapshot, settings);
@@ -731,7 +730,7 @@
           var displayable = list.filter(function (p) { return (p.status === 'available' || p.status === 'Available') && p.windows && p.windows.length; });
           if (!displayable.length) {
             card.style.display = '';
-            host.innerHTML = quotaPlaceholderHTML(list.length ? '等待同步' : '等待同步');
+            host.innerHTML = quotaPlaceholderHTML(list.length ? '暂不可用' : '未配置');
             return;
           }
           card.style.display = '';
@@ -753,9 +752,26 @@
             if (provider === 'local') return '<span class="today-quota-logo today-quota-server">' + serverIcon + '</span>';
             return '<span class="today-source-mark" style="--source-color:#9ca3af">' + window.TS.escapeHtmlStr(String(name || '?').slice(0, 1).toUpperCase()) + '</span>';
           }
+          // Keep the four provider slots from the design sheet populated when
+          // only one real provider is available. These are visual placeholders
+          // only; no provider is enabled or queried by adding them here.
+          var quotaFallbacks = [
+            { provider: 'anthropic', name: 'Anthropic', tone: 'amber' },
+            { provider: 'google', name: 'Google', tone: 'blue' },
+            { provider: 'local', name: window.TS.t('本地模型'), tone: 'local' },
+            { provider: 'openai', name: 'OpenAI', tone: 'green' }
+          ];
+          function quotaPlaceholderCard(p) {
+            return '<div class="today-quota-placeholder-card ' + p.tone + '">' +
+              '<div class="today-quota-provider-title">' + quotaMark(p.provider, p.name) + '<strong>' + p.name + '</strong></div>' +
+              '<div class="today-quota-placeholder-value">—</div>' +
+              '<div class="today-quota-placeholder-track"></div>' +
+              '<small>' + window.TS.t('暂未读取到额度') + '</small>' +
+            '</div>';
+          }
           function quotaWan(value) {
             var v = Math.max(0, Math.round(Number(value || 0)));
-            return v >= 10000 ? window.TS.formatTokens(v, true) : v.toLocaleString();
+            return tokenHTML(v, true);
           }
           function quotaResetText(w) {
             var iso = w.resets_at || w.reset_at;
@@ -765,26 +781,31 @@
             if (days <= 0) return window.TS.t('重置：即将');
             return window.TS.t('重置') + '：' + days + ' ' + window.TS.t('天后');
           }
-          host.innerHTML = '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' + displayable.map(function (p) {
+          var knownProviders = {};
+          displayable.forEach(function (p) { knownProviders[p.provider] = true; });
+          var missing = quotaFallbacks.filter(function (p) { return !knownProviders[p.provider]; }).slice(0, Math.max(0, 4 - displayable.length));
+          host.innerHTML = '<div class="today-quota-provider-grid" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' + displayable.map(function (p) {
             var name = p.displayName || p.display_name || { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', local: window.TS.t('本地模型') }[p.provider] || p.provider;
             var color = quotaColors[p.provider] || 'var(--green)';
             var w = p.windows[0] || {};
             var used = Math.max(0, Math.min(100, w.used_percent != null ? Number(w.used_percent) : (w.total > 0 && w.remaining != null ? 100 - w.remaining / w.total * 100 : 0)));
-            var unlimited = !(w.total > 0);
-            var usedLabel = unlimited ? '—' : Math.round(used) + '% ' + window.TS.t('已用');
-            var amountLabel = unlimited ? window.TS.t('不设上限') : quotaWan(w.total * used / 100) + ' / ' + quotaWan(w.total);
-            var resetLabel = unlimited ? window.TS.t('本地运行') : quotaResetText(w);
+            var isLocalWindow = p.provider === 'local' || w.kind === 'local';
+            var hasTotal = Number(w.total) > 0;
+            var hasUsedPercent = w.used_percent != null;
+            var usedLabel = isLocalWindow ? '—' : (hasUsedPercent ? Math.round(used) + '% ' + window.TS.t('已用') : (hasTotal ? Math.round(used) + '% ' + window.TS.t('已用') : '—'));
+            var amountLabel = hasTotal ? quotaWan(w.total * used / 100) + ' / ' + quotaWan(w.total) : (isLocalWindow ? window.TS.t('不设上限') : '—');
+            var resetLabel = isLocalWindow ? window.TS.t('本地运行') : quotaResetText(w);
             return '<div class="today-quota-provider" style="--quota-color:' + color + '">' +
               '<div class="today-quota-provider-title">' + quotaMark(p.provider, name) + '<span>' + name + '</span></div>' +
               '<div class="today-quota-used">' + usedLabel + '</div>' +
-              '<div class="today-quota-track"><span style="width:' + (unlimited ? 0 : used).toFixed(0) + '%"></span></div>' +
+              '<div class="today-quota-track"><span style="width:' + (isLocalWindow ? 0 : used).toFixed(0) + '%"></span></div>' +
               '<div class="today-quota-amount">' + amountLabel + '</div>' +
               '<div class="today-quota-reset">' + resetLabel + '</div>' +
             '</div>';
-          }).join('') + '</div>';
+          }).join('') + missing.map(quotaPlaceholderCard).join('') + '</div>';
         }).catch(function () {
           card.style.display = '';
-          host.innerHTML = quotaPlaceholderHTML('等待同步');
+          host.innerHTML = quotaPlaceholderHTML('同步失败');
         });
       }
 
@@ -815,7 +836,7 @@
         function slot(rank, order) {
           var entry = entryFor(rank);
           var name = entry ? esc(entry.name || window.TS.t('未命名项目')) : window.TS.t('等待同步');
-          var tokens = entry ? Math.max(0, Math.round(Number(entry.total_tokens || 0))).toLocaleString() : '—';
+          var tokens = entry ? tokenHTML(entry.total_tokens) : '—';
           var crownClass = rank === 1 ? 'gold' : (rank === 2 ? 'silver' : 'bronze');
           return '<div class="today-rank-slot rank-' + rank + (entry ? '' : ' is-empty') + '" style="--rank-order:' + order + '">' +
             '<div class="today-rank-crown ' + crownClass + '">♛</div>' +
@@ -837,7 +858,7 @@
           function listRow(no, name, tokens, mine) {
             return '<div' + (mine ? ' class="today-rank-list-mine"' : '') + '><span class="today-rank-list-no">' + no + '</span>' +
               '<span class="today-rank-list-name">' + esc(name || window.TS.t('未命名项目')) + '</span>' +
-              '<span class="today-rank-list-value">' + Math.max(0, Math.round(Number(tokens || 0))).toLocaleString() + '</span></div>';
+              '<span class="today-rank-list-value">' + tokenHTML(tokens) + '</span></div>';
           }
           var top5 = rows.slice(0, 5);
           var known5 = top5.reduce(function (sum, entry) { return sum + Math.max(0, Number(entry.total_tokens || 0)); }, 0);
@@ -927,7 +948,7 @@
         var tableRows = rows.map(function (d) {
           var dom = dominantTool(d);
           var dot = dom ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + window.TS.tokenToolColor(dom) + ';margin-right:7px;vertical-align:middle"></span>' : '';
-          return '<tr><td>' + d.date + '</td><td>' + formatTokens(d.total_tokens) + '</td><td>' + formatMoney(d.cost) + '</td><td>' + (dom ? dot + dom : window.TS.t('无')) + '</td></tr>';
+          return '<tr><td>' + d.date + '</td><td>' + tokenHTML(d.total_tokens) + '</td><td>' + formatMoney(d.cost) + '</td><td>' + (dom ? dot + dom : window.TS.t('无')) + '</td></tr>';
         }).join('');
         var legend = window.TS.tokenToolLegendHTML ? window.TS.tokenToolLegendHTML(snapshot.daily) : '';
         return headerCard + '<div class="card"><div class="card-row" style="justify-content:space-between"><div class="card-title" style="margin:0">' + window.TS.t('全部明细') + '</div><div style="display:flex;align-items:center;gap:12px">' + legend + '<button class="btn" id="exportCsvBtn">' + window.TS.t('导出 CSV') + '</button></div></div>' +
@@ -952,7 +973,7 @@
         var gm = Math.round(settings.daily_goal_tokens / 1000000);
         var ctt = settings.close_to_tray !== false; // default true
         var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px"><span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:800;color:var(--green-dark);background:color-mix(in srgb,var(--mint) 30%,transparent);padding:5px 14px;border-radius:999px">🛡 ' + window.TS.t('本地统计') + '</span></div>';
-        html += '<div class="card"><div class="card-title">' + window.TS.t('基本设置') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('每日目标') + '</div><div class="setting-hint">' + window.TS.t('当前 ') + formatTokens(settings.daily_goal_tokens) + '</div></div><div style="display:flex;align-items:center;gap:6px"><button class="btn" id="goalStepDown" style="padding:4px 10px;font-weight:800">−</button><input type="number" id="goalInput" value="' + gm + '" min="1" style="width:90px;text-align:center"/><button class="btn" id="goalStepUp" style="padding:4px 10px;font-weight:800">+</button><span style="font-weight:700;color:var(--muted);margin-left:6px">' + window.TS.t('百万') + '</span></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' + [50,100,200,300,500,1000].map(function(preset){ return '<button class="goal-preset" data-goal="' + preset + '" style="padding:6px 12px;border-radius:999px;border:1px solid var(--track);background:var(--canvas);font-weight:700;font-size:13px;color:var(--muted-strong);cursor:pointer">' + formatTokens(preset*1000000,true) + '</button>'; }).join('') + '</div><div class="setting-row" style="margin-top:18px"><div><div class="setting-label">' + window.TS.t('自动刷新') + '</div><div class="setting-hint">' + window.TS.t('面板可见时按此频率检查；后台会根据供电状态降低频率。') + '</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="font-size:12px;font-weight:800;color:var(--green-dark)">⏱</span><span style="font-size:12px;font-weight:700;color:var(--muted)">' + window.TS.t('当前节奏') + ' · ' + (settings.refresh_interval_seconds === 0 ? window.TS.t('手动更新') : window.TS.tf('每 %@', formatInterval(settings.refresh_interval_seconds))) + '</span></div></div><select id="intervalSelect"><option value="60">' + window.TS.t('1 分钟') + '</option><option value="300">5 ' + window.TS.t('分钟') + '</option><option value="900">15 ' + window.TS.t('分钟') + '</option><option value="0">' + window.TS.t('手动') + '</option></select></div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('基本设置') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('每日目标') + '</div><div class="setting-hint">' + window.TS.t('当前 ') + tokenHTML(settings.daily_goal_tokens) + '</div></div><div style="display:flex;align-items:center;gap:6px"><button class="btn" id="goalStepDown" style="padding:4px 10px;font-weight:800">−</button><input type="number" id="goalInput" value="' + gm + '" min="1" style="width:90px;text-align:center"/><button class="btn" id="goalStepUp" style="padding:4px 10px;font-weight:800">+</button><span style="font-weight:700;color:var(--muted);margin-left:6px">' + window.TS.t('百万') + '</span></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' + [50,100,200,300,500,1000].map(function(preset){ return '<button class="goal-preset" data-goal="' + preset + '" style="padding:6px 12px;border-radius:999px;border:1px solid var(--track);background:var(--canvas);font-weight:700;font-size:13px;color:var(--muted-strong);cursor:pointer">' + tokenHTML(preset*1000000,true) + '</button>'; }).join('') + '</div><div class="setting-row" style="margin-top:18px"><div><div class="setting-label">' + window.TS.t('自动刷新') + '</div><div class="setting-hint">' + window.TS.t('面板可见时按此频率检查；后台会根据供电状态降低频率。') + '</div><div style="display:flex;align-items:center;gap:6px;margin-top:6px"><span style="font-size:12px;font-weight:800;color:var(--green-dark)">⏱</span><span style="font-size:12px;font-weight:700;color:var(--muted)">' + window.TS.t('当前节奏') + ' · ' + (settings.refresh_interval_seconds === 0 ? window.TS.t('手动更新') : window.TS.tf('每 %@', formatInterval(settings.refresh_interval_seconds))) + '</span></div></div><select id="intervalSelect"><option value="60">' + window.TS.t('1 分钟') + '</option><option value="300">5 ' + window.TS.t('分钟') + '</option><option value="900">15 ' + window.TS.t('分钟') + '</option><option value="0">' + window.TS.t('手动') + '</option></select></div></div>';
         html += '<div class="card"><div class="card-title">' + window.TS.t('窗口行为') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('关闭按钮行为') + '</div><div class="setting-hint">' + window.TS.t('点击窗口右上角 × 时：最小化到托盘保持后台运行，或直接退出程序') + '</div></div><select id="closeBehaviorSelect"><option value="tray">' + window.TS.t('最小化到托盘') + '</option><option value="quit">' + window.TS.t('直接退出') + '</option></select></div></div>';
         // Autostart toggle (HKCU Run key).
         var autostartChecked = settings.autostart ? ' checked' : '';
