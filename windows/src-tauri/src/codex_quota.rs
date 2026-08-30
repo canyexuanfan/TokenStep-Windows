@@ -145,14 +145,47 @@ pub fn read() -> CodexQuotaSnapshot {
     }
 }
 
-/// Find the codex executable on Windows (try codex.cmd, codex.exe, codex).
+/// Find the codex executable. PATH first (`codex.cmd`/`codex.exe`/`codex`),
+/// then known install locations. Newer `@openai/codex` npm platform packages
+/// (e.g. 0.149.1-win32-x64) declare no `bin` field, so npm installs the exe
+/// under `vendor/<target>/bin/` without creating any PATH shim — a PATH-only
+/// lookup makes the quota reader fail even though codex works fine.
 fn find_codex() -> Option<String> {
     for name in &["codex.cmd", "codex.exe", "codex"] {
         if which::which(name).is_ok() {
             return Some(name.to_string());
         }
     }
-    None
+    npm_global_codex()
+        .or_else(pnpm_global_codex)
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// `%APPDATA%\npm\node_modules\@openai\codex\vendor\<target>\bin\codex.exe` —
+/// the default npm global prefix on Windows is `%APPDATA%\npm`.
+fn npm_global_codex() -> Option<std::path::PathBuf> {
+    let vendor = dirs::config_dir()?
+        .join("npm")
+        .join("node_modules")
+        .join("@openai")
+        .join("codex")
+        .join("vendor");
+    std::fs::read_dir(&vendor)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path().join("bin").join("codex.exe"))
+        .find(|p| p.is_file())
+}
+
+/// `%LOCALAPPDATA%\pnpm\codex.exe` — pnpm's global bin dir, which is often
+/// not on the PATH of GUI apps launched from Explorer.
+fn pnpm_global_codex() -> Option<std::path::PathBuf> {
+    let candidate = dirs::data_local_dir()?.join("pnpm").join("codex.exe");
+    if candidate.is_file() {
+        Some(candidate)
+    } else {
+        None
+    }
 }
 
 fn parse_response(line: &str) -> Option<CodexQuotaSnapshot> {

@@ -731,7 +731,14 @@
           var displayable = list.filter(function (p) { return (p.status === 'available' || p.status === 'Available') && p.windows && p.windows.length; });
           if (!displayable.length) {
             card.style.display = '';
-            host.innerHTML = quotaPlaceholderHTML(list.length ? '暂不可用' : '未配置');
+            // Distinguish "nothing enabled" from "enabled but failed": the
+            // backend now pushes unavailable providers with a message, so
+            // surface the first reason (e.g. 未找到 codex 命令) instead of a
+            // misleading 未配置.
+            var reason = list.map(function (p) { return p.message || p.error; }).filter(Boolean)[0];
+            if (reason && reason.length > 30) reason = reason.slice(0, 30) + '…';
+            var statusText = list.length ? (reason ? '暂不可用 · ' + reason : '暂不可用') : '未配置';
+            host.innerHTML = quotaPlaceholderHTML(statusText);
             return;
           }
           card.style.display = '';

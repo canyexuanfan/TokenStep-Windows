@@ -521,7 +521,11 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
                             .map(|d| d.as_secs().saturating_sub(at) < 15 * 60)
                             .unwrap_or(false)
                     })
-                    .unwrap_or(false);
+                    .unwrap_or(false)
+                    // v2: unavailable codex/claude entries now carry a
+                    // status/message. Older caches may hold an empty list
+                    // from a failed fetch (rendered as 未配置) — refetch once.
+                    && cached.get("v").and_then(|v| v.as_i64()) == Some(2);
                 if fresh {
                     if let Some(list) = cached.get_mut("providers") {
                         // filter to currently-enabled providers
@@ -558,6 +562,17 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
                 "status": "available",
                 "windows": quota_windows_from_codex(&q),
             }));
+        } else {
+            // Mirrors quota.rs ProviderQuota: failures still surface with a
+            // status/message so the card layer can explain WHY (e.g. "未找到
+            // codex 命令") instead of an empty list that renders as 未配置.
+            providers.push(serde_json::json!({
+                "provider": "codex",
+                "displayName": "Codex",
+                "status": "unavailable",
+                "windows": [],
+                "message": q.error,
+            }));
         }
         let cq = claude_quota::read();
         if cq.available {
@@ -566,6 +581,14 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
                 "displayName": "Claude Code",
                 "status": "available",
                 "windows": quota_windows_from_codex(&cq),
+            }));
+        } else {
+            providers.push(serde_json::json!({
+                "provider": "claude",
+                "displayName": "Claude Code",
+                "status": "unavailable",
+                "windows": [],
+                "message": cq.error,
             }));
         }
     }
@@ -582,7 +605,7 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let payload = serde_json::json!({ "fetched_at_secs": now_secs, "providers": providers });
+    let payload = serde_json::json!({ "v": 2, "fetched_at_secs": now_secs, "providers": providers });
     if let Some(parent) = cache_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -1242,6 +1265,14 @@ pub fn run() {
 /// booting the full Tauri app.
 pub fn collect_for_check() -> models::UsageSnapshot {
     collector::collect(false, None)
+}
+
+/// Public shim used by the `quota_diag` example: runs the codex/claude quota
+/// readers end-to-end (binary discovery included) without booting the app.
+pub fn quota_diag_for_check() -> serde_json::Value {
+    let q = codex_quota::read();
+    let cq = claude_quota::read();
+    serde_json::json!({ "codex": q, "claude": cq })
 }
 
 /// Tray-menu "检查更新" handler. Runs the check off the UI thread, then:

@@ -56,8 +56,12 @@ set "BUILD=%ROOT%\windows\src-tauri\target\release"
 set "EXE=%BUILD%\tokenstep.exe"
 
 REM The NSIS installer name embeds the version, so resolve it dynamically.
+REM Pin the glob to the CURRENT version (%VER%): a bare TokenStep_* glob let
+REM cmd's for /f keep the alphabetically-LAST match, so with 0.1.9 and 0.1.10
+REM both in the bundle dir it signed 0.1.9 and deployed it under the 0.1.10
+REM name.
 set "SETUP="
-for /f "delims=" %%S in ('dir /b "%BUILD%\bundle\nsis\TokenStep_*_x64-setup.exe" 2^>nul ^| findstr /v "uninstall"') do set "SETUP=%BUILD%\bundle\nsis\%%S"
+for /f "delims=" %%S in ('dir /b "%BUILD%\bundle\nsis\TokenStep_%VER%_x64-setup.exe" 2^>nul ^| findstr /v "uninstall"') do set "SETUP=%BUILD%\bundle\nsis\%%S"
 if not defined SETUP (
     echo [warn] No NSIS installer found under %BUILD%\bundle\nsis\.
 )
