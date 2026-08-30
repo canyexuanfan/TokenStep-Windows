@@ -10,6 +10,28 @@
 
 （开发中。参见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。）
 
+## [0.1.10] - 订阅额度"未配置"修复 + 打包流水线修复
+
+### 修复
+
+- **订阅额度一直显示「未配置」**：根因是新版 `@openai/codex` npm 平台包（如 0.149.1-win32-x64）没有 `bin` 字段、npm 不生成 PATH shim，额度读取器找不到 codex 二进制。现在 `find_codex()` 在 PATH 未命中时回退扫描 `%APPDATA%\npm\node_modules\@openai\codex\vendor\<target>\bin\codex.exe` 与 `%LOCALAPPDATA%\pnpm\codex.exe`，Codex 订阅额度（ChatGPT 登录态）恢复显示。
+- **失败原因透出**：Codex / Claude 额度读取失败时不再被静默丢弃——provider 列表会带上 `unavailable` 状态与具体原因（如「未找到 codex 命令」「未登录 Claude Code」），前端区分「未配置」（什么都没开）与「暂不可用 · <原因>」，不再一律显示误导性的「未配置」。
+- **额度缓存版本化**：quota 缓存新增 `v` 字段（v2），升级后自动废弃旧版空列表缓存，避免 15 分钟 TTL 内继续显示旧状态。
+- Claude 额度卡需官方 `claude login`（OAuth）才会显示；走 API 中转（`ANTHROPIC_AUTH_TOKEN`/`BASE_URL`）时无官方订阅额度可查，卡片将显示原因而非报错，属预期行为。
+
+### 变更
+
+- 今日页紧凑布局：顶栏压缩、卡片间距收紧、top 区固定高度，900px 高度屏幕一屏放下核心卡片。
+- 品牌区使用真实 logo.png（原为字母占位）；今日 Token 卡改为圈数摘要布局（当前圈标题 + 已完成 + 每圈目标），环图颜色与贡献色统一（`contributionColor`）。
+- `ringSvg()` 新增可选 `progressColor` 参数，不传参保持原渐变，其他调用点不受影响。
+
+### 打包流水线修复（内部）
+
+- `build-release.bat` 内联 PowerShell NSIS 补丁被 cmd 转义打碎（exit 255、签名步骤永远走不到）→ 补丁抽出为独立 `patch-nsis.ps1`（幂等、兼容 LF/CRLF、自动改名 nsis-output.exe）。
+- makensis 优先选用 `Bin\makensis.exe`（NSIS 根目录的 91KB `nsis.exe` 是 GUI 桩，控制台模式静默 exit 1）。**受此影响，历代 setup.exe 从未真正带上「跳过重装确认页」补丁，0.1.10 起首次生效**（覆盖安装不再弹确认）。
+- `sign.bat` 版本匹配从 `TokenStep_*` 通配改为钉死当前版本，修复字母序（0.1.9 > 0.1.10）导致旧包冒名部署的问题。
+- 新增 `cargo run --example quota_diag`：不起 GUI 端到端诊断 Codex/Claude 额度读取链路。
+
 ## [0.1.9] - 今日页参考设计布局
 
 ### 变更
