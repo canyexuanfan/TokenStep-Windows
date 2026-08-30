@@ -3331,6 +3331,83 @@ input[type="number"]:focus {
   display: block;
 }
 
+/* Compact full-screen today layout: preserve the component hierarchy while
+   reclaiming vertical whitespace for common 900px-high displays. */
+#app .reference-header {
+  flex-basis: 68px;
+  min-height: 68px;
+}
+
+#app > main.content > .page > #view {
+  padding: 4px 22px 4px;
+}
+
+#view .today-design-page {
+  gap: 6px;
+  padding-bottom: 0;
+}
+
+#view .today-design-top,
+#view .today-design-middle,
+#view .today-design-bottom {
+  gap: 8px;
+}
+
+#view .today-design-top > .today-design-card,
+#view .today-token-card {
+  height: 324px;
+  min-height: 324px;
+}
+
+#view .today-token-layout {
+  height: 188px;
+  min-height: 188px;
+  gap: 12px;
+}
+
+#view .today-design-ring {
+  transform: translateY(-4px);
+}
+
+#view .today-ring-center strong {
+  font-size: 50px;
+}
+
+#view .today-rhythm-svg,
+#view .today-rhythm-graph,
+#view .today-rhythm-graph svg {
+  height: 166px !important;
+}
+
+#view .today-design-metrics,
+#view .today-design-metrics > div {
+  height: 65px;
+  min-height: 65px;
+}
+
+#view .today-design-metrics > div {
+  padding: 7px 18px;
+}
+
+#view .today-design-middle > .today-design-card {
+  height: 201px;
+  min-height: 201px;
+}
+
+#view .today-design-bottom > .today-design-card,
+#view .today-design-bottom > #agentWorkCard {
+  height: 210px;
+  min-height: 210px;
+}
+
+#view .today-design-bottom > #agentWorkCard {
+  padding: 14px 18px;
+}
+
+#view .today-rank-content {
+  padding-top: 10px;
+}
+
 #app .reference-header #githubStarBtn {
   gap: 0 !important;
 }
@@ -3346,4 +3423,104 @@ input[type="number"]:focus {
 #view .ts-token-value,
 #app .ts-token-value {
   cursor: help;
+}
+
+/* Final correction after the compact pass: restore the real logo artwork,
+   leave a visible breathing strip below the header, and keep the token
+   summary inside its own card instead of overlapping lap progress. */
+#app .reference-header {
+  flex-basis: 66px;
+  min-height: 66px;
+}
+
+#app > main.content > .page > #view {
+  padding-top: 10px;
+}
+
+#app .reference-brand-logo {
+  overflow: hidden;
+}
+
+#app .reference-brand-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+/* The product mark is a fixed white-backed asset; it must not recolor with
+   the active accent theme. */
+#app .reference-brand-logo {
+  background: #fff !important;
+}
+
+#view .today-token-summary {
+  gap: 8px;
+}
+
+#view .today-lap-progress {
+  transform: none;
+}
+
+/* Let the token card distribute its own vertical space instead of letting a
+   fixed ring height collide with the lap-progress footer. */
+#view .today-token-card {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 20px 8px;
+}
+
+#view .today-token-card > .today-token-layout {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+  margin-top: 4px;
+}
+
+#view .today-token-card > .today-lap-progress {
+  flex: 0 0 auto;
+  margin-top: 6px;
+}
+
+#view .today-token-card .today-design-ring {
+  width: min(174px, 100%);
+  transform: none;
+}
+
+#view .today-token-summary span {
+  font-size: 11px;
+}
+
+#view .today-token-summary strong {
+  font-size: 18px;
+}
+
+#view .today-token-summary strong .ts-token-value {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+#view .today-token-legacy-summary {
+  gap: 8px;
+}
+
+#view .today-token-lap-heading {
+  color: var(--green-dark);
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+#view .today-token-summary > .today-token-legacy-line {
+  display: block;
+  flex-direction: initial;
+  gap: 0;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 750;
+  line-height: 1.15;
+  white-space: nowrap;
 }

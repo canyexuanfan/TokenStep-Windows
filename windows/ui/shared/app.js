@@ -156,7 +156,7 @@ function todayKey() {
 // ---- SVG progress ring ----
 // Uses themeColors (kept in sync by applyTheme) so it recolors on theme switch.
 // SVG attributes like stop-color can't use CSS var(), so we need raw values.
-function ringSvg(progress, size = 148, stroke = 16) {
+function ringSvg(progress, size = 148, stroke = 16, progressColor) {
   const r = (size - stroke) / 2;
   const circ = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(progress, 1));
@@ -166,6 +166,7 @@ function ringSvg(progress, size = 148, stroke = 16) {
   const greenDark = themeColors.greenDark;
   const track = themeColors.track;
   const gradId = "ringGrad_" + Math.random().toString(36).slice(2, 8);
+  const arcStroke = progressColor || `url(#${gradId})`;
   return `
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
       <defs>
@@ -178,7 +179,7 @@ function ringSvg(progress, size = 148, stroke = 16) {
       <circle cx="${size / 2}" cy="${size / 2}" r="${r}"
         fill="none" stroke="${track}" stroke-width="${stroke}" stroke-linecap="round"/>
       <circle cx="${size / 2}" cy="${size / 2}" r="${r}"
-        fill="none" stroke="url(#${gradId})" stroke-width="${stroke}" stroke-linecap="round"
+        fill="none" stroke="${arcStroke}" stroke-width="${stroke}" stroke-linecap="round"
         stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
         transform="rotate(-90 ${size / 2} ${size / 2})"/>
     </svg>`;
