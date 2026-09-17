@@ -10,6 +10,17 @@
 
 （开发中。参见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。）
 
+## [0.1.11] - 上游 v0.2.14 榜单身份兼容 + v0.2.7 更新检查韧性
+
+### 修复（上游 v0.2.14 移植）
+
+- **Token Rank 榜单身份 v2/v3 封装格式兼容**：Token Rank CLI 升级后 `~/.token-rank/client-state.json` 从平面状态改为 `{schema_version, payload}` 封装，旧读取逻辑找不到 `user` → 榜单误显示「尚未关联」并隐藏。现在同时兼容平面与 v2/v3 封装格式；遇到未知封装版本**不回退**顶层残留账号（上游同款防泄漏语义）。含 5 个单元测试（平面/v2/v3/未知版本/无 payload）。
+
+### 变更（上游 v0.2.7 移植）
+
+- **更新检查限速回退**：GitHub Releases API 被限速（403）或不可用时，降级请求公开的 `releases/latest` 重定向页（不消耗 API 配额），从最终 URL 解析最新 tag 并重建标准 NSIS 安装包下载地址；该通道未知文件大小，下载进度改用 Content-Length。
+- **手动检查 10 秒冷却**：设置页「立即检查」改走 `check_for_update_manual`，10 秒内重复点击直接重放上次结果，不再连打 GitHub API（防止烧配额与转圈卡住）；启动自动检查不受影响。含 release tag 解析单元测试。
+
 ## [0.1.10] - 订阅额度"未配置"修复 + 打包流水线修复
 
 ### 修复

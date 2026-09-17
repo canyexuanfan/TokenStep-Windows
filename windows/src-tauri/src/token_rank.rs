@@ -76,7 +76,27 @@ pub struct LocalIdentity {
 pub fn load_local_identity() -> Option<LocalIdentity> {
     let text = fs::read_to_string(paths::token_rank_client_state_json()).ok()?;
     let doc: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let user = doc.get("user")?;
+    identity_from_json(&doc)
+}
+
+/// Parse the identity out of a `client-state.json` document.
+///
+/// The Token Rank CLI moved to a versioned envelope (`{schema_version, payload}`
+/// wrapping the old flat state). Old CLIs wrote the flat state directly. This
+/// reader accepts both, but a wrapped document with an unknown schema version
+/// must NOT fall back to stale top-level fields (port of upstream v0.2.14
+/// `LocalClientStateDocument`).
+fn identity_from_json(doc: &serde_json::Value) -> Option<LocalIdentity> {
+    let state = if doc.get("schema_version").is_some() || doc.get("payload").is_some() {
+        let version = doc.get("schema_version").and_then(|v| v.as_i64())?;
+        if version != 2 && version != 3 {
+            return None;
+        }
+        doc.get("payload").as_ref()?
+    } else {
+        doc
+    };
+    let user = state.get("user")?;
     let id = user.get("id")?.as_i64()?;
     if id <= 0 {
         return None;
@@ -316,5 +336,62 @@ fn write_cache(snap: &TokenRankSnapshot, identity_id: Option<i64>) {
     }
     if let Ok(text) = serde_json::to_string_pretty(&cache) {
         let _ = fs::write(path, text);
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn user_json() -> serde_json::Value {
+        serde_json::json!({
+            "user": { "id": 42, "name": "测试用户", "avatar_url": "https://example.com/a.png" }
+        })
+    }
+
+    #[test]
+    fn flat_state_reads_identity() {
+        let doc = user_json();
+        let id = identity_from_json(&doc).expect("flat state should parse");
+        assert_eq!(id.id, 42);
+        assert_eq!(id.name, "测试用户");
+        assert_eq!(id.avatar_url.as_deref(), Some("https://example.com/a.png"));
+    }
+
+    #[test]
+    fn v2_and_v3_envelope_reads_identity() {
+        for version in [2i64, 3] {
+            let doc = serde_json::json!({
+                "schema_version": version,
+                "payload": user_json()
+            });
+            let id = identity_from_json(&doc).expect("enveloped state should parse");
+            assert_eq!(id.id, 42, "schema_version {version}");
+        }
+    }
+
+    #[test]
+    fn unknown_envelope_version_is_rejected_not_fallen_back() {
+        // A v4 envelope that still carries stale top-level fields must NOT
+        // leak that identity — upstream v0.2.14's exact regression shape.
+        let doc = serde_json::json!({
+            "schema_version": 4,
+            "payload": {},
+            "user": { "id": 99, "name": "残留账号" }
+        });
+        assert!(identity_from_json(&doc).is_none());
+    }
+
+    #[test]
+    fn envelope_without_payload_is_rejected() {
+        let doc = serde_json::json!({ "schema_version": 2 });
+        assert!(identity_from_json(&doc).is_none());
+    }
+
+    #[test]
+    fn missing_or_nonpositive_id_is_not_linked() {
+        assert!(identity_from_json(&serde_json::json!({})).is_none());
+        assert!(identity_from_json(&serde_json::json!({ "user": { "id": 0 } })).is_none());
+        assert!(identity_from_json(&serde_json::json!({ "user": { "name": "x" } })).is_none());
     }
 }

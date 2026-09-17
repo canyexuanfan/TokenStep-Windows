@@ -1381,7 +1381,9 @@
           if (checkUpdateBtn) checkUpdateBtn.addEventListener('click', function () {
             checkUpdateBtn.disabled = true;
             checkUpdateBtn.textContent = window.TS.t('检查中…');
-            invoke('check_for_update').then(function (u) {
+            // Manual entry: 10s server-side cooldown replays the last result
+            // on rapid clicks (upstream v0.2.7), so no extra API hits.
+            invoke('check_for_update_manual').then(function (u) {
               latestUpdate = u;
               var hdr = document.getElementById('updateBtn');
               if (hdr) hdr.style.display = u.has_update ? '' : 'none';

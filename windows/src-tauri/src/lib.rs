@@ -443,6 +443,14 @@ fn check_for_update() -> update::UpdateCheck {
     update::check()
 }
 
+/// Manual "check now" entry: same result but with the 10-second cooldown from
+/// upstream v0.2.7 — rapid clicks replay the last result instead of hitting
+/// the (rate-limited) GitHub API again.
+#[tauri::command]
+fn check_for_update_manual() -> update::UpdateCheck {
+    update::check_manual()
+}
+
 // ── Cursor official usage + unified quota system (upstream v0.2.1/v0.2.2) ──
 
 #[tauri::command]
@@ -1229,6 +1237,7 @@ pub fn run() {
             set_screenshot_dir,
             pick_folder,
             check_for_update,
+            check_for_update_manual,
             open_release_page,
             download_and_install_update,
             skip_update_version,

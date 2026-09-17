@@ -17,6 +17,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 use std::os::windows::process::CommandExt;
 
@@ -145,20 +147,23 @@ pub fn check() -> UpdateCheck {
         Err(_) => return UpdateCheck::default(),
     };
 
+    // Port of upstream v0.2.7 "resilient updates": when the Releases API is
+    // rate-limited (403), down, or the body is unparsable, fall back to the
+    // public latest-release redirect, which costs no API quota.
     let resp = match client
         .get(latest_release_api_url())
         .header("Accept", "application/vnd.github+json")
         .send()
     {
         Ok(r) => r,
-        Err(_) => return UpdateCheck::default(),
+        Err(_) => return fallback_latest_redirect(&client, current),
     };
     if !resp.status().is_success() {
-        return UpdateCheck::default();
+        return fallback_latest_redirect(&client, current);
     }
     let release: GitHubRelease = match resp.json() {
         Ok(r) => r,
-        Err(_) => return UpdateCheck::default(),
+        Err(_) => return fallback_latest_redirect(&client, current),
     };
 
     // Skip draft/prerelease releases — the /latest endpoint already excludes
@@ -168,17 +173,7 @@ pub fn check() -> UpdateCheck {
     }
 
     let latest = strip_v_prefix(&release.tag_name);
-    let mut has_update = is_newer(&latest, current);
-
-    // Honor "skip this version": if the user dismissed this exact version,
-    // don't nag them again (until an even newer release appears).
-    if has_update {
-        if let Some(skipped) = crate::settings::load().skipped_update_version {
-            if strip_v_prefix(&skipped) == latest {
-                has_update = false;
-            }
-        }
-    }
+    let has_update = honor_skipped(is_newer(&latest, current), &latest);
 
     let (asset_url, asset_name, asset_size) = match pick_install_asset(&release.assets) {
         Some(a) => (Some(a.browser_download_url.clone()), Some(a.name.clone()), Some(a.size)),
@@ -188,12 +183,107 @@ pub fn check() -> UpdateCheck {
     UpdateCheck {
         has_update,
         current_version: current.to_string(),
-        latest_version: latest.to_string(),
+        latest_version: latest,
         release_url: release.html_url,
         release_notes: release.body,
         asset_url,
         asset_name,
         asset_size,
+    }
+}
+
+/// Manual check entry (settings "立即检查" button): identical to `check()`
+/// but cooled down — within `MANUAL_COOLDOWN` of the previous manual attempt
+/// the last result is replayed instead of re-hitting the network. Port of
+/// upstream v0.2.7's 10-second manual cooldown, which stops rapid clicks from
+/// burning the anonymous GitHub API quota.
+const MANUAL_COOLDOWN_SECS: u64 = 10;
+static LAST_MANUAL_AT_MS: AtomicU64 = AtomicU64::new(0);
+static LAST_RESULT: Mutex<Option<UpdateCheck>> = Mutex::new(None);
+
+pub fn check_manual() -> UpdateCheck {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let last_ms = LAST_MANUAL_AT_MS.load(Ordering::Relaxed);
+    if now_ms.saturating_sub(last_ms) < MANUAL_COOLDOWN_SECS * 1000 {
+        if let Some(cached) = LAST_RESULT.lock().ok().and_then(|g| g.clone()) {
+            return cached;
+        }
+    }
+    LAST_MANUAL_AT_MS.store(now_ms, Ordering::Relaxed);
+    let result = check();
+    if let Ok(mut guard) = LAST_RESULT.lock() {
+        *guard = Some(result.clone());
+    }
+    result
+}
+
+/// "Skip this version": if the user dismissed this exact version, don't nag
+/// them again (until an even newer release appears).
+fn honor_skipped(has_update: bool, latest: &str) -> bool {
+    if !has_update {
+        return false;
+    }
+    if let Some(skipped) = crate::settings::load().skipped_update_version {
+        if strip_v_prefix(&skipped) == latest {
+            return false;
+        }
+    }
+    true
+}
+
+/// Fallback channel: GET the human-facing `releases/latest` page — GitHub
+/// 302s it to `/releases/tag/<tag>`, so the resolved URL names the newest
+/// stable release without touching the rate-limited API. From the tag we
+/// reconstruct our standard NSIS asset URL; the size is unknown on this
+/// channel (download() then relies on Content-Length for progress).
+fn fallback_latest_redirect(client: &reqwest::blocking::Client, current: &str) -> UpdateCheck {
+    let resp = match client
+        .get(releases_page_url())
+        .header("Accept", "text/html")
+        .send()
+    {
+        Ok(r) => r,
+        Err(_) => return UpdateCheck::default(),
+    };
+    if !resp.status().is_success() {
+        return UpdateCheck::default();
+    }
+    let final_url = resp.url().to_string();
+    let Some(tag) = release_tag_from_url(&final_url) else {
+        return UpdateCheck::default();
+    };
+    let latest = strip_v_prefix(&tag);
+    let has_update = honor_skipped(is_newer(&latest, current), &latest);
+
+    let pure_version = latest.trim_end_matches("-windows");
+    let asset_name = format!("TokenStep_{pure_version}_x64-setup.exe");
+    let asset_url =
+        format!("https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{tag}/{asset_name}");
+
+    UpdateCheck {
+        has_update,
+        current_version: current.to_string(),
+        latest_version: latest,
+        release_url: final_url,
+        release_notes: Some("发现新的稳定版本（GitHub API 限速，已通过最新发布页获取），可直接下载安装。".to_string()),
+        asset_url: Some(asset_url),
+        asset_name: Some(asset_name),
+        asset_size: None,
+    }
+}
+
+/// Extract the release tag from a resolved `.../releases/tag/<tag>` URL.
+fn release_tag_from_url(url: &str) -> Option<String> {
+    const MARKER: &str = "/releases/tag/";
+    let idx = url.find(MARKER)? + MARKER.len();
+    let tag = url[idx..].split('/').next()?.trim();
+    if tag.is_empty() {
+        None
+    } else {
+        Some(tag.to_string())
     }
 }
 
@@ -495,5 +585,23 @@ mod tests {
         assert_eq!(super::strip_v_prefix("v0.2.0"), "0.2.0");
         assert_eq!(super::strip_v_prefix("V0.2.0"), "0.2.0");
         assert_eq!(super::strip_v_prefix("0.2.0"), "0.2.0");
+    }
+
+    #[test]
+    fn release_tag_from_resolved_url() {
+        let f = super::release_tag_from_url;
+        assert_eq!(
+            f("https://github.com/canyexuanfan/TokenStep-Windows/releases/tag/v0.1.10-windows")
+                .as_deref(),
+            Some("v0.1.10-windows")
+        );
+        // Trailing path segments must not bleed into the tag.
+        assert_eq!(
+            f("https://github.com/a/b/releases/tag/v1.2.3/extra").as_deref(),
+            Some("v1.2.3")
+        );
+        // No marker → None (don't guess).
+        assert_eq!(f("https://github.com/a/b/releases"), None);
+        assert_eq!(f("https://github.com/a/b/releases/tag/"), None);
     }
 }
