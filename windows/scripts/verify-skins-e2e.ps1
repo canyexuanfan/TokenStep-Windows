@@ -1,4 +1,6 @@
-# End-to-end skin verification: deploy fresh build, launch with CDP, shoot all skins, restore violet.
+# End-to-end skin verification: deploy fresh build, launch with CDP, drive the
+# REAL settings path to switch skins (so SVG-inline colors re-render), shoot
+# all skins with motion frozen, restore the user's persisted choice.
 param([int]$Port = 9223)
 $ErrorActionPreference = 'Continue'
 $repo = 'F:\zcode\projects\tokenstep\TokenStep'
@@ -14,9 +16,8 @@ Write-Output "debug port: $Port"
 
 Get-Process tokenstep -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
-# Kill the whole tree (taskkill /T), not just the main process: Stop-Process
-# leaves the WebView2 child tree orphaned, and enough orphans drag WMI down
-# until Get-CimInstance — used here previously — hangs for minutes.
+# Whole-tree kill (taskkill /T): Stop-Process orphans the WebView2 child tree,
+# and enough orphans drag WMI/desktop-heap down with them.
 cmd /c "taskkill /F /T /IM tokenstep.exe" 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 
@@ -35,7 +36,7 @@ $targets = $null
 for ($i = 0; $i -lt 15; $i++) {
   try { $targets = Invoke-RestMethod "http://127.0.0.1:$Port/json" -TimeoutSec 2; break } catch { Start-Sleep -Seconds 2 }
 }
-if (-not $targets) { Write-Output 'DEBUG PORT NEVER OPENED'; Get-Process tokenstep -ErrorAction SilentlyContinue | Stop-Process -Force; exit 1 }
+if (-not $targets) { Write-Output 'DEBUG PORT NEVER OPENED'; cmd /c "taskkill /F /T /IM tokenstep.exe" 2>&1 | Out-Null; exit 1 }
 
 $ws = [System.Net.WebSockets.ClientWebSocket]::new()
 $page = $targets | Where-Object { $_.type -eq 'page' } | Select-Object -First 1
@@ -94,34 +95,77 @@ function Shot([string]$name) {
 # Wait for app data to render.
 Start-Sleep -Seconds 12
 
+# Ambient-motion probe + deterministic-shot freeze (upstream rule). The pause
+# class is re-added after every skin switch below (applyTheme re-judges it).
+$fx = Invoke-Eval @'
+(() => {
+  document.documentElement.classList.add('motion-paused');
+  const glow = document.getElementById('skinFxGlow');
+  const embers = document.getElementById('skinFxEmbers');
+  const gs = glow ? getComputedStyle(glow) : null;
+  const es = embers ? getComputedStyle(embers) : null;
+  return JSON.stringify({
+    glowLayer: !!glow,
+    glowAnim: gs ? gs.animationName : '(no layer)',
+    emberLayer: !!embers,
+    emberAnim: es ? es.animationName : '(no layer)'
+  });
+})()
+'@
+Write-Output ("FX-CHECK: " + $fx.result.result.value)
+
 function GotoToday {
   $null = Invoke-Eval @'
 (async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const tab = [...document.querySelectorAll('*')].find(e => (e.innerText || '').trim() === '\u4eca\u65e5' && e.offsetHeight < 60 && e.querySelectorAll('*').length <= 3);
-  if (tab) (tab.closest('button,[role=tab]') || tab).click();
+  const item = document.querySelector('.nav-item[data-id="today"]');
+  if (item) item.click();
   await sleep(900);
-  return 'today';
+  return 'today:' + (document.querySelector('#view .today-token-card') ? 'ok' : 'missing');
 })()
 '@
 }
 
-function ApplySkin([string]$js) {
-  $r = Invoke-Eval ("(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); " + $js + " await sleep(900); const el = document.documentElement; return JSON.stringify({ canvas: getComputedStyle(el).getPropertyValue('--canvas').trim(), skin: el.getAttribute('data-skin') || '' }); })()")
+function GotoHistory {
+  $null = Invoke-Eval @'
+(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const item = document.querySelector('.nav-item[data-id="history"]');
+  if (item) item.click();
+  await sleep(1100);
+  return 'history';
+})()
+'@
+}
+
+# Drive the REAL settings path: gear -> pack tab -> swatch click. The app's
+# own swatch handler runs invoke('set_theme'/'set_odyssey_chapter') and then
+# render(), so SVG-inline colors (ring track, rhythm chip) follow the theme.
+# In-memory applyTheme only re-skins CSS vars and leaves those baked from the
+# startup theme — the bug this replaces.
+function SwitchSkin([string]$pack, [string]$swatchSelector, [string]$label) {
+  # PS single-quoted literal: '' inside = one '. Placeholders replaced after.
+  $js = '(async () => { const sleep = ms => new Promise(r => setTimeout(r, ms)); const gear = [...document.querySelectorAll(''button, .icon-btn, [role=button]'')].find(b => /\u8bbe\u7f6e/.test((b.title || '''') + (b.getAttribute(''aria-label'') || ''''))); if (gear) gear.click(); await sleep(900); const tab = document.querySelector(''.pack-tab[data-pack="PACK"]''); if (tab) tab.click(); await sleep(400); const sw = document.querySelector(''SWATCH''); if (sw) sw.click(); await sleep(1500); document.documentElement.classList.add(''motion-paused''); return JSON.stringify({ want: ''LABEL'', canvas: getComputedStyle(document.documentElement).getPropertyValue(''--canvas'').trim(), pack: document.documentElement.hasAttribute(''data-skin-pack'') }); })()'
+  $js = $js.Replace('PACK', $pack).Replace('SWATCH', $swatchSelector).Replace('LABEL', $label)
+  $r = Invoke-Eval $js
   Write-Output ("  state: " + $r.result.result.value)
 }
 
-ApplySkin "window.TS.applyTheme('violet');"
+# Persist violet FIRST through the real path so the run starts from a known,
+# natively-rendered baseline (settings.json holds whatever was last clicked).
+SwitchSkin 'classic' '.theme-swatch[data-theme="violet"]' 'violet'
 GotoToday
 Shot '1-violet'
 
-ApplySkin "window.TS.applyTheme('voyage','directors_cut');"
+SwitchSkin 'odyssey' '.theme-swatch[data-chapter="directors_cut"]' 'directors'
 GotoToday
 Shot '2-directors'
 
-ApplySkin "window.TS.applyTheme('voyage','trojan_inferno');"
+SwitchSkin 'odyssey' '.theme-swatch[data-chapter="trojan_inferno"]' 'trojan'
 GotoToday
 Shot '3-trojan'
+
+# Settings page under trojan: open settings (already on trojan).
 $null = Invoke-Eval @'
 (async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -132,29 +176,21 @@ $null = Invoke-Eval @'
 })()
 '@
 Shot '3b-settings-trojan'
-GotoToday
 
-ApplySkin "window.TS.applyTheme('voyage','ash_marble');"
+SwitchSkin 'odyssey' '.theme-swatch[data-chapter="ash_marble"]' 'ash'
 GotoToday
 Shot '4-ash'
 
-ApplySkin "window.TS.applyTheme('event_horizon');"
+SwitchSkin 'interstellar' '.theme-swatch[data-theme="event_horizon"]' 'horizon'
 GotoToday
 Shot '5-horizon'
-$null = Invoke-Eval @'
-(async () => {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const tab = [...document.querySelectorAll('*')].find(e => (e.innerText || '').trim() === '\u5386\u53f2' && e.offsetHeight < 60 && e.querySelectorAll('*').length <= 3);
-  if (tab) (tab.closest('button,[role=tab]') || tab).click();
-  await sleep(1100);
-  return 'history';
-})()
-'@
+GotoHistory
 Shot '5b-history-horizon'
 
-ApplySkin "window.TS.applyTheme('violet');"
+# Leave the app on the user's own persisted classic choice.
+SwitchSkin 'classic' '.theme-swatch[data-theme="violet"]' 'restore-violet'
 GotoToday
 
 $ws.Dispose()
-Get-Process tokenstep -ErrorAction SilentlyContinue | Stop-Process -Force
+cmd /c "taskkill /F /T /IM tokenstep.exe" 2>&1 | Out-Null
 Write-Output 'E2E-SHOTS DONE'

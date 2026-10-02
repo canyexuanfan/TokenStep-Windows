@@ -2328,12 +2328,15 @@ function rhythmAreaHTML(rhythm) {
     var hour = String(rhythm.peak_hour).padStart(2, "0") + ":00";
     // Keep the tooltip inside the plot horizontally.
     var cx = Math.max(34, Math.min(W - 34, pp.x));
+    // Theme-aware surfaces: classic light stays pixel-identical (#fff/#9ca3af/
+    // #1f2937 are exactly the light themeColors), dark skin packs get a dark
+    // glass chip instead of the brightest white block on screen (polish #2).
     overlay =
-      '<circle cx="' + pp.x.toFixed(1) + '" cy="' + pp.y.toFixed(1) + '" r="5" fill="' + green + '" stroke="#fff" stroke-width="2.5"/>' +
+      '<circle cx="' + pp.x.toFixed(1) + '" cy="' + pp.y.toFixed(1) + '" r="5" fill="' + green + '" stroke="' + themeColors.surface + '" stroke-width="2.5"/>' +
       '<g transform="translate(' + cx.toFixed(1) + ',' + Math.max(2, pp.y - 24).toFixed(1) + ')">' +
-        '<rect x="-30" y="-13" width="60" height="26" rx="7" fill="#fff" stroke="rgba(0,0,0,0.07)"/>' +
-        '<text x="0" y="-2" text-anchor="middle" font-size="8.5" font-weight="600" fill="#9ca3af">' + hour + '</text>' +
-        '<text x="0" y="9" text-anchor="middle" font-size="9.5" font-weight="800" fill="#1f2937">' + label + '</text>' +
+        '<rect x="-30" y="-13" width="60" height="26" rx="7" fill="' + themeColors.surface + '" stroke="' + themeColors.mutedFaint + '" stroke-opacity="0.5"/>' +
+        '<text x="0" y="-2" text-anchor="middle" font-size="8.5" font-weight="600" fill="' + themeColors.mutedFaint + '">' + hour + '</text>' +
+        '<text x="0" y="9" text-anchor="middle" font-size="9.5" font-weight="800" fill="' + themeColors.ink + '">' + label + '</text>' +
       '</g>';
   }
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="display:block;width:100%;height:100%">' +
@@ -2676,8 +2679,7 @@ const THEME_MANAGED_KEYS = [
 function applyTheme(name, odysseyChapter) {
   const theme = resolveTheme(name, odysseyChapter);
   const root = document.documentElement;
-  const v = theme.vars;
-  // Clear EVERY theme-managed key before applying the new set: classic colors
+  const v = theme.vars;  // Clear EVERY theme-managed key before applying the new set: classic colors
   // rely on app.css's light :root defaults, and any survivor would darken or
   // ghost them (upstream/old behavior: classic = plain light palette).
   for (const key of THEME_MANAGED_KEYS) {
@@ -2709,6 +2711,7 @@ function applyTheme(name, odysseyChapter) {
     root.removeAttribute("data-skin-pack");
     root.removeAttribute("data-skin-chapter");
   }
+  ensureSkinFx();
   // Sync the raw-color cache so SVG/Canvas/contributionColor pick up the theme.
   themeColors.canvas = v["--canvas"];
   themeColors.surface = v["--surface"];
@@ -2729,6 +2732,62 @@ function applyTheme(name, odysseyChapter) {
   themeColors.ring2 = v["--ring2"];
   themeColors.ring3 = v["--ring3"];
   themeColors.ring4 = v["--ring4"];
+}
+
+// ---- Skin pack ambient motion (port of upstream v0.2.5/v0.2.7 motion tiers) ----
+// Upstream: Trojan Inferno flame flicker + embers (v0.2.5), Event Horizon slow
+// phase drift + cusp breathing at ≤24 fps (v0.2.7). The web port keeps the
+// same pause discipline — motion only while a skin pack is active AND the
+// window is focused AND the OS allows it:
+//   - prefers-reduced-motion → animations never start (CSS media query)
+//   - window blur / document hidden → html.motion-paused freezes play state
+//   - share cards keep drawing their own static canvas (unchanged, upstream
+//     "deterministic static background" rule)
+// Only opacity/transform animate → compositor-only, no layout/paint storms
+// (低资源硬规则 §6). Layers live at z-index:-1: above the body plate, below
+// all content, so the glow breathes through the glass cards too.
+const SKIN_FX_GLOW_ID = "skinFxGlow";
+const SKIN_FX_EMBERS_ID = "skinFxEmbers";
+let skinFxListenersBound = false;
+
+function ensureSkinFx() {
+  if (typeof document === "undefined" || !document.body) {
+    return;
+  }
+  const root = document.documentElement;
+  let glow = document.getElementById(SKIN_FX_GLOW_ID);
+  if (!glow) {
+    glow = document.createElement("div");
+    glow.id = SKIN_FX_GLOW_ID;
+    glow.setAttribute("aria-hidden", "true");
+    document.body.appendChild(glow);
+  }
+  let embers = document.getElementById(SKIN_FX_EMBERS_ID);
+  if (!embers) {
+    embers = document.createElement("div");
+    embers.id = SKIN_FX_EMBERS_ID;
+    embers.setAttribute("aria-hidden", "true");
+    document.body.appendChild(embers);
+  }
+  if (!skinFxListenersBound) {
+    skinFxListenersBound = true;
+    const setPaused = () => {
+      const hidden = typeof document !== "undefined" && document.hidden;
+      root.classList.toggle("motion-paused", hidden || !root.hasAttribute("data-skin-pack"));
+    };
+    window.addEventListener("blur", setPaused);
+    window.addEventListener("focus", setPaused);
+    if (typeof document !== "undefined" && document.addEventListener) {
+      document.addEventListener("visibilitychange", setPaused);
+    }
+    window.__tsSkinFxSetPaused = setPaused;
+  }
+  // Re-judge on EVERY applyTheme: the paused class must track the current
+  // pack immediately (classic → paused; pack while focused → running), not
+  // wait for the next blur/focus event.
+  if (typeof window !== "undefined" && typeof window.__tsSkinFxSetPaused === "function") {
+    window.__tsSkinFxSetPaused();
+  }
 }
 
 // ---- Agent Work card (design-sheet layout) ----
