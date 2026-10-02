@@ -343,6 +343,131 @@ function drawShareCardSurface(ctx, x, y, w, h, padding, radius) {
 // Mac original is 600×840 but only fits its own blocks; this port adds the
 // front-end-only lap-chips / pills / metric-strip, so the canvas grows taller
 // to keep every block at its true macOS metrics (no squashing).
+// ---- Phase 4: Odyssey chapter badges (VoyageSkin.swift:668-842) ----
+// Three relief SVGs ported 1:1 from the upstream Canvas paths: coordinates
+// are the upstream fractions ×100 on a 0 0 100 100 viewBox; fixed fills are
+// upstream literals; strokes follow the pack's --green/--green-dark exactly
+// like Color.tokenGreen/tokenGreenDark do upstream. Mane uses the cinematic
+// tokenWarning literal rgb(218,139,67) (Formatters.swift:148-152). Which
+// badge is visible is CSS-gated by html[data-skin-pack][data-skin-chapter] —
+// classic never shows one. Absolute point offsets from the upstream code
+// (e.g. crack "-9/+4") are carried over as viewBox units.
+function badgeHelmetSvg() {
+  let pills = "";
+  for (let i = 0; i < 9; i++) {
+    const p = i / 8;
+    const cx = 28 + p * 18;
+    const cy = 40 + p * 46;
+    const w = 6.5 - p * 1.8;
+    pills += '<rect x="' + (cx - w / 2).toFixed(2) + '" y="' + (cy - 2.5).toFixed(2) +
+      '" width="' + w.toFixed(2) + '" height="5" rx="2.5" fill="var(--green-dark)" fill-opacity="0.70" stroke="var(--green)" stroke-opacity="0.38" stroke-width="0.7"/>';
+  }
+  return '<svg data-motif="helmet" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">' +
+    '<path d="M18,54 C26,8 62,4 77,22 C67,25 57,34 48,42 Z" fill="rgb(120,148,163)" fill-opacity="0.28"/>' +
+    '<path d="M28,83 L30,47 C43,31 68,32 78,52 L63,62 L56,90 L43,74 Z" fill="rgb(65,83,94)" fill-opacity="0.62" stroke="var(--green-dark)" stroke-opacity="0.54" stroke-width="1.6" stroke-linejoin="round"/>' +
+    '<path d="M47,53 L72,51 L57,65" fill="none" stroke="var(--green)" stroke-opacity="0.48" stroke-width="1.5" stroke-linejoin="round"/>' +
+    pills + "</svg>";
+}
+
+function badgeHorseSvg() {
+  const legs = [0.27, 0.39, 0.55, 0.64].map(function (x) {
+    return '<rect x="' + x * 100 + '" y="65" width="5.5" height="25" rx="2" fill="rgb(55,36,25)" fill-opacity="0.82" stroke="var(--green)" stroke-opacity="0.32" stroke-width="1"/>';
+  }).join("");
+  let planks = "";
+  let mane = "";
+  for (let i = 1; i < 6; i++) {
+    const y = 42 + i * 4.5;
+    planks += '<path d="M26,' + y + " L63," + (y - 2) + '" stroke="var(--green-dark)" stroke-opacity="0.17" stroke-width="0.8"/>';
+  }
+  for (let i = 1; i < 6; i++) {
+    const y = 19 + i * 4.3;
+    mane += '<path d="M67,' + y + " L" + (62 - (i % 2) * 1.6) + "," + (y + 2.5) + '" stroke="rgb(218,139,67)" stroke-opacity="0.55" stroke-width="1.5"/>';
+  }
+  return '<svg data-motif="horse" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">' +
+    '<rect x="20" y="42" width="48" height="27" rx="3.5" fill="rgb(63,42,28)" fill-opacity="0.74" stroke="var(--green)" stroke-opacity="0.48" stroke-width="1.5"/>' +
+    '<path d="M59,48 L68,20 L82,25 L78,36 L69,37 L66,57 Z" fill="rgb(55,36,25)" fill-opacity="0.78" stroke="var(--green)" stroke-opacity="0.52" stroke-width="1.4" stroke-linejoin="round"/>' +
+    legs + planks + mane +
+    '<path d="M20,50 C10,43 16,68 10,76" fill="none" stroke="var(--green)" stroke-opacity="0.44" stroke-width="5" stroke-linecap="round"/>' +
+    "</svg>";
+}
+
+function badgeMarbleSvg() {
+  let cracks = "";
+  for (let i = 0; i < 5; i++) {
+    const sx = 40 + i * 5.5;
+    const sy = 20 + (i % 2) * 11;
+    cracks += '<path d="M' + sx + "," + sy + " L" + (sx - 9) + "," + (sy + 13) + " L" + (sx + 4) + "," + (sy + 23) + '" fill="none" stroke="black" stroke-opacity="0.28" stroke-width="0.9"/>';
+  }
+  return '<svg data-motif="marble" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">' +
+    '<ellipse cx="49" cy="35" rx="18" ry="23" fill="rgb(196,199,195)" fill-opacity="0.34"/>' +
+    '<path d="M56,20 C65,25 62,34 69,39 L76,43 L65,47 C64,52 60,56 55,58" fill="none" stroke="rgb(196,199,195)" stroke-opacity="0.58" stroke-width="1.8" stroke-linecap="round"/>' +
+    '<path d="M16,91 C23,61 76,61 84,91 Z" fill="rgb(196,199,195)" fill-opacity="0.24" stroke="var(--green)" stroke-opacity="0.25" stroke-width="1.2"/>' +
+    cracks +
+    '<ellipse cx="64" cy="34.5" rx="2" ry="1.5" fill="var(--green-dark)" fill-opacity="0.38"/>' +
+    "</svg>";
+}
+
+// directorsCut/aegeanMist → helmet, trojanInferno → horse, ashMarble →
+// marble (OdysseySurfaceEmblem switch, VoyageSkin.swift:594-609 + the
+// chapter.motif mapping in Theme.swift).
+const ODYSSEY_BADGES = { helmet: badgeHelmetSvg, horse: badgeHorseSvg, marble: badgeMarbleSvg };
+const CHAPTER_MOTIFS = { directors_cut: "helmet", aegean_mist: "helmet", trojan_inferno: "horse", ash_marble: "marble" };
+// Upstream edition labels — fixed brand strings (Theme.swift:104-112), not
+// localized there either.
+const EDITION_LABELS = {
+  directors_cut: "ODYSSEY · DIRECTOR'S CUT",
+  aegean_mist: "ODYSSEY · AEGEAN MIST",
+  trojan_inferno: "ODYSSEY · TROJAN INFERNO",
+  ash_marble: "ODYSSEY · ASH & MARBLE",
+};
+
+// Deterministic plate + veil backdrop for share cards (upstream A15: the
+// card gets the same skin frame the window shows, frozen — motion is already
+// paused during export). Dashboard-role stack: 135deg fog .05→.30 + veil .28
+// + bottom fade .22 for the horizon pack; odyssey uses its left scrim
+// (black .04 → canvas .08/.34/.58) + top/bottom (.12/.48) per
+// VoyageSkin.swift:321-340. Draws nothing when no pack plate is preloaded,
+// so classic keeps the flat canvas backdrop.
+function drawSkinCardBackdrop(ctx, W, H) {
+  const skin = (typeof window !== "undefined" && window.TS && window.TS.activeSkin) || null;
+  const plate = (typeof window !== "undefined" && window.__tsSkinPlate) || null;
+  if (!skin || skin.pack === "classic" || !plate || !plate.img || !plate.img.complete || !plate.img.naturalWidth) return;
+  const s = Math.max(W / plate.img.naturalWidth, H / plate.img.naturalHeight);
+  const dw = plate.img.naturalWidth * s;
+  const dh = plate.img.naturalHeight * s;
+  ctx.drawImage(plate.img, (W - dw) * plate.alignX, (H - dh) * plate.alignY, dw, dh);
+  if (skin.pack === "voyage") {
+    const canvasHex = themeColors.canvas || "#0a0908";
+    const left = ctx.createLinearGradient(0, 0, W, 0);
+    left.addColorStop(0, "rgba(0,0,0,0.04)");
+    left.addColorStop(1 / 3, hexA(canvasHex, 0.08));
+    left.addColorStop(2 / 3, hexA(canvasHex, 0.34));
+    left.addColorStop(1, hexA(canvasHex, 0.58));
+    ctx.fillStyle = left;
+    ctx.fillRect(0, 0, W, H);
+    const topBottom = ctx.createLinearGradient(0, 0, 0, H);
+    topBottom.addColorStop(0, hexA(canvasHex, 0.12));
+    topBottom.addColorStop(0.5, "rgba(0,0,0,0)");
+    topBottom.addColorStop(1, hexA(canvasHex, 0.48));
+    ctx.fillStyle = topBottom;
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    const fog = ctx.createLinearGradient(0, 0, W, H);
+    fog.addColorStop(0, "rgba(0,0,0,0.05)");
+    fog.addColorStop(0.5, "rgba(0,0,0,0)");
+    fog.addColorStop(1, "rgba(4,7,12,0.30)");
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillRect(0, 0, W, H);
+    const fade = ctx.createLinearGradient(0, H * 0.55, 0, H);
+    fade.addColorStop(0, "rgba(0,0,0,0)");
+    fade.addColorStop(1, "rgba(0,0,0,0.22)");
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, H * 0.55, W, H * 0.45);
+  }
+}
+
 function renderShareDailyCard(canvas, opts) {
   const ctx = canvas.getContext("2d");
   _ensureRoundRect(ctx);
@@ -434,6 +559,9 @@ function renderShareDailyCard(canvas, opts) {
   tint.addColorStop(1, hexA(C.green, 0.025));
   ctx.fillStyle = tint;
   ctx.fillRect(0, 0, W, H);
+  // Phase 4 (upstream A15): cinematic packs draw the frozen plate + veil
+  // behind the panels; classic keeps the flat backdrop above.
+  drawSkinCardBackdrop(ctx, W, H);
 
   // ── Header: mark(42) + brand (left) | mode title + date (right). ──
   drawTokenStepMark(ctx, pad, pad, 42);
@@ -679,6 +807,9 @@ function renderTodayOverview(canvas, opts) {
   tint.addColorStop(1, hexA(C.green, 0.025));
   ctx.fillStyle = tint;
   ctx.fillRect(0, 0, W, H);
+  // Phase 4 (upstream A15): cinematic packs draw the frozen plate + veil
+  // behind the panels; classic keeps the flat backdrop above.
+  drawSkinCardBackdrop(ctx, W, H);
 
   // ── Header. ──
   drawTokenStepMark(ctx, pad, pad, 48);
@@ -2711,6 +2842,10 @@ function applyTheme(name, odysseyChapter) {
     root.removeAttribute("data-skin-pack");
     root.removeAttribute("data-skin-chapter");
   }
+  // Phase 2 (upstream InterstellarMotionMode): reflect the motion mode only
+  // while a skin pack is active — classic never carries the attribute, so no
+  // mode-scoped CSS can reach the classic render path.
+  syncSkinMotionMode();
   ensureSkinFx();
   // Sync the raw-color cache so SVG/Canvas/contributionColor pick up the theme.
   themeColors.canvas = v["--canvas"];
@@ -2732,6 +2867,57 @@ function applyTheme(name, odysseyChapter) {
   themeColors.ring2 = v["--ring2"];
   themeColors.ring3 = v["--ring3"];
   themeColors.ring4 = v["--ring4"];
+  // ---- Phase 4: active-skin descriptor + edition line + plate preloader ----
+  // The descriptor drives the header edition line (TokenStepBrandLockup,
+  // VoyageSkin.swift:253-279) and the deterministic share-card backdrop; the
+  // plate Image is preloaded once per theme so card export stays synchronous.
+  const skinPack = name === "voyage" ? "voyage" : name === "event_horizon" ? "interstellar" : "classic";
+  const skinChapter = skinPack === "voyage"
+    ? Object.keys(ODYSSEY_CHAPTERS).find((k) => ODYSSEY_CHAPTERS[k] === theme) || ""
+    : "";
+  window.TS.activeSkin = { pack: skinPack, chapter: skinChapter };
+  const editionText = skinPack === "interstellar"
+    ? "GRAVITY · EVENT HORIZON"
+    : skinPack === "voyage"
+      ? EDITION_LABELS[skinChapter] || ""
+      : "";
+  // Replayable: the header DOM (and #brandEditionText) may not exist yet when
+  // the startup applyTheme() runs, so stash the text and let syncEditionLine()
+  // apply it once the header is built (index.html calls it after innerHTML).
+  window.__tsEditionText = editionText;
+  if (typeof window !== "undefined" && typeof window.TS !== "undefined" && typeof window.TS.syncEditionLine === "function") {
+    window.TS.syncEditionLine();
+  }
+  if (skinPack !== "classic" && (v["--skin-art"] || v["--skin-art-quiet"])) {
+    const m = (v["--skin-art"] || "").match(/url\(["']?([^"')]+)["']?\)/);
+    if (m && typeof Image !== "undefined") {
+      const img = new Image();
+      img.src = m[1];
+      const one = (tok) => {
+        const t2 = String(tok || "").toLowerCase();
+        if (t2 === "left" || t2 === "top") return 0;
+        if (t2 === "right" || t2 === "bottom") return 1;
+        if (t2.endsWith("%")) return Math.min(1, Math.max(0, parseFloat(t2) / 100));
+        return 0.5;
+      };
+      const align = String(v["--skin-art-position"] || "center center").trim().split(/\s+/);
+      window.__tsSkinPlate = { img, alignX: one(align[0]), alignY: one(align[1] || align[0]) };
+    }
+  } else {
+    window.__tsSkinPlate = null;
+  }
+}
+
+// ---- Header edition line (Phase 4 brand lockup, VoyageSkin.swift:253-279) ----
+// applyTheme() may run before the header exists; index.html calls this after
+// building the header (and after every render) so the edition text always
+// lands.
+function syncEditionLine() {
+  if (typeof document === "undefined" || !document.body) return;
+  const el = document.getElementById("brandEditionText");
+  if (el && el.textContent !== (window.__tsEditionText || "")) {
+    el.textContent = window.__tsEditionText || "";
+  }
 }
 
 // ---- Skin pack ambient motion (port of upstream v0.2.5/v0.2.7 motion tiers) ----
@@ -2788,6 +2974,798 @@ function ensureSkinFx() {
   if (typeof window !== "undefined" && typeof window.__tsSkinFxSetPaused === "function") {
     window.__tsSkinFxSetPaused();
   }
+  ensureSkinFxLayers();
+  bindSkinFxCanvasLoop();
+}
+
+// ---- Skin pack motion modes (Phase 2, upstream v0.2.14 InterstellarMotionLab) ----
+// Upstream InterstellarMotionMode (swift:4-69): quiet/orbit/gravity_tide with
+// fps 12/24/24, ambientIntensity 0.85/1.0/1.15, starCount 0/10/16, hotspot on
+// unless quiet, approach dolly only for gravity_tide. The mode reaches CSS via
+// html[data-skin-motion] (set ONLY under data-skin-pack — classic keeps no
+// attribute) and drives the deterministic canvas star/hotspot engine below.
+const SKIN_MOTION_MODES = ["quiet", "orbit", "gravity_tide"];
+const SKIN_MOTION_STAR_COUNTS = { quiet: 0, orbit: 10, gravity_tide: 16 };
+let skinMotionMode = "orbit";
+
+function normalizeSkinMotionMode(mode) {
+  return SKIN_MOTION_MODES.includes(mode) ? mode : "orbit";
+}
+
+function syncSkinMotionMode() {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (root.hasAttribute("data-skin-pack")) {
+    root.setAttribute("data-skin-motion", skinMotionMode);
+  } else {
+    root.removeAttribute("data-skin-motion");
+  }
+}
+
+function setSkinMotionMode(mode) {
+  skinMotionMode = normalizeSkinMotionMode(mode);
+  syncSkinMotionMode();
+  return skinMotionMode;
+}
+
+// Deterministic PRNG — the upstream seeded() (InterstellarMotionLab.swift:433-436):
+// frac(sin((value + 1) * multiplier) * 43758.5453). No Math.random on the
+// render path: identical seeds render identical star fields every session.
+function skinFxSeeded(value, multiplier) {
+  const raw = Math.sin((value + 1) * multiplier) * 43758.5453;
+  return raw - Math.floor(raw);
+}
+
+// Hotspot cubic bezier — upstream fractions (swift:187-197 hotspotPoint):
+// (0.26,-0.05) → c1 (0.43,0.12) → c2 (0.70,-0.02) → (1.05,0.38).
+function skinFxHotspotPoint(t) {
+  const inv = 1 - t;
+  const a = inv * inv * inv;
+  const b = 3 * inv * inv * t;
+  const c = 3 * inv * t * t;
+  const d = t * t * t;
+  return {
+    x: a * 0.26 + b * 0.43 + c * 0.7 + d * 1.05,
+    y: a * -0.05 + b * 0.12 + c * -0.02 + d * 0.38,
+  };
+}
+
+const SKIN_FX_FLOW_ID = "skinFxFlow";
+const SKIN_FX_STARS_ID = "skinFxStars";
+const SKIN_FX_PLATE_ID = "skinFxPlate";
+const SKIN_FX_FLAME_ID = "skinFxFlame";
+const SKIN_FX_PARTICLES_ID = "skinFxParticles";
+let skinFxCanvasLoopBound = false;
+let skinFxResizeBound = false;
+
+// Layers beyond the Phase-1 glow/embers pair: the ribbon flow (CSS-only
+// transforms), the meteors/hotspot canvas (ONE canvas, never N DOM nodes)
+// and the approach-dolly plate mirror. All aria-hidden, pointer-events:none,
+// painted at negative z-index above the body plate, below all content.
+function ensureSkinFxLayers() {
+  if (typeof document === "undefined" || !document.body) {
+    return;
+  }
+  if (!document.getElementById(SKIN_FX_FLOW_ID)) {
+    const flow = document.createElement("div");
+    flow.id = SKIN_FX_FLOW_ID;
+    flow.setAttribute("aria-hidden", "true");
+    for (let i = 0; i < 3; i++) {
+      const band = document.createElement("div");
+      band.className = "ts-filament ts-filament-" + i;
+      flow.appendChild(band);
+    }
+    const beam = document.createElement("div");
+    beam.className = "ts-beamline";
+    flow.appendChild(beam);
+    document.body.appendChild(flow);
+  }
+  if (!document.getElementById(SKIN_FX_STARS_ID)) {
+    const canvas = document.createElement("canvas");
+    canvas.id = SKIN_FX_STARS_ID;
+    canvas.setAttribute("aria-hidden", "true");
+    document.body.appendChild(canvas);
+  }
+  if (!document.getElementById(SKIN_FX_PLATE_ID)) {
+    const plate = document.createElement("div");
+    plate.id = SKIN_FX_PLATE_ID;
+    plate.setAttribute("aria-hidden", "true");
+    document.body.appendChild(plate);
+  }
+  if (!document.getElementById(SKIN_FX_FLAME_ID)) {
+    const flame = document.createElement("canvas");
+    flame.id = SKIN_FX_FLAME_ID;
+    flame.setAttribute("aria-hidden", "true");
+    document.body.appendChild(flame);
+  }
+  if (!document.getElementById(SKIN_FX_PARTICLES_ID)) {
+    const particles = document.createElement("canvas");
+    particles.id = SKIN_FX_PARTICLES_ID;
+    particles.setAttribute("aria-hidden", "true");
+    document.body.appendChild(particles);
+  }
+  if (!skinFxResizeBound && typeof window !== "undefined") {
+    skinFxResizeBound = true;
+    window.addEventListener("resize", () => {
+      const canvas = document.getElementById(SKIN_FX_STARS_ID);
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+      trojanShaderViewDirty = true;
+    });
+    // Visibility gate (upstream OdysseySurfaceVisibilityReader parity):
+    // IntersectionObserver on the particle layer + the existing
+    // motion-paused/document.hidden discipline — the fire only burns while
+    // its canvas is genuinely on screen.
+    if (typeof IntersectionObserver === "function") {
+      const particles = document.getElementById(SKIN_FX_PARTICLES_ID);
+      if (particles) {
+        new IntersectionObserver((entries) => {
+          trojanIntersectionVisible = entries.some((e) => e.isIntersecting);
+        }).observe(particles);
+      }
+    }
+  }
+}
+
+const SKIN_FX_FRAME_MS = 1000 / 24; // upstream orbit/tide tier (swift:19-24)
+const SKIN_FX_WARM_WHITE = "255, 246, 219"; // swift warmWhite (1.0, 0.965, 0.86)
+const SKIN_FX_STAR_WHITE = "255, 247, 224"; // swift star fill (1.0, 0.97, 0.88)
+const SKIN_FX_CHAMPAGNE = "224, 207, 169"; // swift champagne
+
+// One deterministic frame: falling stars (swift:414-456) + the hotspot orbit
+// (swift:340-381). All parameters are the upstream constants; timing derives
+// from the sampled instant, so any two runs at the same t render identically.
+function drawSkinFxFrame(now) {
+  const canvas = document.getElementById(SKIN_FX_STARS_ID);
+  if (!canvas || typeof canvas.getContext !== "function") return;
+  const root = document.documentElement;
+  const mode = root.getAttribute("data-skin-motion") || "orbit";
+  const dpr = Math.min(2, (typeof window !== "undefined" && window.devicePixelRatio) || 1);
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (!w || !h) return;
+  if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+  }
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (mode === "quiet") return; // starCount 0 + hotspot hidden (swift:50-66)
+  const t = now / 1000;
+  ctx.globalCompositeOperation = "screen";
+  // Falling stars: starPhase period 11s offset 7 (swift:161), gravity pow 1.65.
+  const starPhase = ((t + 7) % 11) / 11;
+  const count = SKIN_MOTION_STAR_COUNTS[mode] || 0;
+  for (let i = 0; i < count; i++) {
+    const seedX = skinFxSeeded(i, 12.9898);
+    const seedY = skinFxSeeded(i + 17, 78.233);
+    let progress = (starPhase + seedX) % 1;
+    if (progress < 0) progress += 1;
+    const gravity = Math.pow(progress, 1.65);
+    const startY = 0.03 + seedY * 0.24;
+    const endY = 0.1 + seedY * 0.09;
+    const oscillation = Math.sin((progress + seedY) * 2 * Math.PI) * 0.018 * (1 - progress);
+    const x = w * (0.96 - progress * 0.7);
+    const y = h * (startY * (1 - gravity) + endY * gravity + oscillation);
+    const visibility = Math.max(0, Math.sin(Math.PI * progress));
+    const radius = 1.0 + seedX * 1.7;
+    ctx.beginPath();
+    ctx.ellipse(x, y, radius, radius, 0, 0, 2 * Math.PI);
+    ctx.fillStyle =
+      "rgba(" + SKIN_FX_STAR_WHITE + "," + (visibility * (0.3 + seedY * 0.5)).toFixed(4) + ")";
+    ctx.fill();
+  }
+  // Hotspot: 8s period (swift:119), fade in over phase .08, out from .95.
+  const phase = (t % 8) / 8;
+  const fadeIn = Math.min(1, phase / 0.08);
+  const fadeOut = Math.min(1, Math.max(0, (0.95 - phase) / 0.18));
+  const fade = Math.min(fadeIn, fadeOut);
+  if (fade > 0) {
+    const tailWidth = mode === "gravity_tide" ? 3.0 : 2.4;
+    const tailFrom = Math.max(0, phase - 0.12);
+    ctx.beginPath();
+    for (let s = 0; s <= 24; s++) {
+      const tt = tailFrom + ((phase - tailFrom) * s) / 24;
+      const p = skinFxHotspotPoint(tt);
+      if (s === 0) ctx.moveTo(w * p.x, h * p.y);
+      else ctx.lineTo(w * p.x, h * p.y);
+    }
+    ctx.strokeStyle = "rgba(" + SKIN_FX_WARM_WHITE + "," + (0.42 * fade).toFixed(4) + ")";
+    ctx.lineWidth = tailWidth;
+    ctx.lineCap = "round";
+    ctx.shadowColor = "rgba(" + SKIN_FX_CHAMPAGNE + "," + (0.24 * fade).toFixed(4) + ")";
+    ctx.shadowBlur = 3;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    const point = skinFxHotspotPoint(phase);
+    const px = w * point.x;
+    const py = h * point.y;
+    // 34×19 radial halo (endRadius 16, three evenly-spaced stops, swift:367-377).
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(17 / 16, 9.5 / 16);
+    const halo = ctx.createRadialGradient(0, 0, 0.5, 0, 0, 16);
+    halo.addColorStop(0, "rgba(" + SKIN_FX_WARM_WHITE + "," + (0.75 * fade).toFixed(4) + ")");
+    halo.addColorStop(0.5, "rgba(" + SKIN_FX_CHAMPAGNE + "," + (0.28 * fade).toFixed(4) + ")");
+    halo.addColorStop(1, "rgba(" + SKIN_FX_CHAMPAGNE + ",0)");
+    ctx.beginPath();
+    ctx.arc(0, 0, 16, 0, 2 * Math.PI);
+    ctx.fillStyle = halo;
+    ctx.fill();
+    ctx.restore();
+    // 4×2.4 white-hot core with the 4px warm shadow (swift:379-384).
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.shadowColor = "rgba(" + SKIN_FX_WARM_WHITE + "," + (0.8 * fade).toFixed(4) + ")";
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 2.0, 1.2, 0, 0, 2 * Math.PI);
+    ctx.fillStyle = "rgba(" + SKIN_FX_WARM_WHITE + "," + (0.95 * fade).toFixed(4) + ")";
+    ctx.fill();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
+
+// Single rAF driver for the canvas layer, throttled to the upstream 24fps
+// tier. Pause discipline mirrors the CSS layers: classic / motion-paused
+// (window blur, document hidden) skips all work and keeps the last frame.
+function bindSkinFxCanvasLoop() {
+  if (skinFxCanvasLoopBound || typeof requestAnimationFrame !== "function") return;
+  skinFxCanvasLoopBound = true;
+  let lastDraw = 0;
+  const frame = (now) => {
+    requestAnimationFrame(frame);
+    const root = document.documentElement;
+    if (!root.hasAttribute("data-skin-pack") || root.classList.contains("motion-paused")) {
+      lastDraw = now;
+      return;
+    }
+    if (now - lastDraw < SKIN_FX_FRAME_MS) return;
+    lastDraw = now;
+    drawSkinFxFrame(now);
+    // Phase 3: trojan fire (shader + 8-emitter particles) rides the SAME rAF
+    // driver and the same 24fps throttle; it no-ops outside the trojan chapter.
+    drawTrojanFireFrame(now);
+  };
+  requestAnimationFrame(frame);
+}
+
+// ---- Phase 3: Trojan Inferno fire (upstream v0.2.14 OdysseyParticleScene) ----
+// [1] The GLSL fire shader (swift:414-445) replays the chapter plate on a
+// WebGL canvas with UV distortion + heat flicker — the CSS --skin-art plate
+// underneath stays as the zero-cost fallback when WebGL is unavailable.
+// [2] The 8-emitter particle engine (layout swift:359-382, birth rates
+// swift:110-120, recipes swift:214-335) draws on ONE 2D canvas, ≤300 live
+// particles. [3] Visibility = pack + trojan chapter + focus/visible
+// (motion-paused) + IntersectionObserver + reduced-motion; quiet halves the
+// intensity (swift:110-120 particleIntensity semantics). SpriteKit is Y-up,
+// so emitter y fractions flip into canvas top-down space.
+const TROJAN_CHAPTER_KEY = "trojan_inferno";
+const TROJAN_PARTICLE_CAP = 300;
+const TROJAN_FIRE_DT_CLAMP = 0.25; // upstream fire-clock clamp (swift:92)
+const TROJAN_PREWARM_SECONDS = 2.4; // upstream advanceSimulationTime (swift:131)
+const TROJAN_RAMP_STEPS = 8; // quantized color-ramp sprites per emitter
+let trojanIntersectionVisible = true;
+let trojanShaderViewDirty = true;
+let trojanEngine = null;
+
+// Emiters in draw order (upstream zPosition smoke 0 < fire 10 < spark 20 <
+// ember 30, swift:187-190). Positions/ranges are fractions of the plate
+// display size; rates ×intensity; y fractions are SpriteKit bottom-up.
+const TROJAN_EMITTERS = [
+  { kind: "smoke", x: 0.62, y: 0.11, dx: 0.48, dy: 0.09, rate: 0.68,
+    lifetime: 5.6, lifetimeRange: 1.4, angle: Math.PI * 0.58, angleRange: Math.PI * 0.16,
+    speed: 18, speedRange: 7, ax: 2.5, ay: 1.5,
+    alpha: 0.20, alphaRange: 0.06, alphaSpeed: -0.025,
+    scale: 1.05, scaleRange: 0.30, scaleSpeed: 0.15,
+    rotRange: Math.PI, rotSpeed: 0.04, blend: "source-over", tex: "smoke",
+    colors: [[0.20, 0.12, 0.09, 0.72], [0.10, 0.09, 0.09, 0.44], [0.06, 0.06, 0.06, 0]] },
+  { kind: "fire", id: "mane", x: 0.62, y: 0.71, dx: 0.11, dy: 0.23, rate: 7.2, scale: 0.30, lifetime: 0.92, speed: 34, drift: -4 },
+  { kind: "fire", id: "back", x: 0.42, y: 0.43, dx: 0.07, dy: 0.20, rate: 5.8, scale: 0.27, lifetime: 0.86, speed: 30, drift: -6 },
+  { kind: "fire", id: "leg", x: 0.62, y: 0.17, dx: 0.32, dy: 0.05, rate: 6.8, scale: 0.29, lifetime: 0.88, speed: 31, drift: 2 },
+  { kind: "fire", id: "right", x: 0.89, y: 0.34, dx: 0.045, dy: 0.44, rate: 5.8, scale: 0.27, lifetime: 0.84, speed: 29, drift: -5 },
+  { kind: "fire", id: "ground", x: 0.66, y: 0.035, dx: 0.58, dy: 0.025, rate: 8.4, scale: 0.24, lifetime: 0.78, speed: 25, drift: -2 },
+  { kind: "spark", x: 0.62, y: 0.18, dx: 0.48, dy: 0.30, rate: 6.4,
+    lifetime: 2.5, lifetimeRange: 0.7, angle: Math.PI * 0.54, angleRange: Math.PI * 0.22,
+    speed: 72, speedRange: 26, ax: -5, ay: 4,
+    alpha: 0.80, alphaRange: 0.18, alphaSpeed: -0.27,
+    scale: 0.20, scaleRange: 0.10, scaleSpeed: -0.025,
+    rotRange: 0, rotSpeed: 0, blend: "lighter", tex: "spark",
+    colors: [[1.00, 0.72, 0.34, 0.94], [0.95, 0.35, 0.08, 0.72], [0.55, 0.11, 0.03, 0]] },
+  { kind: "ember", x: 0.64, y: 0.25, dx: 0.52, dy: 0.38, rate: 0.82,
+    lifetime: 4.2, lifetimeRange: 1.2, angle: Math.PI * 0.57, angleRange: Math.PI * 0.26,
+    speed: 34, speedRange: 13, ax: -2, ay: 1,
+    alpha: 0.48, alphaRange: 0.15, alphaSpeed: -0.10,
+    scale: 0.15, scaleRange: 0.07, scaleSpeed: -0.012,
+    rotRange: 0, rotSpeed: 0, blend: "lighter", tex: "ember",
+    colors: [[0.96, 0.48, 0.12, 0.76], [0.68, 0.20, 0.05, 0.48], [0.30, 0.07, 0.02, 0]] },
+];
+// Shared five-flame recipe (swift:243-282): angle π/2 ± .14π, speed ±9,
+// yAcceleration 4, alpha .34±.08 with keyframes [0,.38,.24,0], scale keyframes
+// [.72,1,.66], rotation .18/.07, add blend, gold→deep-orange→dark-red ramp.
+const TROJAN_FIRE_RECIPE = {
+  lifetimeRange: 0.22, angle: Math.PI / 2, angleRange: Math.PI * 0.14,
+  speedRange: 9, ay: 4,
+  alpha: 0.34, alphaRange: 0.08,
+  alphaSeq: { values: [0, 0.38, 0.24, 0], times: [0, 0.16, 0.68, 1] },
+  scaleRange: 0.08,
+  scaleSeq: { values: [0.72, 1, 0.66], times: [0, 0.40, 1] },
+  rotRange: 0.18, rotSpeed: 0.07, blend: "lighter", tex: "flame",
+  colors: [[0.98, 0.63, 0.22, 0.88], [0.88, 0.25, 0.06, 0.70], [0.34, 0.08, 0.03, 0]],
+};
+
+// Deterministic PRNG (mulberry32, fixed seed) — no Math.random on the render
+// path; identical seeds rebuild identical burn patterns every session.
+function trojanRng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function trojanSeqValue(seq, f) {
+  const times = seq.times;
+  if (f <= times[0]) return seq.values[0];
+  for (let i = 1; i < times.length; i++) {
+    if (f <= times[i]) {
+      const u = (f - times[i - 1]) / (times[i] - times[i - 1]);
+      return seq.values[i - 1] + (seq.values[i] - seq.values[i - 1]) * u;
+    }
+  }
+  return seq.values[seq.values.length - 1];
+}
+
+// Color ramps run over times [0, 0.52, 1] (swift:352-360 colorSequence).
+function trojanColorAt(colors, f) {
+  const times = [0, 0.52, 1];
+  const c0 = colors[0], c1 = colors[1] || colors[0], c2 = colors[2] || colors[colors.length - 1];
+  const keys = [c0, c1, c2];
+  for (let i = 1; i < times.length; i++) {
+    if (f <= times[i]) {
+      const u = (f - times[i - 1]) / (times[i] - times[i - 1]);
+      return keys[i - 1].map((v, k) => v + (keys[i][k] - v) * u);
+    }
+  }
+  return keys[keys.length - 1];
+}
+
+function trojanRadialSprite(diameter, stops) {
+  const c = document.createElement("canvas");
+  c.width = diameter;
+  c.height = diameter;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(diameter / 2, diameter / 2, 0, diameter / 2, diameter / 2, diameter / 2);
+  stops.forEach(([loc, alpha]) => g.addColorStop(loc, "rgba(255,255,255," + alpha + ")"));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, diameter, diameter);
+  return c;
+}
+
+// Flame sprite: port of OdysseyParticleTextures.flame (swift:478-524) — a
+// 36×84 canvas with the gradient center at (0.5w, 0.4h), y-scaled by
+// h/w*0.82, end center (0, 0.10w), end radius 0.46w, stops .72/.32@.46/0.
+function trojanFlameSprite() {
+  const w = 36, h = 84;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.translate(w * 0.5, h * 0.4);
+  ctx.scale(1, (h / w) * 0.82);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, w * 0.1, w * 0.46);
+  g.addColorStop(0, "rgba(255,255,255,0.72)");
+  g.addColorStop(0.46, "rgba(255,255,255,0.32)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(-w, -h, w * 2, h * 2);
+  return c;
+}
+
+// Tint a white sprite with one ramp color — SpriteKit colorBlendFactor=1
+// semantics: sequence color replaces RGB, texture alpha shapes the mask.
+function trojanTintedSprite(base, rgb) {
+  const c = document.createElement("canvas");
+  c.width = base.width;
+  c.height = base.height;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(base, 0, 0);
+  ctx.globalCompositeOperation = "source-in";
+  ctx.fillStyle =
+    "rgba(" + Math.round(rgb[0] * 255) + "," + Math.round(rgb[1] * 255) + "," + Math.round(rgb[2] * 255) + "," + rgb[3].toFixed(4) + ")";
+  ctx.fillRect(0, 0, c.width, c.height);
+  return c;
+}
+
+function trojanBuildRamp(base, colors) {
+  const ramp = [];
+  for (let i = 0; i < TROJAN_RAMP_STEPS; i++) {
+    ramp.push(trojanTintedSprite(base, trojanColorAt(colors, i / (TROJAN_RAMP_STEPS - 1))));
+  }
+  return ramp;
+}
+
+function trojanParseAlign() {
+  let raw = "center center";
+  try {
+    raw = getComputedStyle(document.documentElement).getPropertyValue("--skin-art-position") || raw;
+  } catch (e) { /* keep default */ }
+  const one = (tok) => {
+    const t = String(tok || "").trim().toLowerCase();
+    if (t === "left" || t === "top") return 0;
+    if (t === "right" || t === "bottom") return 1;
+    if (t.endsWith("%")) return Math.min(1, Math.max(0, parseFloat(t) / 100));
+    return 0.5;
+  };
+  const parts = raw.trim().split(/\s+/);
+  return [one(parts[0]), one(parts[1] || parts[0])];
+}
+
+// WebGL fire shader: 1:1 port of OdysseyTrojanFireShader (swift:418-446).
+// v_tex_coord becomes the art-texture uv computed from the cover crop.
+const TROJAN_FIRE_FRAGMENT_SRC = [
+  "precision mediump float;",
+  "uniform sampler2D u_texture;",
+  "uniform float u_fireTime;",
+  "uniform vec4 u_view;",   // cw, ch, dw, dh
+  "uniform vec4 u_offset;", // ox, oy
+  "varying vec2 v_uv;",
+  "void main() {",
+  "  vec2 artUV = vec2(",
+  "    (v_uv.x * u_view.x - u_offset.x) / u_view.z,",
+  "    1.0 - (v_uv.y * u_view.y - u_offset.y) / u_view.w",
+  "  );",
+  "  vec2 uv = clamp(artUV, vec2(0.0), vec2(1.0));",
+  "  vec4 source = texture2D(u_texture, uv);",
+  "  float luminance = dot(source.rgb, vec3(0.299, 0.587, 0.114));",
+  "  float warmDifference = max(source.r - source.b, 0.0);",
+  "  float redLead = max(source.r - source.g, 0.0);",
+  "  float heat = smoothstep(0.08, 0.34, warmDifference)",
+  "    * smoothstep(0.02, 0.18, redLead)",
+  "    * smoothstep(0.12, 0.62, luminance);",
+  "  float upwardFlow = sin(",
+  "    (uv.y + u_fireTime * 0.085) * 108.0",
+  "    + sin(uv.x * 34.0) * 2.4",
+  "  );",
+  "  float sideRipple = sin(",
+  "    uv.x * 76.0",
+  "    - u_fireTime * 5.8",
+  "    + upwardFlow * 1.7",
+  "  );",
+  "  vec2 displacement = vec2(",
+  "    sideRipple * 0.0032,",
+  "    upwardFlow * 0.0015",
+  "  ) * heat;",
+  "  vec2 animatedUV = clamp(",
+  "    uv + displacement,",
+  "    vec2(0.001),",
+  "    vec2(0.999)",
+  "  );",
+  "  vec4 animated = texture2D(u_texture, animatedUV);",
+  "  float flicker = 0.5 + 0.5 * sin(",
+  "    u_fireTime * 7.4",
+  "    + uv.y * 61.0",
+  "    + sin(uv.x * 47.0) * 2.0",
+  "  );",
+  "  animated.rgb *= 1.0 + heat * (0.055 + flicker * 0.16);",
+  "  gl_FragColor = animated;",
+  "}",
+].join("\n");
+
+const TROJAN_FIRE_VERTEX_SRC = [
+  "attribute vec2 a_pos;",
+  "varying vec2 v_uv;",
+  "void main() {",
+  "  v_uv = vec2((a_pos.x + 1.0) * 0.5, 1.0 - (a_pos.y + 1.0) * 0.5);",
+  "  gl_Position = vec4(a_pos, 0.0, 1.0);",
+  "}",
+].join("\n");
+
+function trojanInitShader(canvas) {
+  let gl = null;
+  try {
+    gl = canvas.getContext("webgl", {
+      alpha: true, antialias: false, depth: false, stencil: false,
+      preserveDrawingBuffer: false, powerPreference: "low-power",
+    }) || canvas.getContext("experimental-webgl");
+  } catch (e) {
+    return null;
+  }
+  if (!gl) return null;
+  const compile = (type, src) => {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) return null;
+    return sh;
+  };
+  const vs = compile(gl.VERTEX_SHADER, TROJAN_FIRE_VERTEX_SRC);
+  const fs = compile(gl.FRAGMENT_SHADER, TROJAN_FIRE_FRAGMENT_SRC);
+  if (!vs || !fs) return null;
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return null;
+  gl.useProgram(program);
+  const quad = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(program, "a_pos");
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  // Plate source: the ACTIVE pack's own --skin-art value (single source —
+  // same URL the body background uses for the trojan chapter).
+  let artUrl = "";
+  try {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue("--skin-art") || "";
+    const m = raw.match(/url\(["']?([^"')]+)["']?\)/);
+    if (m) artUrl = m[1];
+  } catch (e) { /* keep empty */ }
+  if (!artUrl) return null;
+  const image = new Image();
+  let ready = false;
+  image.onload = () => {
+    try {
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      ready = true;
+    } catch (e) { ready = false; } // tainted texture (file://) → CSS plate fallback
+  };
+  image.onerror = () => { ready = false; };
+  image.src = artUrl;
+  return {
+    gl, program, ready: () => ready,
+    uniforms: {
+      texture: gl.getUniformLocation(program, "u_texture"),
+      fireTime: gl.getUniformLocation(program, "u_fireTime"),
+      view: gl.getUniformLocation(program, "u_view"),
+      offset: gl.getUniformLocation(program, "u_offset"),
+    },
+    art: image,
+  };
+}
+
+function trojanDrawShader(state) {
+  const canvas = document.getElementById(SKIN_FX_FLAME_ID);
+  if (!canvas || !state.shader) return;
+  if (!state.shader.ready()) return; // texture pending/failed → CSS plate shows
+  const gl = state.shader.gl;
+  if (trojanShaderViewDirty || state.shaderView == null) {
+    const cw = canvas.clientWidth, ch = canvas.clientHeight;
+    if (!cw || !ch) return;
+    canvas.width = Math.round(cw * Math.min(2, window.devicePixelRatio || 1));
+    canvas.height = Math.round(ch * Math.min(2, window.devicePixelRatio || 1));
+    const align = trojanParseAlign();
+    const s = Math.max(canvas.width / state.shader.art.width, canvas.height / state.shader.art.height);
+    const dw = state.shader.art.width * s;
+    const dh = state.shader.art.height * s;
+    const ox = (canvas.width - dw) * align[0];
+    const oy = (canvas.height - dh) * align[1];
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.useProgram(state.shader.program);
+    gl.uniform4f(state.shader.uniforms.view, canvas.width, canvas.height, dw, dh);
+    gl.uniform4f(state.shader.uniforms.offset, ox, oy, 0, 0);
+    gl.uniform1i(state.shader.uniforms.texture, 0);
+    state.shaderView = { cw, ch };
+    trojanShaderViewDirty = false;
+  }
+  gl.useProgram(state.shader.program);
+  gl.uniform1f(state.shader.uniforms.fireTime, state.fireClock);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function trojanEnsureEngine() {
+  if (trojanEngine) return trojanEngine;
+  const canvas = document.getElementById(SKIN_FX_PARTICLES_ID);
+  if (!canvas) return null;
+  // Fold the shared fire recipe into the five flame emitters ONCE
+  // (configureFire, swift:243-282) — the config objects stay untouched.
+  TROJAN_EMITTERS.forEach((e) => {
+    if (e.kind !== "fire") return;
+    e.angle = TROJAN_FIRE_RECIPE.angle;
+    e.angleRange = TROJAN_FIRE_RECIPE.angleRange;
+    e.speedRange = TROJAN_FIRE_RECIPE.speedRange;
+    e.lifetimeRange = TROJAN_FIRE_RECIPE.lifetimeRange;
+    e.ax = e.drift;
+    e.ay = TROJAN_FIRE_RECIPE.ay;
+    e.alpha = TROJAN_FIRE_RECIPE.alpha;
+    e.alphaRange = TROJAN_FIRE_RECIPE.alphaRange;
+    e.scaleRange = TROJAN_FIRE_RECIPE.scaleRange;
+    e.rotRange = TROJAN_FIRE_RECIPE.rotRange;
+    e.rotSpeed = TROJAN_FIRE_RECIPE.rotSpeed;
+  });
+  trojanEngine = {
+    rng: trojanRng(0x74accafe >>> 0),
+    alive: TROJAN_EMITTERS.map(() => []),
+    accum: TROJAN_EMITTERS.map(() => 0),
+    fireClock: 0,
+    lastNow: null,
+    prewarmed: false,
+    ramps: null,
+    shader: null,
+    shaderFailed: false,
+    shaderView: null,
+  };
+  return trojanEngine;
+}
+
+function trojanSpawn(state, index) {
+  const e = TROJAN_EMITTERS[index];
+  const rnd = state.rng;
+  const canvas = document.getElementById(SKIN_FX_PARTICLES_ID);
+  if (!canvas) return;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  const half = (v) => (rnd() - 0.5) * v;
+  const angle = e.angle + half(e.angleRange);
+  const speed = e.speed + half(e.speedRange);
+  state.alive[index].push({
+    x: w * (e.x + half(e.dx * 2)), // positionRange: uniform across the span
+    y: h * (1 - (e.y + half(e.dy * 2))), // SpriteKit Y-up → canvas top-down
+    vx: Math.cos(angle) * speed,
+    vy: -Math.sin(angle) * speed,
+    ax: e.ax,
+    ay: -e.ay, // yAcceleration is SpriteKit up → canvas down
+    age: 0,
+    life: Math.max(0.1, e.lifetime + half(e.lifetimeRange * 2)),
+    baseAlpha: Math.max(0, e.alpha + half(e.alphaRange * 2)),
+    baseScale: Math.max(0.01, e.scale + half(e.scaleRange * 2)),
+    rot: half(e.rotRange * 2),
+    rotSpeed: e.rotSpeed || 0,
+  });
+}
+
+function trojanUpdateAndDraw(state, dt, intensity) {
+  const canvas = document.getElementById(SKIN_FX_PARTICLES_ID);
+  if (!canvas) return;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
+  if (canvas.height !== Math.round(h * dpr)) canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  if (!state.ramps) {
+    const base = {
+      flame: trojanFlameSprite(),
+      smoke: trojanRadialSprite(96, [[0, 0.58], [0.46, 0.24], [1, 0]]),
+      spark: trojanRadialSprite(20, [[0, 1], [0.28, 0.52], [1, 0]]),
+      ember: trojanRadialSprite(28, [[0, 0.88], [0.32, 0.35], [1, 0]]),
+    };
+    state.ramps = TROJAN_EMITTERS.map((e) => {
+      if (e.kind === "fire") return trojanBuildRamp(base.flame, TROJAN_FIRE_RECIPE.colors);
+      return trojanBuildRamp(base[e.tex], e.colors);
+    });
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  let total = 0;
+  for (let i = 0; i < TROJAN_EMITTERS.length; i++) {
+    const e = TROJAN_EMITTERS[i];
+    const list = state.alive[i];
+    // Spawn: accumulator × intensity (swift:110-120 birthRate semantics).
+    state.accum[i] += e.rate * intensity * dt;
+    while (state.accum[i] >= 1) {
+      state.accum[i] -= 1;
+      if (total < TROJAN_PARTICLE_CAP) {
+        trojanSpawn(state, i, intensity);
+      }
+    }
+    // Update + draw (draw order = array order = upstream zPosition order).
+    ctx.globalCompositeOperation = e.kind === "fire" ? TROJAN_FIRE_RECIPE.blend : e.blend;
+    for (let k = list.length - 1; k >= 0; k--) {
+      const p = list[k];
+      p.age += dt;
+      if (p.age >= p.life) {
+        list.splice(k, 1);
+        continue;
+      }
+      p.vx += p.ax * dt;
+      p.vy += p.ay * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.rot += p.rotSpeed * dt;
+      const f = p.age / p.life;
+      let alpha, scale;
+      if (e.kind === "fire") {
+        alpha = p.baseAlpha * trojanSeqValue(TROJAN_FIRE_RECIPE.alphaSeq, f);
+        scale = p.baseScale * trojanSeqValue(TROJAN_FIRE_RECIPE.scaleSeq, f);
+      } else {
+        alpha = Math.max(0, p.baseAlpha + e.alphaSpeed * p.age);
+        scale = Math.max(0.01, p.baseScale + e.scaleSpeed * p.age);
+      }
+      const rampIdx = Math.max(0, Math.min(TROJAN_RAMP_STEPS - 1, Math.round((f * (TROJAN_RAMP_STEPS - 1)))));
+      const sprite = state.ramps[i][rampIdx];
+      const dw = sprite.width * scale;
+      const dh = sprite.height * scale;
+      const cos = Math.cos(p.rot), sin = Math.sin(p.rot);
+      ctx.globalAlpha = alpha;
+      ctx.setTransform(dpr * cos, dpr * sin, -dpr * sin, dpr * cos, dpr * p.x, dpr * p.y);
+      ctx.drawImage(sprite, -dw / 2, -dh / 2, dw, dh);
+    }
+    total += list.length;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+}
+
+function drawTrojanFireFrame(now) {
+  const root = document.documentElement;
+  const active =
+    root.hasAttribute("data-skin-pack") &&
+    root.getAttribute("data-skin-chapter") === TROJAN_CHAPTER_KEY &&
+    !root.classList.contains("motion-paused") &&
+    !(typeof document !== "undefined" && document.hidden) &&
+    trojanIntersectionVisible &&
+    !(typeof window !== "undefined" && window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  if (!active) {
+    if (trojanEngine) trojanEngine.lastNow = null;
+    return;
+  }
+  const state = trojanEnsureEngine();
+  if (!state) return;
+  const dt = state.lastNow == null ? 0 : Math.min(TROJAN_FIRE_DT_CLAMP, Math.max(0, (now - state.lastNow) / 1000));
+  state.lastNow = now;
+  state.fireClock += dt;
+  if (!state.prewarmed) {
+    // Upstream advanceSimulationTime(2.4) (swift:128-134): fast-forward the
+    // burn so the field opens fully formed. Deterministic fixed steps.
+    const step = 1 / 24;
+    for (let t = 0; t < TROJAN_PREWARM_SECONDS; t += step) {
+      let live = 0;
+      for (let i = 0; i < TROJAN_EMITTERS.length; i++) live += state.alive[i].length;
+      for (let i = 0; i < TROJAN_EMITTERS.length; i++) {
+        state.accum[i] += TROJAN_EMITTERS[i].rate * step;
+        while (state.accum[i] >= 1) {
+          state.accum[i] -= 1;
+          if (live < TROJAN_PARTICLE_CAP) {
+            trojanSpawn(state, i);
+            live += 1;
+          }
+        }
+      }
+      for (let i = 0; i < TROJAN_EMITTERS.length; i++) {
+        const list = state.alive[i];
+        for (let k = list.length - 1; k >= 0; k--) {
+          const p = list[k];
+          p.age += step;
+          if (p.age >= p.life) { list.splice(k, 1); continue; }
+          p.vx += p.ax * step;
+          p.vy += p.ay * step;
+          p.x += p.vx * step;
+          p.y += p.vy * step;
+          p.rot += p.rotSpeed * step;
+        }
+      }
+    }
+    state.prewarmed = true;
+  }
+  const mode = root.getAttribute("data-skin-motion") || "orbit";
+  const intensity = mode === "quiet" ? 0.5 : 1;
+  trojanUpdateAndDraw(state, dt, intensity);
+  if (!state.shader && !state.shaderFailed) {
+    state.shader = trojanInitShader(document.getElementById(SKIN_FX_FLAME_ID));
+    if (!state.shader) state.shaderFailed = true;
+    trojanShaderViewDirty = true;
+  }
+  if (state.shader) trojanDrawShader(state);
 }
 
 // ---- Agent Work card (design-sheet layout) ----
@@ -2958,8 +3936,12 @@ window.TS = {
   THEMES,
   ODYSSEY_CHAPTERS,
   EVENT_HORIZON,
+  ODYSSEY_BADGES,
+  CHAPTER_MOTIFS,
   resolveTheme,
   applyTheme,
+  syncEditionLine,
+  setSkinMotionMode,
   contributionWallHTML,
   tokenToolColor,
   orderedToolEntries,

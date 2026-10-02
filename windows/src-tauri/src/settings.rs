@@ -83,6 +83,14 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
     } else {
         "directors_cut".to_string()
     };
+    // Upstream v0.2.14 motion tiers (InterstellarMotionLab.swift:4-69);
+    // anything else falls back to the "orbit" default.
+    let valid_motion_modes = ["quiet", "orbit", "gravity_tide"];
+    let skin_motion_mode = if valid_motion_modes.contains(&s.skin_motion_mode.as_str()) {
+        s.skin_motion_mode.clone()
+    } else {
+        "orbit".to_string()
+    };
     let valid_visibilities = ["automatic", "visible", "hidden"];
     let visibility = if valid_visibilities.contains(&s.agent_work_rank_visibility.as_str()) {
         s.agent_work_rank_visibility.clone()
@@ -101,6 +109,7 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         theme,
         classic_theme,
         odyssey_chapter,
+        skin_motion_mode,
         screenshot_dir: s.screenshot_dir,
         language: {
             let valid = ["zhHans", "en", "zhHant"];

@@ -224,6 +224,19 @@ fn set_odyssey_chapter(chapter: String) -> Result<TokenStepSettings, String> {
     Ok(settings::load())
 }
 
+/// Interstellar motion mode (upstream v0.2.14 `InterstellarMotionMode`,
+/// InterstellarMotionLab.swift:4-69): "quiet" / "orbit" / "gravity_tide".
+/// Mirrors set_theme's clamp-on-save pattern — settings::save runs
+/// normalize(), so an unknown mode round-trips back as the "orbit" default
+/// in the returned settings.
+#[tauri::command]
+fn set_skin_motion_mode(mode: String) -> Result<TokenStepSettings, String> {
+    let mut s = settings::load();
+    s.skin_motion_mode = mode;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
 #[tauri::command]
 fn set_language(app: tauri::AppHandle, language: String) -> Result<TokenStepSettings, String> {
     let mut s = settings::load();
@@ -1262,6 +1275,7 @@ pub fn run() {
             check_for_update,
             check_for_update_manual,
             set_odyssey_chapter,
+            set_skin_motion_mode,
             open_release_page,
             download_and_install_update,
             skip_update_version,

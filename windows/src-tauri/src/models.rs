@@ -309,6 +309,14 @@ pub struct TokenStepSettings {
     /// `theme == "voyage"` (upstream `odysseyChapter`).
     #[serde(rename = "odyssey_chapter", default = "default_odyssey_chapter")]
     pub odyssey_chapter: String,
+    /// Interstellar motion mode (upstream v0.2.14 `InterstellarMotionMode`,
+    /// InterstellarMotionLab.swift:4-69): "quiet" / "orbit" / "gravity_tide".
+    /// Drives the breath cadence, ambient intensity, ribbon/star/hotspot
+    /// layers and the approach dolly on the event-horizon pack. Default
+    /// "orbit" mirrors the cinematic middle tier (upstream lab default is
+    /// gravity_tide; we ship the calmer orbit as the out-of-box default).
+    #[serde(rename = "skin_motion_mode", default = "default_skin_motion_mode")]
+    pub skin_motion_mode: String,
     /// Directory where screenshots are saved by default (empty = exe dir).
     #[serde(rename = "screenshot_dir", default)]
     pub screenshot_dir: String,
@@ -388,6 +396,10 @@ fn default_odyssey_chapter() -> String {
     "directors_cut".to_string()
 }
 
+fn default_skin_motion_mode() -> String {
+    "orbit".to_string()
+}
+
 fn default_rank_visibility() -> String {
     "hidden".to_string()
 }
@@ -406,6 +418,7 @@ impl Default for TokenStepSettings {
             theme: "green".to_string(),
             classic_theme: "green".to_string(),
             odyssey_chapter: "directors_cut".to_string(),
+            skin_motion_mode: "orbit".to_string(),
             screenshot_dir: String::new(),
             language: "zhHans".to_string(),
             skipped_update_version: None,

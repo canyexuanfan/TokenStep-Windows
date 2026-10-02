@@ -3536,12 +3536,17 @@ html[data-skin-pack] #view .today-lap-chips > div {
    z-index layering is involved), bottom-up:
      ① base #04070C (swift:144)
      ② Hero artwork; Quiet falls back to Hero and vice versa (swift:4-29)
-     ③ role veil — LIGHTENED: the e2e-2/3/4/5 stills showed the upstream
-        veil ladder (.28/.36/.43/.50/.52) stacked on ⑥+⑦ fogged the subject
-        into a flat fill (today-card void std=0.5, seam m=16.7 vs plate band
-        m=136), so the plate runs at near-native brightness with the veil as
-        a mere tint: dashboard .10 / generic .14 / history .22 / settings
-        .26 / privacy .28 (upstream values: swift:161,205-217)
+     ③ role veil — Phase 1 restores the upstream InterstellarSkin.swift:205-216
+        constants verbatim: dashboard .28 (default body) / generic .36 /
+        history .43 / settings .50 / privacy .52. History: the e2e-2/3/4/5
+        stills had shown this same ladder stacked on the then-heavier ⑥+⑦
+        fog the subject into a flat fill (today-card void std=0.5, seam
+        m=16.7 vs plate band m=136), so ③ was lightened to .10/.14/.22/.26/.28
+        while ⑥⑦ were lightened in the same round; with ⑥⑦ now at .05/.30 +
+        .22, the full upstream constants keep total dimming below upstream's
+        own stacking everywhere. Regression watch (red line): trojan horse
+        silhouette, event-horizon bright band, ash-marble idol readability —
+        verify-skins-e2e.ps1 stills are the acceptance gate.
      ⑥ diagonal gradient — direction kept (light over the upper-left subject,
         motion anchor x:0.30 y:0.05, InterstellarMotionLab.swift:116-130;
         heavy toward bottom-right, swift:173-181) but lightened .10/.62 →
@@ -3564,55 +3569,125 @@ html[data-skin-pack] #view .today-lap-chips > div {
    matching the proven ../shared/logo.png mechanism.
    applyTheme() sets html[data-skin-pack] only for skin packs; classic colors
    keep the plain canvas look (baseline red line: zero dark residue). */
+
+/* Phase 1 A11 (VoyageSkin.swift:462-479 OdysseyPopoverFilmTexture): the
+   upstream Canvas grain ported as ONE static SVG tile — exact sampler math:
+   23px grid, (col*13+row*7)%11==0 sampling, jitter x+(row*3)%9 / y+(col*5)%11,
+   bright dots (col+row)%5==0 at 1.3px rgba(45,164,78,.10), dim dots 0.8px
+   rgba(255,255,255,.025), zero animation (compositor-free, painted once).
+   Grid period 11 × brightness period 5 → a 55×55-cell tile (1265×1265px)
+   carries the whole pattern: 275 dots = exactly 1/11 density. The x-jitter
+   (row*3)%9 has period 3, which does not divide 55, so dot phase wraps with
+   a 3px jump across the tile seam; the exact-period tile would be
+   55×165 cells = 3795px tall ≈ 19-43MB of texture (rejected: low-resource
+   budget) and the jump is sub-perceptual at .025-.10 alpha on 1px dots.
+   SVG is its own document — CSS vars do not resolve inside it — so the
+   task's literal token green 45,164,78 (#2da44e) is baked in; card-level
+   greens keep following --green (see the Phase 1 A12 glow line below).
+   Declared on html[data-skin-pack] only: classic never sees --skin-grain. */
+html[data-skin-pack] {
+  --skin-grain: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%221265%22%20height%3D%221265%22%20viewBox%3D%220%200%201265%201265%22%3E%3Cdefs%3E%3Ccircle%20id%3D%22a%22%20r%3D%22.65%22%20fill%3D%22%232da44e%22%20fill-opacity%3D%22.1%22%2F%3E%3Ccircle%20id%3D%22b%22%20r%3D%22.4%22%20fill%3D%22%23fff%22%20fill-opacity%3D%22.025%22%2F%3E%3C%2Fdefs%3E%3Cuse%20href%3D%22%23a%22%20x%3D%220%22%20y%3D%220%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%2223%22%20y%3D%22902%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%2252%22%20y%3D%22539%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%2272%22%20y%3D%22165%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%2295%22%20y%3D%221067%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22115%22%20y%3D%22693%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22144%22%20y%3D%22330%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22167%22%20y%3D%221221%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22187%22%20y%3D%22858%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22207%22%20y%3D%22484%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22236%22%20y%3D%22121%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22259%22%20y%3D%221012%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22279%22%20y%3D%22649%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22299%22%20y%3D%22286%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22322%22%20y%3D%221177%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22351%22%20y%3D%22814%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22371%22%20y%3D%22440%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22391%22%20y%3D%2277%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22414%22%20y%3D%22968%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22443%22%20y%3D%22605%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22463%22%20y%3D%22231%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22486%22%20y%3D%221133%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22506%22%20y%3D%22759%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22535%22%20y%3D%22396%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22555%22%20y%3D%2233%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22578%22%20y%3D%22924%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22598%22%20y%3D%22561%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22627%22%20y%3D%22187%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22650%22%20y%3D%221089%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22670%22%20y%3D%22715%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22690%22%20y%3D%22352%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22713%22%20y%3D%221243%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22742%22%20y%3D%22880%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22762%22%20y%3D%22506%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22782%22%20y%3D%22143%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22805%22%20y%3D%221045%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22834%22%20y%3D%22671%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22854%22%20y%3D%22308%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22877%22%20y%3D%221199%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22897%22%20y%3D%22836%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22926%22%20y%3D%22462%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22946%22%20y%3D%2299%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22969%22%20y%3D%22990%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%22989%22%20y%3D%22627%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221018%22%20y%3D%22253%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221041%22%20y%3D%221155%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221061%22%20y%3D%22792%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221081%22%20y%3D%22418%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221110%22%20y%3D%2255%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221133%22%20y%3D%22946%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221153%22%20y%3D%22583%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221173%22%20y%3D%22209%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221196%22%20y%3D%221111%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221225%22%20y%3D%22737%22%2F%3E%3Cuse%20href%3D%22%23a%22%20x%3D%221245%22%20y%3D%22374%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%226%22%20y%3D%22253%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%223%22%20y%3D%22506%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%220%22%20y%3D%22759%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%226%22%20y%3D%221012%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2223%22%20y%3D%22143%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2229%22%20y%3D%22396%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2226%22%20y%3D%22649%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2229%22%20y%3D%221155%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2249%22%20y%3D%2233%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2246%22%20y%3D%22286%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2249%22%20y%3D%22792%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2246%22%20y%3D%221045%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2269%22%20y%3D%22418%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2275%22%20y%3D%22671%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2272%22%20y%3D%22924%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2269%22%20y%3D%221177%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2298%22%20y%3D%2255%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2295%22%20y%3D%22308%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2292%22%20y%3D%22561%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%2298%22%20y%3D%22814%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22121%22%20y%3D%22187%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22118%22%20y%3D%22440%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22121%22%20y%3D%22946%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22118%22%20y%3D%221199%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22138%22%20y%3D%2277%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22141%22%20y%3D%22583%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22138%22%20y%3D%22836%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22144%22%20y%3D%221089%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22161%22%20y%3D%22209%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22167%22%20y%3D%22462%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22164%22%20y%3D%22715%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22161%22%20y%3D%22968%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22187%22%20y%3D%2299%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22184%22%20y%3D%22352%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22190%22%20y%3D%22605%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22184%22%20y%3D%221111%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22210%22%20y%3D%22231%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22213%22%20y%3D%22737%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22210%22%20y%3D%22990%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22207%22%20y%3D%221243%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22233%22%20y%3D%22374%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22230%22%20y%3D%22627%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22236%22%20y%3D%22880%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22233%22%20y%3D%221133%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22253%22%20y%3D%220%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22259%22%20y%3D%22253%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22256%22%20y%3D%22506%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22253%22%20y%3D%22759%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22276%22%20y%3D%22143%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22282%22%20y%3D%22396%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22276%22%20y%3D%22902%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22282%22%20y%3D%221155%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22302%22%20y%3D%2233%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22305%22%20y%3D%22539%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22302%22%20y%3D%22792%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22299%22%20y%3D%221045%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22325%22%20y%3D%22165%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22322%22%20y%3D%22418%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22328%22%20y%3D%22671%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22325%22%20y%3D%22924%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22351%22%20y%3D%2255%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22348%22%20y%3D%22308%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22345%22%20y%3D%22561%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22348%22%20y%3D%221067%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22374%22%20y%3D%22187%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22368%22%20y%3D%22693%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22374%22%20y%3D%22946%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22371%22%20y%3D%221199%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22397%22%20y%3D%22330%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22394%22%20y%3D%22583%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22391%22%20y%3D%22836%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22397%22%20y%3D%221089%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22414%22%20y%3D%22209%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22420%22%20y%3D%22462%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22417%22%20y%3D%22715%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22420%22%20y%3D%221221%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22440%22%20y%3D%2299%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22437%22%20y%3D%22352%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22440%22%20y%3D%22858%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22437%22%20y%3D%221111%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22460%22%20y%3D%22484%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22466%22%20y%3D%22737%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22463%22%20y%3D%22990%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22460%22%20y%3D%221243%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22489%22%20y%3D%22121%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22486%22%20y%3D%22374%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22483%22%20y%3D%22627%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22489%22%20y%3D%22880%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22506%22%20y%3D%220%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22512%22%20y%3D%22253%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22509%22%20y%3D%22506%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22512%22%20y%3D%221012%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22529%22%20y%3D%22143%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22532%22%20y%3D%22649%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22529%22%20y%3D%22902%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22535%22%20y%3D%221155%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22552%22%20y%3D%22286%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22558%22%20y%3D%22539%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22555%22%20y%3D%22792%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22552%22%20y%3D%221045%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22578%22%20y%3D%22165%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22575%22%20y%3D%22418%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22581%22%20y%3D%22671%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22575%22%20y%3D%221177%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22604%22%20y%3D%2255%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22601%22%20y%3D%22308%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22604%22%20y%3D%22814%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22601%22%20y%3D%221067%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22624%22%20y%3D%22440%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22621%22%20y%3D%22693%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22627%22%20y%3D%22946%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22624%22%20y%3D%221199%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22644%22%20y%3D%2277%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22650%22%20y%3D%22330%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22647%22%20y%3D%22583%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22644%22%20y%3D%22836%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22667%22%20y%3D%22209%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22673%22%20y%3D%22462%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22667%22%20y%3D%22968%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22673%22%20y%3D%221221%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22693%22%20y%3D%2299%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22696%22%20y%3D%22605%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22693%22%20y%3D%22858%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22690%22%20y%3D%221111%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22716%22%20y%3D%22231%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22713%22%20y%3D%22484%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22719%22%20y%3D%22737%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22716%22%20y%3D%22990%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22742%22%20y%3D%22121%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22739%22%20y%3D%22374%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22736%22%20y%3D%22627%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22739%22%20y%3D%221133%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22759%22%20y%3D%220%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22765%22%20y%3D%22253%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22759%22%20y%3D%22759%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22765%22%20y%3D%221012%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22788%22%20y%3D%22396%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22785%22%20y%3D%22649%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22782%22%20y%3D%22902%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22788%22%20y%3D%221155%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22808%22%20y%3D%2233%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22805%22%20y%3D%22286%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22811%22%20y%3D%22539%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22808%22%20y%3D%22792%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22831%22%20y%3D%22165%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22828%22%20y%3D%22418%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22831%22%20y%3D%22924%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22828%22%20y%3D%221177%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22857%22%20y%3D%2255%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22851%22%20y%3D%22561%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22857%22%20y%3D%22814%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22854%22%20y%3D%221067%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22880%22%20y%3D%22187%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22877%22%20y%3D%22440%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22874%22%20y%3D%22693%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22880%22%20y%3D%22946%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22897%22%20y%3D%2277%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22903%22%20y%3D%22330%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22900%22%20y%3D%22583%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22903%22%20y%3D%221089%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22920%22%20y%3D%22209%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22923%22%20y%3D%22715%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22920%22%20y%3D%22968%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22926%22%20y%3D%221221%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22943%22%20y%3D%22352%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22949%22%20y%3D%22605%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22946%22%20y%3D%22858%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22943%22%20y%3D%221111%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22969%22%20y%3D%22231%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22966%22%20y%3D%22484%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22972%22%20y%3D%22737%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22966%22%20y%3D%221243%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22995%22%20y%3D%22121%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22992%22%20y%3D%22374%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22995%22%20y%3D%22880%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%22992%22%20y%3D%221133%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221012%22%20y%3D%220%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221015%22%20y%3D%22506%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221012%22%20y%3D%22759%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221018%22%20y%3D%221012%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221035%22%20y%3D%22143%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221041%22%20y%3D%22396%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221038%22%20y%3D%22649%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221035%22%20y%3D%22902%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221061%22%20y%3D%2233%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221058%22%20y%3D%22286%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221064%22%20y%3D%22539%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221058%22%20y%3D%221045%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221084%22%20y%3D%22165%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221087%22%20y%3D%22671%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221084%22%20y%3D%22924%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221081%22%20y%3D%221177%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221107%22%20y%3D%22308%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221104%22%20y%3D%22561%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221110%22%20y%3D%22814%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221107%22%20y%3D%221067%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221133%22%20y%3D%22187%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221130%22%20y%3D%22440%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221127%22%20y%3D%22693%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221130%22%20y%3D%221199%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221150%22%20y%3D%2277%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221156%22%20y%3D%22330%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221150%22%20y%3D%22836%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221156%22%20y%3D%221089%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221179%22%20y%3D%22462%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221176%22%20y%3D%22715%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221173%22%20y%3D%22968%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221179%22%20y%3D%221221%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221199%22%20y%3D%2299%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221196%22%20y%3D%22352%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221202%22%20y%3D%22605%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221199%22%20y%3D%22858%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221222%22%20y%3D%22231%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221219%22%20y%3D%22484%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221222%22%20y%3D%22990%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221219%22%20y%3D%221243%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221248%22%20y%3D%22121%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221242%22%20y%3D%22627%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221248%22%20y%3D%22880%22%2F%3E%3Cuse%20href%3D%22%23b%22%20x%3D%221245%22%20y%3D%221133%22%2F%3E%3C%2Fsvg%3E");
+}
+
+/* Layer order mirrors the upstream ZStack (VoyageSkin.swift:342 — the film
+   texture paints after both scrims): first background layer renders on top,
+   so the grain leads the stack, then ⑦ bottom fade, ⑥ diagonal, ③ veil,
+   ② plate, ① base. */
 html[data-skin-pack] body {
-  background:
-    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
-    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
-    linear-gradient(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.10)),
-    var(--skin-art, var(--skin-art-quiet, none)) var(--skin-art-position, center center) / cover no-repeat,
-    #04070c;
-}
-
-html[data-skin-pack] body[data-skin-role="generic"] {
-  background:
-    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
-    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
-    linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)),
-    var(--skin-art, var(--skin-art-quiet, none)) var(--skin-art-position, center center) / cover no-repeat,
-    #04070c;
-}
-
-/* Text-heavy pages use the Quiet plate with lighter text-page veils
-   (usesQuietArtwork, InterstellarSkin.swift:47-53; upstream ladder
-   history .43 / settings .50 / privacy .52 — lightened, see block comment). */
-html[data-skin-pack] body[data-skin-role="history"] {
-  background:
-    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
-    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
-    linear-gradient(rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.22)),
-    var(--skin-art-quiet, var(--skin-art, none))
-      var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
-    #04070c;
-}
-
-html[data-skin-pack] body[data-skin-role="settings"] {
-  background:
-    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
-    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
-    linear-gradient(rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.26)),
-    var(--skin-art-quiet, var(--skin-art, none))
-      var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
-    #04070c;
-}
-
-html[data-skin-pack] body[data-skin-role="privacy"] {
-  background:
+  /* Phase 2: the stack lives in --skin-bg so the gravity_tide dolly mirror
+     (#skinFxPlate) can replay it 1:1 while scaling — single source, and at
+     scale(1) the mirror is pixel-identical to this background. */
+  --skin-bg:
+    var(--skin-grain, none),
     linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
     linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
     linear-gradient(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.28)),
+    var(--skin-art, var(--skin-art-quiet, none)) var(--skin-art-position, center center) / cover no-repeat,
+    #04070c;
+  background: var(--skin-bg);
+}
+
+html[data-skin-pack] body[data-skin-role="generic"] {
+  --skin-bg:
+    var(--skin-grain, none),
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.36), rgba(0, 0, 0, 0.36)),
+    var(--skin-art, var(--skin-art-quiet, none)) var(--skin-art-position, center center) / cover no-repeat,
+    #04070c;
+  background: var(--skin-bg);
+}
+
+/* Text-heavy pages use the Quiet plate (usesQuietArtwork,
+   InterstellarSkin.swift:47-53) with the restored upstream veil ladder
+   history .43 / settings .50 / privacy .52 (swift:210-212,215). */
+html[data-skin-pack] body[data-skin-role="history"] {
+  --skin-bg:
+    var(--skin-grain, none),
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.43), rgba(0, 0, 0, 0.43)),
     var(--skin-art-quiet, var(--skin-art, none))
       var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
     #04070c;
+  background: var(--skin-bg);
+}
+
+html[data-skin-pack] body[data-skin-role="settings"] {
+  --skin-bg:
+    var(--skin-grain, none),
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.50), rgba(0, 0, 0, 0.50)),
+    var(--skin-art-quiet, var(--skin-art, none))
+      var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
+    #04070c;
+  background: var(--skin-bg);
+}
+
+html[data-skin-pack] body[data-skin-role="privacy"] {
+  --skin-bg:
+    var(--skin-grain, none),
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.52)),
+    var(--skin-art-quiet, var(--skin-art, none))
+      var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
+    #04070c;
+  background: var(--skin-bg);
+}
+
+/* Odyssey chapters — role-INDEPENDENT backdrop (upstream has no role veil on
+   the odyssey popover; VoyageSkin.swift:297-348). The accepted left-facing
+   scrim STRUCTURE (135deg light-origin + bottom fade) is kept; only the stop
+   VALUES align to VoyageSkin.swift:321-336:
+     left scrim  swift:321-330  black .04 → canvas .08 → canvas .34 → canvas .58
+     top/bottom  swift:332-340  canvas .12 → clear → canvas .48
+   --canvas is the active chapter's tokenCanvas, so color-mix reproduces
+   Color.tokenCanvas.opacity() exactly. The role-veil layer is dropped here —
+   stacking upstream veil constants on top of these scrims would double-dim
+   the trojan plate (red line). Scoped by [data-skin-chapter], which
+   applyTheme() only sets for odyssey chapters (app.js:2701-2709) —
+   event_horizon and classic are unreachable. */
+html[data-skin-pack][data-skin-chapter] body {
+  --skin-bg:
+    var(--skin-grain, none),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--canvas) 12%, transparent),
+      transparent 50%,
+      color-mix(in srgb, var(--canvas) 48%, transparent)
+    ),
+    linear-gradient(
+      135deg,
+      rgba(0, 0, 0, 0.04) 0%,
+      color-mix(in srgb, var(--canvas) 8%, transparent) 33.33%,
+      color-mix(in srgb, var(--canvas) 34%, transparent) 66.66%,
+      color-mix(in srgb, var(--canvas) 58%, transparent) 100%
+    ),
+    var(--skin-art, var(--skin-art-quiet, none)) var(--skin-art-position, center center) / cover no-repeat,
+    #04070c;
+  background: var(--skin-bg);
 }
 
 /* Let the plate through the two opaque shell layers. main.content plus #view
@@ -3687,6 +3762,39 @@ html[data-skin-pack] #view .today-design-bottom > #agentWorkCard {
     color-mix(in srgb, var(--canvas) 16%, transparent);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
+}
+
+/* Phase 1 A12 (VoyageSkin.swift:351-372 OdysseyPopoverSectionBackground):
+   every skin-pack today-design-card gets the upstream section-panel finish —
+   a top-leading 92×1px green gradient glow line (green .56 → .08 → clear,
+   leading inset 16, rendered inside the card's overflow:hidden rounded box)
+   plus the standard directional shadow (black .22, radius 14, y 7).
+   Green follows the ACTIVE PACK's --green via color-mix, matching upstream
+   where Color.tokenGreen is theme-dependent too (trojan orange-gold, horizon
+   champagne). position:relative is layout-neutral on the grid child and
+   anchors the ::before; the pack shadow outranks the classic light hover
+   shadow under packs (specificity (1,2,1) > hover's (1,2,0)) — upstream
+   declares no hover variant, and the pack hover border-color below is
+   untouched. */
+html[data-skin-pack] #view .today-design-card {
+  position: relative;
+  box-shadow: 0 7px 14px rgba(0, 0, 0, 0.22);
+}
+
+html[data-skin-pack] #view .today-design-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 16px;
+  width: 92px;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--green) 56%, transparent),
+    color-mix(in srgb, var(--green) 8%, transparent),
+    transparent
+  );
+  pointer-events: none;
 }
 
 /* Inherited shadow keeps titles/values readable where the plate is bright
@@ -3925,7 +4033,11 @@ html[data-skin-pack]:not([data-skin-chapter]) #skinFxGlow {
   background:
     radial-gradient(46% 30% at var(--skin-art-position, center 42%), rgba(251, 241, 213, 0.30), transparent 66%),
     radial-gradient(30% 18% at 18% 52%, rgba(247, 234, 204, 0.20), transparent 70%);
-  animation: tsHorizonBreath 9.5s ease-in-out infinite alternate;
+  /* Phase 2: breath cycle aligned to the upstream 8s formula
+     breath = 0.5 + 0.5*sin(2πt/8) (InterstellarMotionLab.swift:162) —
+     ease-in-out alternate over 8s is the sinusoid approximation; the
+     opacity range comes from --fx-glow-min/max (mode × ambientIntensity). */
+  animation: tsHorizonBreath 8s ease-in-out infinite alternate;
 }
 
 @keyframes tsWashDrift {
@@ -3950,13 +4062,18 @@ html[data-skin-pack]:not([data-skin-chapter]) #skinFxGlow {
 }
 
 @keyframes tsHorizonBreath {
-  from { opacity: 0.5; transform: scale(1); }
-  to   { opacity: 0.85; transform: scale(1.035); }
+  from { opacity: var(--fx-glow-min, 0.5); transform: scale(1); }
+  to   { opacity: var(--fx-glow-max, 0.85); transform: scale(1.035); }
 }
 
 /* Pause discipline. */
 html.motion-paused #skinFxGlow,
-html.motion-paused #skinFxEmbers {
+html.motion-paused #skinFxEmbers,
+html.motion-paused #skinFxFlow,
+html.motion-paused #skinFxFlow .ts-filament,
+html.motion-paused #skinFxFlow .ts-beamline,
+html.motion-paused #skinFxPlate,
+html.motion-paused #skinFxPlate::after {
   animation-play-state: paused;
 }
 
@@ -3965,6 +4082,340 @@ html.motion-paused #skinFxEmbers {
   #skinFxEmbers {
     animation: none !important;
   }
+  #skinFxFlow .ts-filament,
+  #skinFxFlow .ts-beamline,
+  #skinFxPlate,
+  #skinFxPlate::after {
+    animation: none !important;
+  }
+  #skinFxStars {
+    display: none !important;
+  }
+}
+
+/* ── Phase 2: motion tiers (upstream v0.2.14 InterstellarMotionLab.swift) ──
+   Three modes reach CSS via html[data-skin-motion] (app.js syncSkinMotionMode;
+   set ONLY under data-skin-pack). All layers are fixed, aria-hidden,
+   pointer-events:none, painted at negative z-index — every animation is
+   transform/opacity only (compositor path), stepped via steps() at the
+   upstream 24fps tier (the quiet 12fps tier ships no moving layers here).
+   Scope: html[data-skin-pack]:not([data-skin-chapter]) = event horizon only;
+   Odyssey chapters keep their own ambience and classic is untouched. */
+#skinFxPlate,
+#skinFxFlow,
+#skinFxStars {
+  display: none;
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#skinFxPlate {
+  z-index: -2;
+}
+
+#skinFxFlow,
+#skinFxStars {
+  z-index: -1;
+}
+
+/* Mode constants (swift:26-32 ambientIntensity .85/1/1.15). The accepted
+   horizon glow range 0.5→0.85 scales by ambientIntensity through
+   --fx-glow-min/max (consumed by tsHorizonBreath); --fx-ambient scales the
+   ribbons and the beam line (swift:273 opacity × intensity). */
+html[data-skin-pack]:not([data-skin-chapter])[data-skin-motion="quiet"] {
+  --fx-ambient: 0.85;
+  --fx-glow-min: 0.425;
+  --fx-glow-max: 0.7225;
+}
+
+html[data-skin-pack]:not([data-skin-chapter])[data-skin-motion="orbit"] {
+  --fx-ambient: 1;
+  --fx-glow-min: 0.5;
+  --fx-glow-max: 0.85;
+}
+
+html[data-skin-pack]:not([data-skin-chapter])[data-skin-motion="gravity_tide"] {
+  --fx-ambient: 1.15;
+  --fx-glow-min: 0.575;
+  --fx-glow-max: 0.9775;
+}
+
+/* Parallax warm ribbons + beam line (swift:259-310 InterstellarDiskFlow).
+   3 filaments — widths 0.30/0.40/0.50 window widths, heights 1.4/2.5/3.6px,
+   alpha (0.22/0.275/0.33)×ambient, blur 1.8/0.7/0.7px; even filaments ride
+   the 9s primary phase (L→R, offset 0/0.46 of a period), the odd one the
+   14s secondary phase (R→L, offset 0.19); x = -0.35w + phase·(vw + 0.7w),
+   y 5.8/7.6/9.4%. The 1.2px beam line rides y=90.5% right→left (0.56w wide,
+   alpha 0.10×ambient, swift:295-305, 14s with the 4.5s secondary offset).
+   steps(216)/steps(336) over 9s/14s ≈ the upstream 24fps frame stepping. */
+html[data-skin-pack]:not([data-skin-chapter]) #skinFxFlow {
+  display: block;
+}
+
+#skinFxFlow .ts-filament {
+  position: absolute;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(224, 207, 169, calc(0.45 * var(--filament-o))) 20%,
+    rgba(255, 246, 219, var(--filament-o)) 52%,
+    rgba(224, 207, 169, calc(0.52 * var(--filament-o))) 82%,
+    transparent 100%
+  );
+}
+
+#skinFxFlow .ts-filament-0 {
+  --filament-o: calc(0.22 * var(--fx-ambient, 1));
+  width: 30vw;
+  height: 1.4px;
+  top: 5.8%;
+  filter: blur(1.8px);
+  animation: tsFlowR 9s steps(216) infinite;
+}
+
+#skinFxFlow .ts-filament-1 {
+  --filament-o: calc(0.275 * var(--fx-ambient, 1));
+  width: 40vw;
+  height: 2.5px;
+  top: 7.6%;
+  filter: blur(0.7px);
+  animation: tsFlowL 14s steps(336) infinite;
+  animation-delay: -2.66s;
+}
+
+#skinFxFlow .ts-filament-2 {
+  --filament-o: calc(0.33 * var(--fx-ambient, 1));
+  width: 50vw;
+  height: 3.6px;
+  top: 9.4%;
+  filter: blur(0.7px);
+  animation: tsFlowR 9s steps(216) infinite;
+  animation-delay: -4.14s;
+}
+
+/* quiet: upstream filamentCount is 0 (swift:50-52) — bands off. The beam
+   line stays (DiskFlow renders it in every mode, swift:295-305). */
+html[data-skin-pack][data-skin-motion="quiet"] #skinFxFlow .ts-filament {
+  display: none;
+}
+
+html[data-skin-pack]:not([data-skin-chapter]) #skinFxFlow .ts-beamline {
+  position: absolute;
+  top: 90.5%;
+  left: 0;
+  width: 56vw;
+  height: 1.2px;
+  background: linear-gradient(to right, transparent, rgba(255, 246, 219, 1), transparent);
+  opacity: calc(0.1 * var(--fx-ambient, 1));
+  animation: tsBeamL 14s steps(336) infinite;
+  animation-delay: -4.5s;
+}
+
+@keyframes tsFlowR {
+  from { transform: translate3d(-35%, 0, 0); }
+  to   { transform: translate3d(calc(100vw + 35%), 0, 0); }
+}
+
+@keyframes tsFlowL {
+  from { transform: translate3d(calc(100vw + 35%), 0, 0); }
+  to   { transform: translate3d(-35%, 0, 0); }
+}
+
+@keyframes tsBeamL {
+  from { transform: translate3d(calc(104vw - 50%), 0, 0); }
+  to   { transform: translate3d(calc(-12vw - 50%), 0, 0); }
+}
+
+/* Meteors + hotspot canvas (swift:340-456): ONE canvas driven by the rAF
+   loop in app.js (drawSkinFxFrame) — never one DOM node per star. Stars run
+   only in orbit (10) / gravity_tide (16); quiet hides the layer entirely
+   (starCount 0 + hotspot off, swift:50-66). */
+html[data-skin-pack]:not([data-skin-chapter]) #skinFxStars {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+html[data-skin-pack]:not([data-skin-chapter])[data-skin-motion="quiet"] #skinFxStars {
+  display: none;
+}
+
+/* Approach dolly (gravity_tide only; swift:116-130): the plate mirror
+   replays the body's own --skin-bg stack — pixel-identical at scale(1) —
+   and pushes scale 1→1.36 with pow(p,1.2) ≈ ease-in, anchored at the black
+   hole (0.30, 0.05). Upstream runs a one-shot 9s approach per session
+   (swift:118); simplified per task to a loopable 9s push + 9s settle
+   (alternate). The ::after boost is the +0.16 brightness swell as a
+   compositor-only opacity animation tied to the plate's own transform. */
+html[data-skin-pack]:not([data-skin-chapter])[data-skin-motion="gravity_tide"] #skinFxPlate {
+  display: block;
+  background: var(--skin-bg);
+  transform-origin: 30% 5%;
+  animation: tsDollyPush 9s cubic-bezier(0.42, 0, 1, 1) infinite alternate;
+  will-change: transform;
+}
+
+#skinFxPlate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(60% 45% at 30% 5%, rgba(251, 241, 213, 0.55), transparent 72%);
+}
+
+html[data-skin-pack]:not([data-skin-chapter])[data-skin-motion="gravity_tide"] #skinFxPlate::after {
+  animation: tsDollyBoost 9s cubic-bezier(0.42, 0, 1, 1) infinite alternate;
+}
+
+@keyframes tsDollyPush {
+  from { transform: scale3d(1, 1, 1); }
+  to   { transform: scale3d(1.36, 1.36, 1); }
+}
+
+@keyframes tsDollyBoost {
+  from { opacity: 0; }
+  to   { opacity: 0.16; }
+}
+
+/* ── Phase 3: Trojan Inferno fire layers (upstream v0.2.14
+   OdysseyParticleScene.swift) ──
+   #skinFxFlame: WebGL canvas replaying the chapter plate through the ported
+   GLSL UV-distortion + heat-flicker shader (swift:418-446); the body's own
+   CSS plate stays underneath as the automatic fallback — the canvas renders
+   transparent until the texture is ready, and never renders outside WebGL.
+   #skinFxParticles: the ONE 2D canvas for all 8 emitters (≤300 live
+   particles, upstream z-order smoke < fire < spark < ember). Both display
+   only for the trojan chapter; drawing is driven by the shared rAF loop in
+   app.js, which freezes on html.motion-paused / document.hidden /
+   reduced-motion / non-intersecting (JS gate — CSS animation rules can't
+   pause canvas work). */
+#skinFxFlame,
+#skinFxParticles {
+  display: none;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#skinFxFlame {
+  z-index: -2;
+}
+
+#skinFxParticles {
+  z-index: -1;
+}
+
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] #skinFxFlame {
+  display: block;
+}
+
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] #skinFxParticles {
+  display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #skinFxFlame,
+  #skinFxParticles {
+    display: none !important;
+  }
+}
+
+/* ── Phase 4: badges, edition line, program mark (upstream v0.2.14) ──
+   Brand edition line (TokenStepBrandLockup, VoyageSkin.swift:253-279): a
+   12×1px green line + serif caption under the header title, cinematic packs
+   only; text is set by applyTheme() (upstream fixed strings, not localized
+   there either). Horizon program mark (InterstellarTokenStepMark,
+   InterstellarSkin.swift:351-376): same 30px box as logo.png — the img shows
+   for classic + odyssey, the accretion mark only when a skin pack is active
+   WITHOUT a chapter (applyTheme clears data-skin-chapter for event horizon).
+   Chapter relief badges (OdysseySurfaceEmblem): settings swatch corner +
+   today privacy card top-right; which of the three motifs shows follows
+   data-skin-chapter; classic and the horizon pack show none. */
+#app .reference-brand-edition {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  margin-top: 1px;
+  line-height: 1;
+}
+
+html[data-skin-pack] #app .reference-brand-edition {
+  display: flex;
+}
+
+.reference-brand-edition-line {
+  width: 12px;
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--green);
+}
+
+#brandEditionText {
+  color: var(--green-dark);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.35px;
+  line-height: 1;
+  opacity: 0.84;
+  white-space: nowrap;
+}
+
+#app .reference-brand-mark {
+  display: none;
+  width: 30px;
+  height: 30px;
+}
+
+html[data-skin-pack]:not([data-skin-chapter]) #app .reference-brand-logo img {
+  display: none;
+}
+
+html[data-skin-pack]:not([data-skin-chapter]) #app .reference-brand-mark {
+  display: block;
+}
+
+.ts-chapter-badge {
+  display: none;
+  pointer-events: none;
+}
+
+.ts-chapter-badge svg {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+html[data-skin-pack] .theme-swatch {
+  position: relative;
+}
+
+html[data-skin-pack][data-skin-chapter="directors_cut"] .ts-chapter-badge svg[data-motif="helmet"],
+html[data-skin-pack][data-skin-chapter="aegean_mist"] .ts-chapter-badge svg[data-motif="helmet"],
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] .ts-chapter-badge svg[data-motif="horse"],
+html[data-skin-pack][data-skin-chapter="ash_marble"] .ts-chapter-badge svg[data-motif="marble"] {
+  display: block;
+}
+
+.theme-swatch .ts-chapter-badge-corner {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 22px;
+  height: 22px;
+  opacity: 0.35;
+}
+
+.today-privacy-card .ts-chapter-badge-privacy {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  opacity: 0.30;
 }
 
 /* ── Post-acceptance polish (round 5, from the pre-release polish review) ── */
@@ -4022,4 +4473,26 @@ html[data-skin-pack] #view .today-chart-select {
 html[data-skin-pack] #view .today-chart-select:hover {
   border-color: color-mix(in srgb, var(--green) 42%, transparent);
   background: color-mix(in srgb, var(--green) 16%, transparent);
+}
+
+/* ── Phase 4: Interstellar brand mark swap (Components.swift:66-76) ──
+   The horizon pack replaces the logo.png asset with the programmatic
+   accretion-disk mark already present in the header DOM
+   (.reference-brand-mark, dashboard/index.html:86). Classic and Odyssey
+   keep the asset image; only the horizon shows the mark. */
+html[data-skin-pack]:not([data-skin-chapter]) #app .reference-brand-logo img {
+  display: none;
+}
+
+html[data-skin-pack]:not([data-skin-chapter]) #app .reference-brand-logo .reference-brand-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The disk mark needs its dark backing (the fixed white asset background
+   above would swallow it). Scoped to the horizon pack only. */
+html[data-skin-pack]:not([data-skin-chapter]) #app .reference-brand-logo {
+  background: rgb(7, 10, 15) !important;
+  border: 1px solid color-mix(in srgb, var(--green) 45%, transparent);
 }

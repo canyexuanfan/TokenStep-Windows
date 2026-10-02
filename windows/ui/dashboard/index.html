@@ -39,6 +39,12 @@
     function _startReal(initialSettings, initialSnapshot) {
       // Apply saved color theme immediately (port of macOS Theme.swift).
       window.TS.applyTheme((initialSettings && initialSettings.theme) || 'green', (initialSettings && initialSettings.odyssey_chapter) || 'directors_cut');
+      // Motion mode (Phase 2, upstream InterstellarMotionMode): quiet/orbit/
+      // gravity_tide — drives breath cadence, ribbons, meteors, hotspot and
+      // the approach dolly on the event-horizon pack.
+      window.TS.setSkinMotionMode((initialSettings && initialSettings.skin_motion_mode) || 'orbit');
+      // Edition text stashed by applyTheme lands here once the header exists.
+      window.TS.syncEditionLine && window.TS.syncEditionLine();
       // Restore the full dashboard logic here, using verified data.
       var invoke = window.TS.invoke;
       var formatTokens = window.TS.formatTokens;
@@ -77,9 +83,10 @@
         // #pageTitle/#pageSubtitle stay as hidden compat targets because
         // render()/refreshHeaderI18n() still write the live page title there.
         referenceBrand.className = 'reference-brand';
-        referenceBrand.innerHTML = '<div class="reference-brand-logo" role="img" aria-label="TokenStep"><img src="../shared/logo.png" alt="" onerror="if(!this.dataset.retry){this.dataset.retry=1;this.src=\'../shared/logo.png?r=\'+Date.now();}" /></div>' +
+        referenceBrand.innerHTML = '<div class="reference-brand-logo" role="img" aria-label="TokenStep"><img src="../shared/logo.png" alt="" onerror="if(!this.dataset.retry){this.dataset.retry=1;this.src=\'../shared/logo.png?r=\'+Date.now();}" /><svg class="reference-brand-mark" viewBox="0 0 30 30" aria-hidden="true"><defs><filter id="tsMarkGlow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="1.2"/></filter></defs><rect x="0.4" y="0.4" width="29.2" height="29.2" rx="8.1" fill="rgb(7,10,15)" stroke="var(--green)" stroke-opacity="0.5" stroke-width="0.8"/><ellipse cx="15" cy="15" rx="10.8" ry="3" fill="none" stroke="var(--green-dark)" stroke-opacity="0.30" stroke-width="2.4" filter="url(#tsMarkGlow)"/><ellipse cx="15" cy="15" rx="10.8" ry="3" fill="none" stroke="var(--green-dark)" stroke-opacity="0.86" stroke-width="1.65"/><circle cx="15" cy="15" r="5.1" fill="black" stroke="var(--green-dark)" stroke-opacity="0.72" stroke-width="0.75"/><rect x="4.8" y="14.475" width="20.4" height="1.05" rx="0.525" fill="var(--green-dark)"/></svg></div>' +
           '<div class="reference-brand-copy" style="min-width:0">' +
             '<div class="reference-brand-title">TokenStep<span>|</span><em>' + window.TS.t('本地 AI Token 使用追踪器') + '（Windows）</em></div>' +
+            '<div class="reference-brand-edition" id="brandEdition" aria-hidden="true"><span class="reference-brand-edition-line"></span><span id="brandEditionText"></span></div>' +
             '<div class="reference-brand-subtitle">' + window.TS.t('所有数据仅存储在本机设备，不会上传') + '</div>' +
           '</div>' +
           '<h2 id="pageTitle" class="reference-visually-hidden">今日</h2><p id="pageSubtitle" class="reference-visually-hidden"></p>';
@@ -686,7 +693,7 @@
         var costCard = '<section class="card today-design-card today-cost-card"><div class="today-design-card-title">' + window.TS.t('费用估算') + ' ' + infoIcon(window.TS.t('按 API 列表价估算，不代表订阅或实际账单。')) + '</div><div class="today-cost-columns"><div><span>' + window.TS.t('今日预估') + '</span><strong>' + formatMoney(day.cost) + '</strong></div><div><span>' + window.TS.t('本周预估') + '</span><strong>' + formatMoney(weekCost) + '</strong></div></div><div class="today-cost-footer"><span><em class="today-cost-delta">' + window.TS.t('较昨日') + ' ' + costDeltaText + '</em></span><span><b>' + window.TS.t('预算') + ' ¥ ' + Number(settings.monthly_budget || 1500).toLocaleString() + '</b></span></div></section>';
         var privacyCheck = '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.2"/><path d="M8.2 12.2l2.6 2.6 5-5.4"/></svg></span>';
         var privacyArt = '<svg viewBox="0 0 120 120" fill="none"><rect x="70" y="70" width="40" height="30" rx="4" stroke="color-mix(in srgb, var(--green) 45%, #ffffff)" stroke-width="2.5"/><path d="M78 70v-4a8 8 0 0 1 16 0v4" stroke="color-mix(in srgb, var(--green) 45%, #ffffff)" stroke-width="2.5"/><circle cx="90" cy="85" r="3" fill="color-mix(in srgb, var(--green) 45%, #ffffff)"/><path d="M52 8l34 12.5v24c0 21.5-14.5 37-34 42.5C32.5 81.5 18 66 18 44.5v-24z" fill="color-mix(in srgb, var(--mint) 22%, #ffffff)" stroke="var(--green)" stroke-width="2.5" stroke-linejoin="round"/><rect x="41" y="46" width="22" height="17" rx="3.5" fill="var(--green)"/><path d="M45.5 46v-5.5a6.5 6.5 0 0 1 13 0V46" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round"/><circle cx="52" cy="54.5" r="2.2" fill="#fff"/></svg>';
-        var privacyCard = '<section class="card today-design-card today-privacy-card"><div class="today-design-card-title">' + window.TS.t('数据留在本机') + ' ' + infoIcon(window.TS.t('所有数据只在本机计算，不上传到任何服务器')) + '</div><div class="today-privacy-list"><div>' + privacyCheck + window.TS.t('所有数据仅存储在本机') + '</div><div>' + privacyCheck + window.TS.t('数据不会上传到任何服务器') + '</div><div>' + privacyCheck + window.TS.t('完全由你掌控与隐私') + '</div></div><div class="today-privacy-art">' + privacyArt + '</div></section>';
+        var privacyCard = '<section class="card today-design-card today-privacy-card"><div class="today-design-card-title">' + window.TS.t('数据留在本机') + ' ' + infoIcon(window.TS.t('所有数据只在本机计算，不上传到任何服务器')) + '</div><div class="today-privacy-list"><div>' + privacyCheck + window.TS.t('所有数据仅存储在本机') + '</div><div>' + privacyCheck + window.TS.t('数据不会上传到任何服务器') + '</div><div>' + privacyCheck + window.TS.t('完全由你掌控与隐私') + '</div></div><div class="today-privacy-art">' + privacyArt + '</div><span class="ts-chapter-badge ts-chapter-badge-privacy" aria-hidden="true">' + window.TS.ODYSSEY_BADGES.helmet() + window.TS.ODYSSEY_BADGES.horse() + window.TS.ODYSSEY_BADGES.marble() + '</span></section>';
 
         return '<div class="today-design-page"><div class="today-design-top">' + tokenCard + rhythmCard + activityCard + '</div>' + metricStrip + '<div class="today-design-middle">' + clientCard + modelCard + quotaCard + '</div><div class="today-design-bottom">' + rankCard + agentWorkCard + costCard + privacyCard + '</div></div>';
       }
@@ -999,7 +1006,13 @@
           var v = th.vars;
           var grad = 'linear-gradient(135deg,' + (v['--mint'] || v['--green']) + ',' + v['--green'] + ',' + v['--green-dark'] + ')';
           var swatchShadow = '0 4px 8px ' + (selected ? 'color-mix(in srgb,' + v['--green-dark'] + ' 22%,transparent)' : 'color-mix(in srgb,' + v['--green-dark'] + ' 10%,transparent)');
-          return '<button class="theme-swatch" ' + attr + ' title="' + window.TS.t(th.title) + '（' + window.TS.t(th.sub) + '）" style="flex:1;min-width:84px;height:80px;border-radius:16px;border:1.4px solid ' + (selected ? 'color-mix(in srgb,' + v['--green'] + ' 46%,transparent)' : 'rgba(0,0,0,0.045)') + ';background:' + (selected ? 'color-mix(in srgb,' + v['--mint'] + ' 22%,transparent)' : 'color-mix(in srgb,var(--track) 24%,transparent)') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px;font-family:inherit">' +
+          // Phase 4: odyssey chapter swatches carry their relief badge
+          // (helmet/horse/marble); visibility is CSS-gated by data-skin-chapter.
+          var badge = '';
+          if (attr.indexOf('data-chapter') >= 0 && window.TS.CHAPTER_MOTIFS[key]) {
+            badge = '<span class="ts-chapter-badge ts-chapter-badge-corner" aria-hidden="true">' + window.TS.ODYSSEY_BADGES[window.TS.CHAPTER_MOTIFS[key]]() + '</span>';
+          }
+          return '<button class="theme-swatch" ' + attr + ' title="' + window.TS.t(th.title) + '（' + window.TS.t(th.sub) + '）" style="flex:1;min-width:84px;height:80px;border-radius:16px;border:1.4px solid ' + (selected ? 'color-mix(in srgb,' + v['--green'] + ' 46%,transparent)' : 'rgba(0,0,0,0.045)') + ';background:' + (selected ? 'color-mix(in srgb,' + v['--mint'] + ' 22%,transparent)' : 'color-mix(in srgb,var(--track) 24%,transparent)') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px;font-family:inherit">' + badge +
             '<span style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:' + grad + ';box-shadow:' + swatchShadow + ';color:#fff;font-size:13px;font-weight:900">' + (selected ? '✓' : '') + '</span>' +
             '<span style="display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.1">' +
               '<span style="font-size:13px;font-weight:800;color:' + (selected ? 'var(--ink)' : 'var(--ink-soft)') + '">' + window.TS.t(th.title) + '</span>' +
@@ -1027,6 +1040,13 @@
             '<span style="font-size:11px;font-weight:700;color:var(--muted)">' + window.TS.t(p.sub) + '</span>' +
           '</button>';
         }).join('');
+        // Motion mode segmented control (Phase 2, upstream InterstellarMotionLab
+        // swift:4-69): quiet/orbit/gravity_tide, same seg pattern as rankVis.
+        var motionMode = settings.skin_motion_mode || 'orbit';
+        var motionBtn = function (val, label) {
+          var on = motionMode === val ? ';color:var(--ink);border-color:color-mix(in srgb,var(--green) 50%,transparent)' : ';color:var(--muted)';
+          return '<button data-skin-motion-set="' + val + '" style="flex:1;padding:7px 10px;font-size:13px;font-weight:700;background:var(--canvas);border:1px solid var(--track);border-radius:9px;cursor:pointer' + on + '">' + window.TS.t(label) + '</button>';
+        };
         // Language selector.
         var curLang = settings.language || 'zhHans';
         var langOpts = '<option value="zhHans"' + (curLang === 'zhHans' ? ' selected' : '') + '>' + window.TS.t('简体中文') + '</option>' +
@@ -1038,6 +1058,12 @@
           '<div id="themePackClassic" class="pack-options" style="display:' + (activePack === 'classic' ? 'flex' : 'none') + ';gap:10px;flex-wrap:wrap;margin-top:10px">' + classicHTML + '</div>' +
           '<div id="themePackOdyssey" class="pack-options" style="display:' + (activePack === 'odyssey' ? 'flex' : 'none') + ';gap:10px;flex-wrap:wrap;margin-top:10px">' + odysseyHTML + '</div>' +
           '<div id="themePackInterstellar" class="pack-options" style="display:' + (activePack === 'interstellar' ? 'flex' : 'none') + ';gap:10px;flex-wrap:wrap;margin-top:10px">' + interstellarHTML + '</div>' +
+          '<div class="setting-row" style="margin-top:14px"><div><div class="setting-label">' + window.TS.t('动效模式') + '</div><div class="setting-hint">' + window.TS.t('事件视界动效三档：静谧 12fps 静景 / 轨道 24fps 流星 / 坠落 24fps 推镜；经典配色不受影响') + '</div></div></div>' +
+          '<div id="skinMotionSeg" style="display:flex;gap:8px;margin:4px 0 8px">' +
+          motionBtn('quiet', '静谧') +
+          motionBtn('orbit', '轨道') +
+          motionBtn('gravity_tide', '坠落') +
+          '</div>' +
         '</div>';
         // Codex quota display toggle (mirrors upstream showCodexQuota, default off).
         var quotaChecked = settings.show_codex_quota ? ' checked' : '';
@@ -1325,6 +1351,16 @@
               invoke('set_theme', { theme: tk }).then(function (s) { settings = s; render(); });
             });
           });
+          // Motion mode segmented control (Phase 2): applies instantly via
+          // set_skin_motion_mode — the backend normalizes unknown values back
+          // to "orbit", and render() re-marks the confirmed selection.
+          document.querySelectorAll('#skinMotionSeg [data-skin-motion-set]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var mode = btn.getAttribute('data-skin-motion-set');
+              window.TS.setSkinMotionMode(mode);
+              invoke('set_skin_motion_mode', { mode: mode }).then(function (s) { settings = s; render(); });
+            });
+          });
           var langSel = document.getElementById('langSelect');
           if (langSel) langSel.addEventListener('change', function () {
             invoke('set_language', { language: langSel.value }).then(function (s) {
@@ -1479,6 +1515,7 @@
       };
 
       function updateHeader() {
+        window.TS.syncEditionLine && window.TS.syncEditionLine();
         // Build the "updated at" string in Chinese, then translate via t() so
         // the prefix ("更新 "/"Updated ") follows the current language.
         var prefix = window.TS.t('更新 ');

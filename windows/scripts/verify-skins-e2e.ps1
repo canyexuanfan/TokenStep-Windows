@@ -23,7 +23,11 @@ Start-Sleep -Seconds 1
 
 if (Test-Path $exeSrc) {
   Copy-Item $exeSrc $exeDst -Force
-  Write-Output ("deployed: " + (Get-Item $exeDst).Length + " bytes")
+  Start-Sleep -Milliseconds 800
+  $srcLen = (Get-Item $exeSrc).Length
+  $dstLen = (Get-Item $exeDst).Length
+  if ($srcLen -ne $dstLen) { Write-Output "DEPLOY MISMATCH src=$srcLen dst=$dstLen"; cmd /c "taskkill /F /T /IM tokenstep.exe" 2>&1 | Out-Null; exit 1 }
+  Write-Output ("deployed: " + $dstLen + " bytes")
 } else {
   Write-Output "NO BUILD AT $exeSrc"
   exit 1
@@ -120,7 +124,14 @@ function GotoToday {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const item = document.querySelector('.nav-item[data-id="today"]');
   if (item) item.click();
-  await sleep(900);
+  await sleep(700);
+  // Browsers restore the last scroll position on nav; every shot needs the
+  // page top (header + hero) in frame.
+  window.scrollTo(0, 0);
+  const sc = document.querySelector('main.content');
+  if (sc) sc.scrollTop = 0;
+  if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+  await sleep(400);
   return 'today:' + (document.querySelector('#view .today-token-card') ? 'ok' : 'missing');
 })()
 '@
@@ -175,6 +186,19 @@ $null = Invoke-Eval @'
   return 'settings';
 })()
 '@
+# Scroll the settings page to the theme pack card so the motion-mode picker
+# and chapter badges are in frame (3b keeps the top view).
+$null = Invoke-Eval @'
+(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const scroller = document.querySelector('main.content') || document.scrollingElement;
+  const btn = [...document.querySelectorAll('button')].find(b => (b.textContent || '').trim() === '静谧');
+  if (btn && btn.scrollIntoView) { btn.scrollIntoView({ block: 'center' }); }
+  await sleep(700);
+  return 'scrolled:' + (btn ? 'found-btn' : 'no-btn');
+})()
+'@
+Shot '3c-settings-theme-card'
 Shot '3b-settings-trojan'
 
 SwitchSkin 'odyssey' '.theme-swatch[data-chapter="ash_marble"]' 'ash'
