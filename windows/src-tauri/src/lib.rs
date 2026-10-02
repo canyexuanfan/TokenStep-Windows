@@ -196,7 +196,30 @@ fn set_autostart(enabled: bool) -> Result<TokenStepSettings, String> {
 #[tauri::command]
 fn set_theme(theme: String) -> Result<TokenStepSettings, String> {
     let mut s = settings::load();
+    // Upstream v0.2.4 skin packs: picking a classic color also remembers it
+    // as the classic-pack selection (restored when switching back from a
+    // skin pack). "voyage"/"event_horizon" just switch the active pack and
+    // keep the remembered classic color untouched.
+    if ["green", "ocean", "violet", "amber", "graphite"].contains(&theme.as_str()) {
+        s.classic_theme = theme.clone();
+    }
     s.theme = theme;
+    settings::save(&s).map_err(|e| e.to_string())?;
+    Ok(settings::load())
+}
+
+/// Pick an Odyssey chapter (upstream `setOdysseyChapter`): activating a
+/// chapter switches the active theme to the Odyssey pack ("voyage") and
+/// remembers the chapter for future switches back into the pack.
+#[tauri::command]
+fn set_odyssey_chapter(chapter: String) -> Result<TokenStepSettings, String> {
+    let valid = ["directors_cut", "aegean_mist", "trojan_inferno", "ash_marble"];
+    if !valid.contains(&chapter.as_str()) {
+        return Err(format!("unknown odyssey chapter: {chapter}"));
+    }
+    let mut s = settings::load();
+    s.theme = "voyage".to_string();
+    s.odyssey_chapter = chapter;
     settings::save(&s).map_err(|e| e.to_string())?;
     Ok(settings::load())
 }
@@ -1238,6 +1261,7 @@ pub fn run() {
             pick_folder,
             check_for_update,
             check_for_update_manual,
+            set_odyssey_chapter,
             open_release_page,
             download_and_install_update,
             skip_update_version,

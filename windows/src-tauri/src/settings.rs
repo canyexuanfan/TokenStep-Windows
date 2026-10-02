@@ -64,11 +64,24 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
     } else {
         60
     };
-    let valid_themes = ["green", "ocean", "violet", "amber", "graphite"];
+    // Upstream v0.2.4 skin packs: classic colors plus the pack themes.
+    let valid_themes = ["green", "ocean", "violet", "amber", "graphite", "voyage", "event_horizon"];
     let theme = if valid_themes.contains(&s.theme.as_str()) {
         s.theme.clone()
     } else {
         "green".to_string()
+    };
+    let valid_classic = ["green", "ocean", "violet", "amber", "graphite"];
+    let classic_theme = if valid_classic.contains(&s.classic_theme.as_str()) {
+        s.classic_theme.clone()
+    } else {
+        "green".to_string()
+    };
+    let valid_chapters = ["directors_cut", "aegean_mist", "trojan_inferno", "ash_marble"];
+    let odyssey_chapter = if valid_chapters.contains(&s.odyssey_chapter.as_str()) {
+        s.odyssey_chapter.clone()
+    } else {
+        "directors_cut".to_string()
     };
     let valid_visibilities = ["automatic", "visible", "hidden"];
     let visibility = if valid_visibilities.contains(&s.agent_work_rank_visibility.as_str()) {
@@ -86,6 +99,8 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         ask_before_downloading_updates: s.ask_before_downloading_updates,
         require_verified_updates: s.require_verified_updates,
         theme,
+        classic_theme,
+        odyssey_chapter,
         screenshot_dir: s.screenshot_dir,
         language: {
             let valid = ["zhHans", "en", "zhHant"];

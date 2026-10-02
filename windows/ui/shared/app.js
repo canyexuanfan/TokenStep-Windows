@@ -2539,12 +2539,175 @@ const THEMES = {
   },
 };
 
-function applyTheme(name) {
-  const theme = THEMES[name] || THEMES.green;
+// ---- Skin packs (upstream v0.2.4/v0.2.7) ----
+// Odyssey (奥德赛) is a dark cinematic pack with four chapters; Interstellar
+// (引力边界 / Event Horizon) is a single dark palette. Palettes are literal
+// ports of Theme.swift's TokenStepThemePalette (accent → our --green, etc.).
+// The classic palettes above carry no --muted/--line overrides (app.css
+// light defaults apply); the packs add them so dark canvases stay readable.
+function darkAuxVars(inkRgb, lineRgb, lineA) {
+  const [r, g, b] = inkRgb;
+  const [lr, lg, lb] = lineRgb;
+  return {
+    "--muted": `rgba(${r},${g},${b},0.68)`,
+    "--muted-strong": `rgba(${r},${g},${b},0.88)`,
+    "--muted-faint": `rgba(${r},${g},${b},0.5)`,
+    "--ink-soft": `rgba(${r},${g},${b},0.8)`,
+    "--line": `rgba(${lr},${lg},${lb},${lineA})`,
+    "--table-border": `rgba(${lr},${lg},${lb},${Math.max(0, lineA - 0.2).toFixed(2)})`,
+    "--shadow": "rgba(0,0,0,0.45)",
+    "--shadow-lg": "rgba(0,0,0,0.55)",
+  };
+}
+
+const ODYSSEY_INK = [231, 221, 200];
+const ODYSSEY_LINE = [116, 82, 49];
+
+const ODYSSEY_CHAPTERS = {
+  directors_cut: {
+    title: "导演剪辑", sub: "按界面自动组合",
+    vars: Object.assign({
+      "--canvas": "#070f16", "--surface": "#101a21", "--ink": "#e7ddc8",
+      "--green": "#ca9e5b", "--green-dark": "#e8c481", "--mint": "#3d352a",
+      "--track": "#2e363b", "--mint-soft": "#323838",
+      "--activity1": "#6f5c42", "--activity2": "#977746",
+      "--activity3": "#be8f4d", "--activity4": "#deb36b",
+      "--ring1": "rgb(202,158,91)", "--ring2": "rgb(218,176,106)",
+      "--ring3": "rgb(232,196,129)", "--ring4": "rgb(244,216,164)",
+      "--skin-art": 'url("../shared/skins/odyssey/OdysseyAegeanPopover.png")',
+      // Helmet sits at the plate's left 1/3 — shift the crop left so the
+      // subject lands behind the today main card (up-odyssey.jpg quadrant 1).
+      "--skin-art-position": "20% center",
+    }, darkAuxVars(ODYSSEY_INK, ODYSSEY_LINE, 0.58)),
+  },
+  aegean_mist: {
+    title: "爱琴海冷雾", sub: "头盔 · 冷雾 · 深海",
+    vars: Object.assign({
+      "--canvas": "#05121d", "--surface": "#0d1f2b", "--ink": "#e7ddc8",
+      "--green": "#c69e5b", "--green-dark": "#e1c286", "--mint": "#394b54",
+      "--track": "#2a3f4b", "--mint-soft": "#304958",
+      "--activity1": "#5c7784", "--activity2": "#818f86",
+      "--activity3": "#ae9663", "--activity4": "#d7b574",
+      "--ring1": "rgb(198,158,91)", "--ring2": "rgb(215,179,111)",
+      "--ring3": "rgb(228,200,146)", "--ring4": "rgb(240,221,181)",
+      "--skin-art": 'url("../shared/skins/odyssey/OdysseyAegeanPopover.png")',
+      // Same Aegean plate, same left-third helmet: crop shifted left.
+      "--skin-art-position": "20% center",
+    }, darkAuxVars(ODYSSEY_INK, ODYSSEY_LINE, 0.58)),
+  },
+  trojan_inferno: {
+    title: "特洛伊火海", sub: "木马 · 烈火 · 余烬",
+    vars: Object.assign({
+      "--canvas": "#0a0908", "--surface": "#191411", "--ink": "#e7ddc8",
+      "--green": "#d17a37", "--green-dark": "#efaa5c", "--mint": "#4b2819",
+      "--track": "#3a2d25", "--mint-soft": "#3d261c",
+      "--activity1": "#6f3923", "--activity2": "#a04e27",
+      "--activity3": "#cd692f", "--activity4": "#ee9a4d",
+      "--ring1": "rgb(209,122,55)", "--ring2": "rgb(226,143,67)",
+      "--ring3": "rgb(239,170,92)", "--ring4": "rgb(248,198,128)",
+      "--skin-art": 'url("../shared/skins/odyssey/OdysseyTrojanPopover.png")',
+      // Trojan stands mid-right on the plate — 70% keeps it in frame.
+      "--skin-art-position": "70% center",
+    }, darkAuxVars(ODYSSEY_INK, ODYSSEY_LINE, 0.58)),
+  },
+  ash_marble: {
+    title: "灰烬神像", sub: "神像 · 石纹 · 灰烬",
+    vars: Object.assign({
+      "--canvas": "#0d0e0f", "--surface": "#191b1c", "--ink": "#e7ddc8",
+      "--green": "#be9560", "--green-dark": "#debd8b", "--mint": "#403e3a",
+      "--track": "#373837", "--mint-soft": "#42413d",
+      "--activity1": "#686358", "--activity2": "#8b775b",
+      "--activity3": "#b28f60", "--activity4": "#d7b17c",
+      "--ring1": "rgb(190,149,96)", "--ring2": "rgb(208,169,116)",
+      "--ring3": "rgb(222,189,139)", "--ring4": "rgb(237,213,175)",
+      "--skin-art": 'url("../shared/skins/odyssey/OdysseyAshMarblePopover.png")',
+      // Idol face at the plate's left — mirror the upstream left main-card
+      // composition (up-odyssey.jpg "ASH & MARBLE" quadrant).
+      "--skin-art-position": "20% center",
+    }, darkAuxVars(ODYSSEY_INK, ODYSSEY_LINE, 0.58)),
+  },
+};
+
+const EVENT_HORIZON = {
+  title: "引力边界", sub: "事件视界 · 象牙光",
+  vars: Object.assign({
+    "--canvas": "#05080d", "--surface": "#121519", "--ink": "#f4efe2",
+    "--green": "#e0cfa9", "--green-dark": "#fbf1d5", "--mint": "#575043",
+    "--track": "#2f3133", "--mint-soft": "#3a3a39",
+    "--activity1": "#656056", "--activity2": "#948971",
+    "--activity3": "#c7b692", "--activity4": "#f4e7c6",
+    "--ring1": "rgb(224,207,169)", "--ring2": "rgb(236,220,183)",
+    "--ring3": "rgb(247,234,204)", "--ring4": "rgb(255,247,224)",
+    "--skin-art": 'url("../shared/skins/interstellar/InterstellarEventHorizonHero.png")',
+    "--skin-art-quiet": 'url("../shared/skins/interstellar/InterstellarEventHorizonQuiet.png")',
+    // Bright disk band crosses the plate's vertical middle — keep it centered
+    // so the band stays visible across the card region (baseline-5).
+    "--skin-art-position": "center center",
+    "--skin-art-quiet-position": "center center",
+  }, darkAuxVars([244, 239, 226], [194, 177, 143], 0.34)),
+};
+
+/// Resolve the active theme entry: a classic color name, "voyage" + chapter,
+/// or "event_horizon". Kept as a pure lookup so the settings page can render
+/// pack/chapter choices from the same data applyTheme consumes.
+function resolveTheme(name, odysseyChapter) {
+  if (name === "voyage") {
+    return ODYSSEY_CHAPTERS[odysseyChapter] || ODYSSEY_CHAPTERS.directors_cut;
+  }
+  if (name === "event_horizon") {
+    return EVENT_HORIZON;
+  }
+  return THEMES[name] || THEMES.green;
+}
+
+/// Every CSS custom property applyTheme() may ever own. root.style.setProperty()
+/// never removes absent keys, so switching from a skin pack back to a classic
+/// color used to leave the 8 dark aux vars (--muted/--muted-strong/--muted-faint/
+/// --ink-soft/--line/--table-border/--shadow/--shadow-lg) plus the pack's plate
+/// permanently on <html>. applyTheme() now clears this whole set first.
+const THEME_MANAGED_KEYS = [
+  ...new Set(
+    [...Object.values(THEMES), ...Object.values(ODYSSEY_CHAPTERS), EVENT_HORIZON].flatMap(
+      (theme) => Object.keys(theme.vars)
+    )
+  ),
+];
+
+function applyTheme(name, odysseyChapter) {
+  const theme = resolveTheme(name, odysseyChapter);
   const root = document.documentElement;
   const v = theme.vars;
+  // Clear EVERY theme-managed key before applying the new set: classic colors
+  // rely on app.css's light :root defaults, and any survivor would darken or
+  // ghost them (upstream/old behavior: classic = plain light palette).
+  for (const key of THEME_MANAGED_KEYS) {
+    root.style.removeProperty(key);
+  }
   for (const [k, val] of Object.entries(v)) {
     root.style.setProperty(k, val);
+  }
+  // Window-level artwork gate: skin packs paint the full-window plate
+  // (body background stack in app.css); classic colors must keep the plain
+  // canvas look.
+  if (v["--skin-art"] || v["--skin-art-quiet"]) {
+    root.setAttribute("data-skin-pack", "");
+    // Round 4: per-chapter CSS hook (trojan today-card thinning). Reflects the
+    // RESOLVED chapter entry — an unknown odyssey_chapter still resolves to
+    // directors_cut above, so the attribute stays truthful; event_horizon and
+    // classic colors clear it so no chapter rule can leak across packs (same
+    // residue discipline as THEME_MANAGED_KEYS below).
+    const chapterKey =
+      name === "voyage"
+        ? Object.keys(ODYSSEY_CHAPTERS).find((k) => ODYSSEY_CHAPTERS[k] === theme)
+        : null;
+    if (chapterKey) {
+      root.setAttribute("data-skin-chapter", chapterKey);
+    } else {
+      root.removeAttribute("data-skin-chapter");
+    }
+  } else {
+    root.removeAttribute("data-skin-pack");
+    root.removeAttribute("data-skin-chapter");
   }
   // Sync the raw-color cache so SVG/Canvas/contributionColor pick up the theme.
   themeColors.canvas = v["--canvas"];
@@ -2555,6 +2718,9 @@ function applyTheme(name) {
   themeColors.mint = v["--mint"];
   themeColors.track = v["--track"];
   themeColors.mintSoft = v["--mint-soft"];
+  // Classic colors define no --muted: fall back to the :root light default,
+  // never to the previous theme's value (same residue class as above).
+  themeColors.muted = v["--muted"] || "#6b7280";
   themeColors.activity1 = v["--activity1"];
   themeColors.activity2 = v["--activity2"];
   themeColors.activity3 = v["--activity3"];
@@ -2731,6 +2897,9 @@ window.TS = {
   downloadFile,
   snapshotToCSV,
   THEMES,
+  ODYSSEY_CHAPTERS,
+  EVENT_HORIZON,
+  resolveTheme,
   applyTheme,
   contributionWallHTML,
   tokenToolColor,

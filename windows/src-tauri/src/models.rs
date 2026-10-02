@@ -295,9 +295,20 @@ pub struct TokenStepSettings {
     /// Whether to only install releases from verified/signed sources.
     #[serde(rename = "require_verified_updates", default = "default_true")]
     pub require_verified_updates: bool,
-    /// Color theme: green (default) / ocean / violet / amber / graphite.
+    /// Active theme (upstream v0.2.4 skin packs): a classic color
+    /// (green default / ocean / violet / amber / graphite) or a skin pack
+    /// theme — "voyage" (Odyssey) / "event_horizon" (Interstellar).
     #[serde(rename = "theme", default = "default_theme")]
     pub theme: String,
+    /// Remembered classic-pack color, so switching into a skin pack and back
+    /// restores the user's last classic choice (upstream `classicTheme`).
+    #[serde(rename = "classic_theme", default = "default_classic_theme")]
+    pub classic_theme: String,
+    /// Remembered Odyssey chapter (directors_cut / aegean_mist /
+    /// trojan_inferno / ash_marble) — the palette used when
+    /// `theme == "voyage"` (upstream `odysseyChapter`).
+    #[serde(rename = "odyssey_chapter", default = "default_odyssey_chapter")]
+    pub odyssey_chapter: String,
     /// Directory where screenshots are saved by default (empty = exe dir).
     #[serde(rename = "screenshot_dir", default)]
     pub screenshot_dir: String,
@@ -369,6 +380,14 @@ fn default_theme() -> String {
     "green".to_string()
 }
 
+fn default_classic_theme() -> String {
+    "green".to_string()
+}
+
+fn default_odyssey_chapter() -> String {
+    "directors_cut".to_string()
+}
+
 fn default_rank_visibility() -> String {
     "hidden".to_string()
 }
@@ -385,6 +404,8 @@ impl Default for TokenStepSettings {
             ask_before_downloading_updates: true,
             require_verified_updates: true,
             theme: "green".to_string(),
+            classic_theme: "green".to_string(),
+            odyssey_chapter: "directors_cut".to_string(),
             screenshot_dir: String::new(),
             language: "zhHans".to_string(),
             skipped_update_version: None,

@@ -18,9 +18,8 @@ Write-Output "debug port: $Port"
 
 Get-Process tokenstep -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 1
-Get-CimInstance Win32_Process -Filter "Name='msedgewebview2.exe'" |
-  Where-Object { $_.CommandLine -match 'TokenStep' } |
-  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+# Whole-tree kill: Stop-Process orphans the WebView2 child tree.
+cmd /c "taskkill /F /T /IM tokenstep.exe" 2>&1 | Out-Null
 Start-Sleep -Seconds 1
 
 $cachePath = Join-Path $env:APPDATA 'TokenStep\cache\collector-cache.json'

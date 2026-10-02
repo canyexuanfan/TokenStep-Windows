@@ -151,7 +151,7 @@ body {
 
 .nav-item.active .nav-icon {
   background: var(--green);
-  color: #fff;
+  color: var(--surface);
 }
 
 .nav-icon svg {
@@ -599,7 +599,7 @@ td.total {
 
 .btn-primary {
   background: linear-gradient(135deg, var(--green), var(--green-dark));
-  color: #fff;
+  color: var(--surface);
   border: none;
   box-shadow: 0 7px 12px color-mix(in srgb, var(--green-dark) 22%, transparent);
 }
@@ -880,11 +880,6 @@ input[type="number"]:focus {
   gap: var(--today-gap);
 }
 
-#view .today-hero-slot > .card:first-child {
-  flex: 1;
-  background: linear-gradient(145deg, #ffffff 0%, #fbfffc 68%, #f1fbf3 100%);
-}
-
 #view .today-hero-slot .ring-wrap {
   filter: drop-shadow(0 8px 16px rgba(45, 164, 78, .12));
 }
@@ -921,7 +916,7 @@ input[type="number"]:focus {
 }
 
 #view .today-rhythm-slot > .card {
-  background: linear-gradient(150deg, #ffffff 0%, #f7fcf8 100%);
+  background: linear-gradient(150deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 90%, var(--canvas)) 100%);
 }
 
 #view .today-rhythm-slot svg {
@@ -931,7 +926,7 @@ input[type="number"]:focus {
 }
 
 #view .today-activity-slot > .card {
-  background: linear-gradient(150deg, #ffffff 0%, #fbfcff 100%);
+  background: linear-gradient(150deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 90%, var(--canvas)) 100%);
 }
 
 #view .today-activity-slot .activity {
@@ -1011,7 +1006,7 @@ input[type="number"]:focus {
 }
 
 #view .today-agent-slot #tokenRankCard {
-  background: linear-gradient(145deg, #ffffff 0%, #f7fcf8 100%);
+  background: linear-gradient(145deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 90%, var(--canvas)) 100%);
 }
 
 #view .today-agent-slot #agentWorkCard {
@@ -1071,7 +1066,7 @@ input[type="number"]:focus {
 }
 
 #view .today-privacy-card {
-  background: linear-gradient(145deg, #ffffff 0%, #f7fbff 100%);
+  background: linear-gradient(145deg, var(--surface) 0%, color-mix(in srgb, var(--surface) 90%, var(--canvas)) 100%);
 }
 
 #view .today-privacy-icon {
@@ -1391,7 +1386,7 @@ input[type="number"]:focus {
   gap: 8px;
   flex: 0 0 auto;
   padding: 7px 11px;
-  border: 1px solid #e1e6e9;
+  border: 1px solid var(--line);
   border-radius: 9px;
   color: #374151;
   background: var(--canvas);
@@ -1469,9 +1464,9 @@ input[type="number"]:focus {
   justify-content: flex-start;
   gap: 8px;
   padding: 13px 14px !important;
-  border: 1px solid #e1e6e9 !important;
+  border: 1px solid var(--line) !important;
   border-radius: 12px !important;
-  background: #fff !important;
+  background: var(--surface) !important;
 }
 
 #view .today-quota-provider-title {
@@ -1592,7 +1587,7 @@ input[type="number"]:focus {
 
 #view .today-rhythm-peak {
   fill: var(--green);
-  stroke: #fff;
+  stroke: var(--surface);
   stroke-width: 3;
 }
 
@@ -1755,7 +1750,7 @@ input[type="number"]:focus {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 6px;
-  color: #fff;
+  color: var(--surface);
   background: var(--source-color, var(--green));
   font-size: 10px;
   font-weight: 850;
@@ -1801,9 +1796,9 @@ input[type="number"]:focus {
   min-width: 0;
   min-height: 142px;
   padding: 13px 14px !important;
-  border: 1px solid #e1e6e9;
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff !important;
+  background: var(--surface) !important;
 }
 
 #view .today-quota-card #quotaProvidersContent > div > div > div:first-child {
@@ -2013,8 +2008,16 @@ input[type="number"]:focus {
   gap: 2px;
   padding: 7px 8px;
   border-radius: 8px;
+  /* Classic packs keep the original near-white chip fill (baseline red line);
+     skin packs darken it via the theme track color below. */
   background: #f5f6f7;
   text-align: center;
+}
+
+html[data-skin-pack] #view .today-lap-chips > div {
+  /* Theme variable: follows the pack palette so the chips go dark on skin
+     packs instead of glowing white. */
+  background: var(--track);
 }
 
 #view .today-lap-chips span {
@@ -2180,6 +2183,7 @@ input[type="number"]:focus {
   min-width: 0;
   gap: 18px !important;
 }
+
 
 #app .reference-brand-logo {
   width: 44px !important;
@@ -2477,7 +2481,7 @@ input[type="number"]:focus {
   flex-direction: column;
   justify-content: space-between;
   padding: 13px 14px;
-  border: 1px solid #e1e6e9;
+  border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--canvas);
 }
@@ -2764,7 +2768,7 @@ input[type="number"]:focus {
 
 #view .today-rank-slot.is-empty .today-rank-podium {
   border-style: dashed;
-  background: linear-gradient(180deg, #f7f8f8 0%, #ffffff 100%);
+  background: linear-gradient(180deg, var(--track) 0%, var(--surface) 100%);
 }
 
 #view .today-rank-slot.is-empty .today-rank-podium strong,
@@ -2819,7 +2823,7 @@ input[type="number"]:focus {
   flex-direction: column;
   justify-content: space-between;
   padding: 13px 14px;
-  border: 1px solid #e1e6e9;
+  border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--canvas);
   box-sizing: border-box;
@@ -3097,7 +3101,7 @@ input[type="number"]:focus {
 #view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-placeholder-card {
   min-height: 142px;
   box-sizing: border-box;
-  background: #fff !important;
+  background: var(--surface) !important;
 }
 
 #view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-provider > div:first-child,
@@ -3112,7 +3116,7 @@ input[type="number"]:focus {
 }
 
 #view .today-quota-card #quotaProvidersContent .today-quota-placeholder-card {
-  background: #fff !important;
+  background: var(--surface) !important;
 }
 
 #view .today-rank-podium span {
@@ -3523,4 +3527,339 @@ input[type="number"]:focus {
   font-weight: 750;
   line-height: 1.15;
   white-space: nowrap;
+}
+
+/* ── Skin pack full-window backdrop (upstream v0.2.14 InterstellarSkin) ──
+   The artwork plate is a WINDOW-level layer, not a per-card fill. Port of
+   InterstellarBackdrop.surface (InterstellarSkin.swift:141-191) as the body
+   background stack (propagated to the canvas, so no pseudo-element /
+   z-index layering is involved), bottom-up:
+     ① base #04070C (swift:144)
+     ② Hero artwork; Quiet falls back to Hero and vice versa (swift:4-29)
+     ③ role veil — LIGHTENED: the e2e-2/3/4/5 stills showed the upstream
+        veil ladder (.28/.36/.43/.50/.52) stacked on ⑥+⑦ fogged the subject
+        into a flat fill (today-card void std=0.5, seam m=16.7 vs plate band
+        m=136), so the plate runs at near-native brightness with the veil as
+        a mere tint: dashboard .10 / generic .14 / history .22 / settings
+        .26 / privacy .28 (upstream values: swift:161,205-217)
+     ⑥ diagonal gradient — direction kept (light over the upper-left subject,
+        motion anchor x:0.30 y:0.05, InterstellarMotionLab.swift:116-130;
+        heavy toward bottom-right, swift:173-181) but lightened .10/.62 →
+        .05/.30 for the same reason; replaces the old 120deg left-82%→right-42%
+        card mask that buried the plate's left subject
+     ⑦ bottom fade — lightened .44 → .22 and pushed down (55% start) so the
+        card seam (~53.5% y) stays inside the clear zone (popover/share tier
+        is .22 upstream, swift:183-187,219-224)
+   ④ hotspot orbit / ⑤ motion layer are out of scope this round.
+   Round 3 (per-chapter subject alignment): the plate is placed via the
+   --skin-art-position / --skin-art-quiet-position vars set in app.js —
+   helmet (directors_cut / aegean_mist, subject at plate left 1/3) and the
+   ash-marble idol sit at 20% so the subject lands behind the today main
+   card (upstream anchor x:0.30, InterstellarMotionLab.swift:116-130); the
+   trojan (subject mid-right) sits at 70%; the event-horizon band stays
+   centered so the bright disk keeps crossing mid-window (baseline-5).
+   The artwork URLs are relative ("../shared/skins/...") so they resolve from
+   both the document (dashboard/) and this stylesheet (shared/) in every
+   environment — file://, `http://tauri.localhost` (frontendDist ../ui) —
+   matching the proven ../shared/logo.png mechanism.
+   applyTheme() sets html[data-skin-pack] only for skin packs; classic colors
+   keep the plain canvas look (baseline red line: zero dark residue). */
+html[data-skin-pack] body {
+  background:
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.10)),
+    var(--skin-art, var(--skin-art-quiet, none)) var(--skin-art-position, center center) / cover no-repeat,
+    #04070c;
+}
+
+html[data-skin-pack] body[data-skin-role="generic"] {
+  background:
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.14), rgba(0, 0, 0, 0.14)),
+    var(--skin-art, var(--skin-art-quiet, none)) var(--skin-art-position, center center) / cover no-repeat,
+    #04070c;
+}
+
+/* Text-heavy pages use the Quiet plate with lighter text-page veils
+   (usesQuietArtwork, InterstellarSkin.swift:47-53; upstream ladder
+   history .43 / settings .50 / privacy .52 — lightened, see block comment). */
+html[data-skin-pack] body[data-skin-role="history"] {
+  background:
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.22), rgba(0, 0, 0, 0.22)),
+    var(--skin-art-quiet, var(--skin-art, none))
+      var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
+    #04070c;
+}
+
+html[data-skin-pack] body[data-skin-role="settings"] {
+  background:
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.26)),
+    var(--skin-art-quiet, var(--skin-art, none))
+      var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
+    #04070c;
+}
+
+html[data-skin-pack] body[data-skin-role="privacy"] {
+  background:
+    linear-gradient(to bottom, transparent 55%, rgba(0, 0, 0, 0.22) 100%),
+    linear-gradient(135deg, rgba(0, 0, 0, 0.05) 0%, transparent 50%, rgba(4, 7, 12, 0.30) 100%),
+    linear-gradient(rgba(0, 0, 0, 0.28), rgba(0, 0, 0, 0.28)),
+    var(--skin-art-quiet, var(--skin-art, none))
+      var(--skin-art-quiet-position, var(--skin-art-position, center center)) / cover no-repeat,
+    #04070c;
+}
+
+/* Let the plate through the two opaque shell layers. main.content plus #view
+   both carry a solid var(--canvas) fill from the classic shell (app.css:2150,
+   app.css:2376); under a skin pack the artwork must read between the cards
+   (up-odyssey.jpg glass gaps), so both go transparent. */
+html[data-skin-pack] #app > main.content {
+  background: transparent;
+}
+
+html[data-skin-pack] #app > main.content > .page > #view {
+  background: transparent;
+}
+
+/* Top bar chrome: cinematic gradient + surface glass. The e2e stills showed
+   the upstream .94 opacity sealed the plate off the header entirely (header
+   void std=1) while the upstream stills let the subject shine through it, so
+   the header sits in the glass band with backdrop blur; round 3 drops the
+   fill 0.70 → 0.55 so the plate reads through the top bar too
+   (MainWindowView.swift:71-88, opacity adjusted per acceptance stills). */
+html[data-skin-pack] #app .reference-header {
+  background:
+    linear-gradient(135deg, rgba(224, 207, 169, 0.085), transparent 50%, rgba(251, 241, 213, 0.03)),
+    color-mix(in srgb, var(--surface) 55%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* Header button hover + hairline dividers were left classic-light (hover
+   #f3f6f4 block, #e5e8eb lines) — theme them so no light residue survives on
+   the dark packs. */
+html[data-skin-pack] #app .reference-header .btn:hover,
+html[data-skin-pack] #app .reference-header .github-row button:hover {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green-dark);
+}
+
+html[data-skin-pack] #app .reference-header .github-row,
+html[data-skin-pack] #app .reference-header > :nth-child(3) > #shotBtn {
+  border-left-color: var(--line);
+}
+
+/* Round 3 [5]: the "已同步" pill kept its classic light-beige fill
+   (#f7faf8, app.css:2316) on every page. Skin packs use the upstream sync
+   capsule instead: tokenSurface fill + tokenDivider hairline + gold text
+   (MainWindowView.swift:117-128); --green is the pack's champagne accent. */
+html[data-skin-pack] #app .reference-header .sync-status {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--green);
+}
+
+html[data-skin-pack] .sync-dot.busy {
+  background: rgba(244, 239, 226, 0.45);
+}
+
+/* Main-window (today) cards over the plate — round 3 [1]/[2]: the subject
+   region thins to a near-clear 16% canvas veil (round 2's tokenSurface @55%
+   + blur 10 buried the helmet and the accretion disk band; the acceptance
+   floor is baseline-3 trojan visible and baseline-5 bright band visible).
+   The cinematic overlay gradient stays (Components.swift:256-297); blur sits
+   at the low end of the sanctioned 8-14px glass band so the plate stays
+   sharp. The .today-design-metrics STRIP (opaque var(--canvas) fill,
+   app.css:2419) joins the glass; its cells are already transparent
+   (app.css:2429). Text readability over the bright band comes from the
+   inherited text-shadow below. */
+html[data-skin-pack] #view .today-design-card,
+html[data-skin-pack] #view .today-design-metrics,
+html[data-skin-pack] #view .today-design-bottom > #agentWorkCard {
+  background:
+    linear-gradient(135deg, rgba(224, 207, 169, 0.055), transparent 55%, rgba(251, 241, 213, 0.025)),
+    color-mix(in srgb, var(--canvas) 16%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* Inherited shadow keeps titles/values readable where the plate is bright
+   (band, fire glow) under the 16% veil. */
+html[data-skin-pack] #view .today-design-page {
+  text-shadow: 0 1px 2px rgba(4, 7, 12, 0.6), 0 0 6px rgba(4, 7, 12, 0.35);
+}
+
+/* Quota tiles hard-code var(--surface) !important (app.css:1469, app.css:1801,
+   app.css:3104, app.css:3119); under a skin pack they must thin with their
+   card so the band keeps crossing the middle row. */
+html[data-skin-pack] #view .today-quota-provider,
+html[data-skin-pack] #view .today-quota-card #quotaProvidersContent > div > div,
+html[data-skin-pack] #view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-provider,
+html[data-skin-pack] #view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-placeholder-card {
+  background: color-mix(in srgb, var(--canvas) 16%, transparent) !important;
+}
+
+/* Progress tracks inside the quota tiles are fixed #e8ebed light gray
+   (app.css:1506, app.css:2849) — follow the pack track color instead. */
+html[data-skin-pack] #view .today-quota-track,
+html[data-skin-pack] #view .today-quota-placeholder-track {
+  background: var(--track);
+}
+
+/* Round 4 (trojan_inferno × dashboard only): the shared 16% canvas veil +
+   blur 8 above buried this chapter's plate subject — the e2e-3 still showed
+   fire texture with every horse silhouette gone, while e2e-3b (settings, the
+   same plate in the open strip above its cards) reads the head clearly, so
+   plate and 70% crop are correct and the card stack is the smearing layer.
+   Measured on the stills: head-region edge energy 1.11 under the card vs
+   1.36 on the e2e-3b reference; forward-simulating the plate through the card
+   recipe gives 0.24 at blur8/16% (mush) vs 0.49 at blur3/6% and 2.99 at
+   blur0/6% (reference strip itself: 2.62). Thin the trojan today cards to a
+   6% canvas veil + blur 3 — head/neck silhouette returns at or above the
+   e2e-3b bar while the inherited .today-design-page text-shadow keeps the
+   chart labels readable (upstream truth is pure alpha stacking with NO
+   backdrop blur, so 3px stays inside "optional glass enhancement"; the other
+   chapters keep their passed blur8/16% recipes). Scope is the chapter
+   attribute set by applyTheme() + the dashboard role, so the other three
+   chapters, event horizon and classic cannot be reached by this block. */
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] body[data-skin-role="dashboard"] #view .today-design-card,
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] body[data-skin-role="dashboard"] #view .today-design-metrics,
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] body[data-skin-role="dashboard"] #view .today-design-bottom > #agentWorkCard {
+  background:
+    linear-gradient(135deg, rgba(224, 207, 169, 0.055), transparent 55%, rgba(251, 241, 213, 0.025)),
+    color-mix(in srgb, var(--canvas) 6%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+/* Quota tiles mirror the thinning (their source rule carries !important,
+   app.css:3705, so the override must too — equal importance, higher
+   specificity wins). */
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] body[data-skin-role="dashboard"] #view .today-quota-provider,
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] body[data-skin-role="dashboard"] #view .today-quota-card #quotaProvidersContent > div > div,
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] body[data-skin-role="dashboard"] #view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-provider,
+html[data-skin-pack][data-skin-chapter="trojan_inferno"] body[data-skin-role="dashboard"] #view .today-quota-card #quotaProvidersContent > .today-quota-provider-grid > .today-quota-placeholder-card {
+  background: color-mix(in srgb, var(--canvas) 6%, transparent) !important;
+}
+
+/* Fixed light separators inside today cards (metrics cell dividers
+   #e3e7e9, app.css:2434/2562; cost column/footer dividers, app.css:2890/2920)
+   become warm hairlines on packs. */
+html[data-skin-pack] #view .today-design-metrics > div + div {
+  border-left-color: var(--line);
+  border-top-color: var(--line);
+}
+
+html[data-skin-pack] #view .today-cost-columns > div + div {
+  border-left-color: var(--line);
+}
+
+html[data-skin-pack] #view .today-cost-footer {
+  border-top-color: var(--line);
+}
+
+/* Lap-progress frame/title keep classic-light values (#e3e7e9 / #374151,
+   app.css:1984, app.css:1993) — warm hairline + gold heading on packs. */
+html[data-skin-pack] #view .today-lap-progress {
+  border-color: var(--line);
+}
+
+html[data-skin-pack] #view .today-lap-title {
+  color: var(--green-dark);
+}
+
+/* Hover states that mix toward classic-light grays get the warm hairline. */
+html[data-skin-pack] #view .today-design-card:hover,
+html[data-skin-pack] #view .today-design-bottom > #agentWorkCard:hover {
+  border-color: rgba(224, 207, 169, 0.40);
+}
+
+html[data-skin-pack] #view .today-chart-select:hover {
+  border-color: rgba(224, 207, 169, 0.40);
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+}
+
+/* Agent rank podium: fixed #f3f4f5/#edeff0 fills with #374151 text
+   (app.css:2638, app.css:2645, app.css:2754) would glow as a light block on
+   the dark packs — dark glass podium + ink text, hairline footer. */
+html[data-skin-pack] #view .today-rank-podium {
+  background: color-mix(in srgb, var(--track) 62%, transparent);
+}
+
+html[data-skin-pack] #view .today-rank-slot.rank-1 .today-rank-podium {
+  background: color-mix(in srgb, var(--track) 80%, transparent);
+}
+
+html[data-skin-pack] #view .today-rank-podium span {
+  color: var(--ink);
+}
+
+html[data-skin-pack] #view .today-rank-podium small {
+  color: var(--muted);
+}
+
+html[data-skin-pack] #view .today-rank-foot {
+  border-top-color: var(--line);
+  color: var(--muted);
+}
+
+html[data-skin-pack] #view .today-rank-foot b {
+  color: var(--ink-soft);
+}
+
+/* Non-today pages (history/stats/privacy/settings) use the floating-panel
+   glass so the Quiet plate reads through (InterstellarPanelBackground,
+   InterstellarSkin.swift:259-279): the fill is the ACTIVE PACK's surface —
+   not a fixed #080B10 — so the trojan setting cards warm-match the trojan
+   today cards instead of drifting blue-cold (e2e-3b finding). Round 3 [3]
+   drops the fill .66 → .50 (matching the up-odyssey.jpg glass quadrants,
+   where the plate reads through the panels) and keeps the warm hairline
+   (tokenHairlineStrong .82 → rgba(224,207,169,.40)), r18, shadow black .30
+   r18 y+9, backdrop blur 12px inside the sanctioned 8-14px band. */
+html[data-skin-pack] body:not([data-skin-role="dashboard"]) .card {
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+  border: 1px solid rgba(224, 207, 169, 0.40);
+  border-radius: 18px;
+  box-shadow: 0 9px 18px rgba(0, 0, 0, 0.30);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* Theme-tinted scrollbars for skin packs only; classic keeps the native
+   light scrollbar so baseline-1-violet.png stays pixel-identical.
+   Round 3 [4]: the round-2 mix (55% track + transparent groove) read as a
+   light residue strip (e2e stills, right edge). Dark groove + dark-gold
+   thumb, written to BOTH the standard scrollbar-color and the -webkit
+   pseudo-elements (Chromium disables the pseudo styling whenever
+   scrollbar-color is non-auto, so the two must agree). The universal
+   selector reaches the history table's inner .table-wrap scroller and the
+   activity wall's horizontal bar as well. */
+html[data-skin-pack] {
+  scrollbar-color: rgba(224, 207, 169, 0.38) rgba(4, 7, 12, 0.55);
+}
+
+html[data-skin-pack] *::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+html[data-skin-pack] *::-webkit-scrollbar-track {
+  background: rgba(4, 7, 12, 0.55);
+}
+
+html[data-skin-pack] *::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-color: rgba(224, 207, 169, 0.38);
+  background-clip: padding-box;
+}
+
+html[data-skin-pack] *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(224, 207, 169, 0.56);
 }

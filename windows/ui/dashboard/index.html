@@ -38,7 +38,7 @@
 
     function _startReal(initialSettings, initialSnapshot) {
       // Apply saved color theme immediately (port of macOS Theme.swift).
-      window.TS.applyTheme((initialSettings && initialSettings.theme) || 'green');
+      window.TS.applyTheme((initialSettings && initialSettings.theme) || 'green', (initialSettings && initialSettings.odyssey_chapter) || 'directors_cut');
       // Restore the full dashboard logic here, using verified data.
       var invoke = window.TS.invoke;
       var formatTokens = window.TS.formatTokens;
@@ -77,7 +77,7 @@
         // #pageTitle/#pageSubtitle stay as hidden compat targets because
         // render()/refreshHeaderI18n() still write the live page title there.
         referenceBrand.className = 'reference-brand';
-        referenceBrand.innerHTML = '<div class="reference-brand-logo" role="img" aria-label="TokenStep"><img src="../shared/logo.png" alt="" /></div>' +
+        referenceBrand.innerHTML = '<div class="reference-brand-logo" role="img" aria-label="TokenStep"><img src="../shared/logo.png" alt="" onerror="if(!this.dataset.retry){this.dataset.retry=1;this.src=\'../shared/logo.png?r=\'+Date.now();}" /></div>' +
           '<div class="reference-brand-copy" style="min-width:0">' +
             '<div class="reference-brand-title">TokenStep<span>|</span><em>' + window.TS.t('本地 AI Token 使用追踪器') + '（Windows）</em></div>' +
             '<div class="reference-brand-subtitle">' + window.TS.t('所有数据仅存储在本机设备，不会上传') + '</div>' +
@@ -986,25 +986,45 @@
         // Autostart toggle (HKCU Run key).
         var autostartChecked = settings.autostart ? ' checked' : '';
         html += '<div class="card"><div class="card-title">' + window.TS.t('开机自启') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('开机时自动启动') + '</div><div class="setting-hint">' + window.TS.t('登录 Windows 时自动启动 TokenStep 到托盘') + '</div></div><label class="switch"><input type="checkbox" id="autostartToggle"' + autostartChecked + '/><span class="slider"></span></label></div></div>';
-        // Theme picker: 5 visual color swatches (port of ThemeSwatchButton).
-        var themes = window.TS.THEMES;
+        // Theme picker (upstream v0.2.4/v0.2.7 skin packs): three packs —
+        // Classic (5 colors), Odyssey (4 chapters), Interstellar (single).
+        // The pack tabs navigate; picking an option inside a pack applies it.
         var currentTheme = settings.theme || 'green';
-        // Theme swatches match macOS ThemeSwatchButton: 38px gradient circle
-        // (accentSoft → accent → accentDark) over title+subtitle, in an 80px
-        // rounded-rect that shows a colored border when selected.
-        var themeSwatchesHTML = Object.keys(themes).map(function (k) {
-          var th = themes[k];
+        var activePack = currentTheme === 'voyage' ? 'odyssey' : currentTheme === 'event_horizon' ? 'interstellar' : 'classic';
+        var rememberedChapter = settings.odyssey_chapter || 'directors_cut';
+        // Swatch rendering shared by classic colors, Odyssey chapters and the
+        // Interstellar entry: macOS ThemeSwatchButton style — 38px gradient
+        // circle (accentSoft → accent → accentDark) over title+subtitle.
+        function themeSwatchHTML(key, th, selected, attr) {
           var v = th.vars;
-          var selected = k === currentTheme;
           var grad = 'linear-gradient(135deg,' + (v['--mint'] || v['--green']) + ',' + v['--green'] + ',' + v['--green-dark'] + ')';
-          // color-mix for the per-theme alpha overlays/shadows.
           var swatchShadow = '0 4px 8px ' + (selected ? 'color-mix(in srgb,' + v['--green-dark'] + ' 22%,transparent)' : 'color-mix(in srgb,' + v['--green-dark'] + ' 10%,transparent)');
-          return '<button class="theme-swatch" data-theme="' + k + '" title="' + window.TS.t(th.title) + '（' + window.TS.t(th.sub) + '）" style="flex:1;min-width:84px;height:80px;border-radius:16px;border:1.4px solid ' + (selected ? 'color-mix(in srgb,' + v['--green'] + ' 46%,transparent)' : 'rgba(0,0,0,0.045)') + ';background:' + (selected ? 'color-mix(in srgb,' + v['--mint'] + ' 22%,transparent)' : 'color-mix(in srgb,var(--track) 24%,transparent)') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px;font-family:inherit">' +
+          return '<button class="theme-swatch" ' + attr + ' title="' + window.TS.t(th.title) + '（' + window.TS.t(th.sub) + '）" style="flex:1;min-width:84px;height:80px;border-radius:16px;border:1.4px solid ' + (selected ? 'color-mix(in srgb,' + v['--green'] + ' 46%,transparent)' : 'rgba(0,0,0,0.045)') + ';background:' + (selected ? 'color-mix(in srgb,' + v['--mint'] + ' 22%,transparent)' : 'color-mix(in srgb,var(--track) 24%,transparent)') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:8px;font-family:inherit">' +
             '<span style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:' + grad + ';box-shadow:' + swatchShadow + ';color:#fff;font-size:13px;font-weight:900">' + (selected ? '✓' : '') + '</span>' +
             '<span style="display:flex;flex-direction:column;align-items:center;gap:1px;line-height:1.1">' +
               '<span style="font-size:13px;font-weight:800;color:' + (selected ? 'var(--ink)' : 'var(--ink-soft)') + '">' + window.TS.t(th.title) + '</span>' +
               '<span style="font-size:11px;font-weight:700;color:var(--muted)">' + window.TS.t(th.sub) + '</span>' +
             '</span>' +
+          '</button>';
+        }
+        var themes = window.TS.THEMES;
+        var classicHTML = Object.keys(themes).map(function (k) {
+          return themeSwatchHTML(k, themes[k], activePack === 'classic' && k === currentTheme, 'data-theme="' + k + '"');
+        }).join('');
+        var chapters = window.TS.ODYSSEY_CHAPTERS;
+        var odysseyHTML = Object.keys(chapters).map(function (k) {
+          return themeSwatchHTML(k, chapters[k], activePack === 'odyssey' && k === rememberedChapter, 'data-chapter="' + k + '"');
+        }).join('');
+        var interstellarHTML = themeSwatchHTML('event_horizon', window.TS.EVENT_HORIZON, activePack === 'interstellar', 'data-theme="event_horizon"');
+        var packTabs = [
+          { id: 'classic', title: '经典', sub: '原版 TokenStep' },
+          { id: 'odyssey', title: '奥德赛', sub: '冷雾 · 骨金 · 火星' },
+          { id: 'interstellar', title: '引力边界', sub: '事件视界 · 象牙光' },
+        ].map(function (p) {
+          var on = p.id === activePack;
+          return '<button class="pack-tab" data-pack="' + p.id + '" title="' + window.TS.t(p.sub) + '" style="flex:1;padding:9px 12px;border-radius:12px;border:1.4px solid ' + (on ? 'color-mix(in srgb,var(--green) 46%,transparent)' : 'var(--track)') + ';background:' + (on ? 'color-mix(in srgb,var(--green) 10%,transparent)' : 'transparent') + ';cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:inherit">' +
+            '<span style="font-size:13px;font-weight:800;color:' + (on ? 'var(--green-dark)' : 'var(--ink-soft)') + '">' + window.TS.t(p.title) + '</span>' +
+            '<span style="font-size:11px;font-weight:700;color:var(--muted)">' + window.TS.t(p.sub) + '</span>' +
           '</button>';
         }).join('');
         // Language selector.
@@ -1013,7 +1033,12 @@
           '<option value="en"' + (curLang === 'en' ? ' selected' : '') + '>English</option>' +
           '<option value="zhHant"' + (curLang === 'zhHant' ? ' selected' : '') + '>' + window.TS.t('繁體中文') + '</option>';
         html += '<div class="card"><div class="card-title">' + window.TS.t('语言') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('界面语言') + '</div><div class="setting-hint">' + window.TS.t('切换后立即生效') + '</div></div><select id="langSelect">' + langOpts + '</select></div></div>';
-        html += '<div class="card"><div class="card-title">' + window.TS.t('主题配色') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('界面主题') + '</div><div class="setting-hint">' + window.TS.t('切换整体配色方案，立即生效') + '</div></div></div><div id="themeSwatches" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">' + themeSwatchesHTML + '</div></div>';
+        html += '<div class="card"><div class="card-title">' + window.TS.t('主题皮肤包') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('界面主题') + '</div><div class="setting-hint">' + window.TS.t('选择皮肤包与配色，立即生效并分别记住每个包的上次选择') + '</div></div></div>' +
+          '<div id="themePackTabs" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">' + packTabs + '</div>' +
+          '<div id="themePackClassic" class="pack-options" style="display:' + (activePack === 'classic' ? 'flex' : 'none') + ';gap:10px;flex-wrap:wrap;margin-top:10px">' + classicHTML + '</div>' +
+          '<div id="themePackOdyssey" class="pack-options" style="display:' + (activePack === 'odyssey' ? 'flex' : 'none') + ';gap:10px;flex-wrap:wrap;margin-top:10px">' + odysseyHTML + '</div>' +
+          '<div id="themePackInterstellar" class="pack-options" style="display:' + (activePack === 'interstellar' ? 'flex' : 'none') + ';gap:10px;flex-wrap:wrap;margin-top:10px">' + interstellarHTML + '</div>' +
+        '</div>';
         // Codex quota display toggle (mirrors upstream showCodexQuota, default off).
         var quotaChecked = settings.show_codex_quota ? ' checked' : '';
         html += '<div class="card"><div class="card-title">' + window.TS.t('Agent 额度显示') + '</div><div class="setting-row"><div><div class="setting-label">' + window.TS.t('显示 Agent 配额卡片') + '</div><div class="setting-hint">' + window.TS.t('在「今日」页面显示 Codex 周额度与 Claude 额度，默认关闭') + '</div></div><label class="switch"><input type="checkbox" id="showQuotaToggle"' + quotaChecked + '/><span class="slider"></span></label></div></div>';
@@ -1205,6 +1230,11 @@
 
       function render() {
         document.querySelectorAll('.nav-item').forEach(function (el) { el.classList.toggle('active', el.dataset.id === current); });
+        // Window-backdrop role (upstream OdysseySurfaceRole / usesQuietArtwork):
+        // today + stats keep the Hero plate, text-heavy history/privacy/settings
+        // switch to the Quiet one. Consumed by body::before in app.css.
+        var skinRoles = { today: 'dashboard', stats: 'generic', history: 'history', privacy: 'privacy', settings: 'settings' };
+        document.body.dataset.skinRole = skinRoles[current] || 'generic';
         // 'settings' is reached via the header gear, not the nav — SECTIONS
         // has no entry for it, so guard the lookup (unguarded access threw a
         // TypeError and killed render() before the settings branch ran).
@@ -1266,12 +1296,32 @@
               autoToggle.checked = !autoToggle.checked;
             });
           });
-          // Theme swatches: click to switch theme (replaces the select dropdown).
+          // Theme picker (skin packs): pack tabs navigate between option
+          // groups; swatches apply. Classic colors and Interstellar go
+          // through set_theme (classic also re-memorizes classic_theme);
+          // Odyssey chapters go through set_odyssey_chapter, which switches
+          // the active pack and remembers the chapter.
+          var packGroups = { classic: 'themePackClassic', odyssey: 'themePackOdyssey', interstellar: 'themePackInterstellar' };
+          document.querySelectorAll('.pack-tab').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+              var pack = tab.getAttribute('data-pack');
+              Object.keys(packGroups).forEach(function (id) {
+                var el = document.getElementById(packGroups[id]);
+                if (el) el.style.display = id === pack ? 'flex' : 'none';
+              });
+            });
+          });
           var swatches = document.querySelectorAll('.theme-swatch');
           swatches.forEach(function (sw) {
             sw.addEventListener('click', function () {
+              var chapter = sw.getAttribute('data-chapter');
+              if (chapter) {
+                window.TS.applyTheme('voyage', chapter);
+                invoke('set_odyssey_chapter', { chapter: chapter }).then(function (s) { settings = s; render(); });
+                return;
+              }
               var tk = sw.getAttribute('data-theme');
-              window.TS.applyTheme(tk);
+              window.TS.applyTheme(tk, settings.odyssey_chapter);
               invoke('set_theme', { theme: tk }).then(function (s) { settings = s; render(); });
             });
           });
