@@ -6,7 +6,7 @@
 
 [English](#english) | 中文
 
-## [未发布] / Unreleased
+## [0.1.12] - WorkBuddy 额度卡 + WAL 降级 + ZCode/WorkBuddy 统计恢复
 
 （0.1.12 待发内容。参见 [`docs/皮肤包上游对齐规划.md`](docs/皮肤包上游对齐规划.md)。）
 
@@ -35,6 +35,24 @@
 
 - **更新检查限速回退**：GitHub Releases API 被限速（403）或不可用时，降级请求公开的 `releases/latest` 重定向页（不消耗 API 配额），从最终 URL 解析最新 tag 并重建标准 NSIS 安装包下载地址；该通道未知文件大小，下载进度改用 Content-Length。
 - **手动检查 10 秒冷却**：设置页「立即检查」改走 `check_for_update_manual`，10 秒内重复点击直接重放上次结果，不再连打 GitHub API（防止烧配额与转圈卡住）；启动自动检查不受影响。含 release tag 解析单元测试。
+
+## [0.1.12] - WorkBuddy quota card + SQLite WAL fallback + collector fixes
+
+### Added
+
+- **WorkBuddy quota card**: reads the local `~/.workbuddy/workbuddy.db` credit pool (used/total, credits spent) — no network requests. Settings → Quota providers → WorkBuddy toggle (default off).
+- **WorkBuddy usage collector**: scans the per-project JSONL event streams (`~/.workbuddy/projects/**/*.jsonl`) — per-request tokens now feed the per-client card and totals.
+- SQLite read-only three-step fallback (readOnly → query_only → immutable), ported from upstream v0.2.26; Cursor's state.vscdb uses it.
+
+### Changed
+
+- Cursor quota toggle now defaults to on; quota failures surface the HTTP status / network error instead of a bare message.
+
+### Fixed
+
+- ZCode / WorkBuddy usage missing from the per-client card (experimental-sources switch had been reset; WorkBuddy had no collector at all).
+- Collector cache version bumped to v12 to discard entries written during the rolled-back incremental-append experiment.
+
 
 ## [0.1.10] - 订阅额度"未配置"修复 + 打包流水线修复
 
