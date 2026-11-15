@@ -483,71 +483,54 @@ pub fn fetch_grok() -> ProviderQuota {
 
 pub fn fetch_cursor() -> ProviderQuota {
     let provider = QuotaProvider::Cursor;
-    let Some(cred) = crate::cursor_usage::read_credential() else {
+    // The WorkOS access token is safeStorage-encrypted in newer Cursor builds;
+    // decrypt it via the OS crypt key (DPAPI-wrapped in Local State).
+    let Some(blob) = crate::cursor_usage::read_cursor_auth_blob() else {
         return unavailable(provider, Some("未登录 Cursor"), QuotaStatus::NotLoggedIn);
     };
-    let cookie = format!("WorkosCursorSessionToken={}::{}", cred.user_id, cred.access_token);
+    let Some(token) = crate::cursor_safe::decrypt_safe_storage(&blob) else {
+        return unavailable(provider, Some("无法解密 Cursor 凭据（safeStorage）"), QuotaStatus::Unavailable);
+    };
     let client = match net::blocking_client()
         .user_agent("TokenStep")
-        .timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(20))
         .build()
     {
         Ok(c) => c,
         Err(_) => return unavailable(provider, Some("Cursor 额度暂不可用"), QuotaStatus::Unavailable),
     };
-    let parse = |value: &serde_json::Value| -> Option<Vec<QuotaWindow>> {
-        let usage = value.get("individualUsage")?;
-        let node = usage.get("plan")?;
-        let mut windows = Vec::new();
-        let auto = json_number(node, &["autoPercentUsed"]);
-        let api = json_number(node, &["apiPercentUsed"]);
-        if let Some(a) = auto {
-            windows.push(QuotaWindow {
-                kind: QuotaWindowKind::CursorModels,
-                used_percent: a.clamp(0.0, 100.0),
-                remaining: None, total: None, resets_at: None,
-            });
-        }
-        if let Some(a) = api {
-            windows.push(QuotaWindow {
-                kind: QuotaWindowKind::OtherModels,
-                used_percent: a.clamp(0.0, 100.0),
-                remaining: None, total: None, resets_at: None,
-            });
-        }
-        if windows.is_empty() {
-            // legacy fallback keys
-            let a = json_number(node, &["autoModelUsagePercent", "premiumRequestsUsedPercent"]);
-            if let Some(a) = a {
-                windows.push(QuotaWindow {
-                    kind: QuotaWindowKind::CursorModels,
-                    used_percent: a.clamp(0.0, 100.0),
-                    remaining: None, total: None, resets_at: None,
-                });
-            }
-        }
-        let resets = json_number(node, &["billingCycleEnd", "resetsAt"])
-            .map(|ms| chrono::DateTime::from_timestamp_millis(ms as i64))
-            .flatten()
-            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string());
-        if let Some(r) = resets {
-            for w in &mut windows {
-                w.resets_at = Some(r.clone());
-            }
-        }
-        Some(windows)
-    };
-    let value: serde_json::Value = match client
-        .get("https://cursor.com/api/usage-summary")
-        .header("Accept", "application/json")
-        .header("Cookie", &cookie)
+    // The legacy cookie-based usage-summary endpoint rejects the decrypted
+    // token with 401 on current Cursor builds; the working channel is the
+    // Connect-Protocol dashboard POST with Bearer auth (same recipe the
+    // Token Rank client uses).
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let day_of_month = chrono::Datelike::day(&chrono::Local::now()) as i64;
+    let month_start_ms = now_ms - (day_of_month - 1) * 86_400_000i64;
+    let body = serde_json::json!({
+        "startDate": month_start_ms,
+        "endDate": month_start_ms + 31 * 86_400_000i64,
+    })
+    .to_string();
+    let parsed: serde_json::Value = match client
+        .post("https://api2.cursor.sh/aiserver.v1.DashboardService/GetFilteredUsageEvents")
+        .header("Content-Type", "application/json")
+        .header("Connect-Protocol-Version", "1")
+        .header("Authorization", format!("Bearer {}", token))
+        .body(body)
         .send()
     {
         Ok(r) if r.status().is_success() => r.json().unwrap_or_default(),
+        Ok(r) if r.status().as_u16() == 401 => {
+            return unavailable(
+                provider,
+                Some("Cursor 登录态已过期，请打开 Cursor 应用重新登录后重试".to_string().as_str()),
+                QuotaStatus::NeedsLogin,
+            )
+        }
         Ok(r) => {
             return unavailable(
                 provider,
-                Some(format!("Cursor 额度暂不可用（usage-summary HTTP {}）", r.status().as_u16()).as_str()),
+                Some(format!("Cursor 额度暂不可用（dashboard HTTP {}）", r.status().as_u16()).as_str()),
                 QuotaStatus::Unavailable,
             )
         }
@@ -559,31 +542,50 @@ pub fn fetch_cursor() -> ProviderQuota {
             )
         }
     };
-    if let Some(windows) = parse(&value) {
-        if !windows.is_empty() {
-            return ProviderQuota { provider, windows, status: QuotaStatus::Available, message: None };
-        }
-    }
-    // legacy endpoint
-    let legacy = client
-        .get(format!("https://cursor.com/api/usage?user={}", cred.user_id))
-        .header("Accept", "application/json")
-        .header("Cookie", &cookie)
-        .send()
-        .ok()
-        .filter(|r| r.status().is_success())
-        .and_then(|mut r| r.json::<serde_json::Value>().ok());
-    if let Some(v) = legacy {
-        if let Some(windows) = parse(&v) {
-            if !windows.is_empty() {
-                return ProviderQuota { provider, windows, status: QuotaStatus::Available, message: None };
+    // Aggregate the usage events for the window: credits spent, calls, tokens.
+    let mut cents = 0.0f64;
+    let mut calls = 0i64;
+    let mut tokens = 0i64;
+    if let Some(list) = parsed
+        .pointer("/usageEventsDisplay")
+        .or_else(|| parsed.pointer("/usageEvents"))
+        .and_then(|v| v.as_array())
+    {
+        for ev in list {
+            calls += 1;
+            if let Some(c) = ev
+                .get("totalCents")
+                .or_else(|| ev.get("total_cost"))
+                .and_then(|v| {
+                    v.as_str()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .or_else(|| v.as_f64())
+                })
+            {
+                cents += c;
+            }
+            if let Some(tu) = ev.get("tokenUsage") {
+                tokens += tu.get("totalTokens").and_then(|v| v.as_i64()).unwrap_or(0);
             }
         }
     }
-    unavailable(provider, Some("Cursor 额度暂不可用"), QuotaStatus::Unavailable)
+    let dollars = cents / 100.0;
+    let display = format!("本月已用 ${:.2}（{} 次调用）", dollars, calls);
+    let windows = vec![QuotaWindow {
+        kind: QuotaWindowKind::Spend,
+        used_percent: 0.0,
+        remaining: Some(dollars),
+        total: None,
+        resets_at: None,
+    }];
+    ProviderQuota {
+        provider,
+        windows,
+        status: QuotaStatus::Available,
+        message: Some(display),
+    }
 }
 
-// ── WorkBuddy quota (local workbuddy.db session_usage pool) ──────────────
 
 pub fn fetch_workbuddy() -> ProviderQuota {
     let provider = QuotaProvider::WorkBuddy;
@@ -643,6 +645,7 @@ pub fn fetch_workbuddy() -> ProviderQuota {
         message: Some(format!("积分消耗合计 {:.0}", credit_spent)),
     }
 }
+
 
 // ── coordinator ───────────────────────────────────────────────────────────
 

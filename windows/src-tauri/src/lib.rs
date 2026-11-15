@@ -9,6 +9,7 @@
 mod agent_sources;
 mod sqlite_readonly;
 mod collector;
+mod cursor_safe;
 mod cursor_usage;
 mod claude_quota;
 mod codex_quota;

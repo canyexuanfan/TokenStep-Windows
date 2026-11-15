@@ -27,6 +27,21 @@ pub struct CursorCredential {
 }
 
 /// Read the auth token + dashboard user id from Cursor's state.vscdb.
+/// Raw value of cursorAuth/accessToken (safeStorage blob in current builds).
+pub fn read_cursor_auth_blob() -> Option<String> {
+    let db = paths::cursor_state_vscdb();
+    if !db.is_file() {
+        return None;
+    }
+    let conn = crate::sqlite_readonly::open_readonly(&db)?;
+    conn.query_row(
+        "select value from ItemTable where key='cursorAuth/accessToken' limit 1",
+        [],
+        |r| r.get(0),
+    )
+    .ok()
+}
+
 pub fn read_credential() -> Option<CursorCredential> {
     let db = paths::cursor_state_vscdb();
     if !db.is_file() {

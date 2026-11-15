@@ -1,0 +1,58 @@
+# Quick probe: read quota card DOM text (ASCII-only, CDP).
+param([int]$Port = 9223)
+$exe = 'E:\Program\TokenStep\tokenstep.exe'
+function Test-PortFree([int]$p) {
+  $c = New-Object System.Net.Sockets.TcpClient
+  try { $c.Connect('127.0.0.1', $p); $c.Close(); return $false } catch { return $true }
+}
+foreach ($p in 9223, 9224, 9225, 9226) { if (Test-PortFree $p) { $Port = $p; break } }
+cmd /c "taskkill /F /T /IM tokenstep.exe" 2>&1 | Out-Null
+Start-Sleep -Seconds 1
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"
+Start-Process -FilePath $exe
+Start-Sleep -Seconds 3
+$targets = $null
+for ($i = 0; $i -lt 12; $i++) { try { $targets = Invoke-RestMethod "http://127.0.0.1:$Port/json" -TimeoutSec 2; break } catch { Start-Sleep -Seconds 2 } }
+$ws = [System.Net.WebSockets.ClientWebSocket]::new()
+$page = $targets | Where-Object { $_.type -eq 'page' } | Select-Object -First 1
+$ws.ConnectAsync([Uri]$page.webSocketDebuggerUrl, [Threading.CancellationToken]::None).Wait(15000)
+$script:id = 0
+function Invoke-Eval([string]$js, [int]$timeoutMs = 45000) {
+  $script:id++
+  $myId = $script:id
+  $payload = @{ id = $myId; method = 'Runtime.evaluate'; params = @{ expression = $js; awaitPromise = $true; returnByValue = $true } } | ConvertTo-Json -Depth 6 -Compress
+  $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
+  $ws.SendAsync([ArraySegment[byte]]::new($bytes), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None).Wait(10000) | Out-Null
+  $buffer = New-Object byte[] 262144
+  $ms = New-Object System.IO.MemoryStream
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($timeoutMs)
+  while ($true) {
+    if ([DateTime]::UtcNow -gt $deadline) { return @{ error = 'timeout' } }
+    $task = $ws.ReceiveAsync([ArraySegment[byte]]::new($buffer), [Threading.CancellationToken]::None)
+    while (-not $task.IsCompleted) { if ([DateTime]::UtcNow -gt $deadline) { return @{ error = 'timeout' } }; Start-Sleep -Milliseconds 100 }
+    $rx = $task.Result
+    if ($rx.Count -gt 0) { $ms.Write($buffer, 0, $rx.Count) }
+    if ($rx.EndOfMessage) {
+      $msg = [Text.Encoding]::UTF8.GetString($ms.ToArray()) | ConvertFrom-Json
+      if ($msg.id -eq $myId) { return $msg }
+    }
+  }
+}
+Start-Sleep -Seconds 12
+# Scroll to quota card and read the rendered provider names + values.
+$r = Invoke-Eval @'
+(async () => {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  await window.TS.invoke('read_quota_providers', { force: true });
+  const host = document.getElementById('quotaProvidersContent');
+  if (host) host.scrollIntoView({ block: 'center' });
+  await sleep(1500);
+  const cards = [...document.querySelectorAll('#quotaProvidersContent .today-quota-provider, #quotaProvidersContent .today-quota-placeholder-card')];
+  const names = cards.map(c => (c.textContent || '').replace(/\s+/g, ' ').slice(0, 60));
+  return JSON.stringify({ count: cards.length, names });
+})()
+'@
+Write-Output ("QUOTA-CARDS: " + $r.result.result.value)
+$ws.Dispose()
+cmd /c "taskkill /F /T /IM tokenstep.exe" 2>&1 | Out-Null
+Write-Output DONE
