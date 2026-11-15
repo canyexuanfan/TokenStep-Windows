@@ -411,7 +411,7 @@ impl Default for TokenStepSettings {
     fn default() -> Self {
         Self {
             daily_goal_tokens: 100_000_000,
-            refresh_interval_seconds: 300,
+            refresh_interval_seconds: 60,
             history_days: 180,
             close_to_tray: true,
             autostart: false,
