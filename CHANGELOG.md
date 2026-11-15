@@ -15,6 +15,7 @@
 - **SQLite 只读三段降级**（上游 v0.2.26 d270209 移植）：新增 `sqlite_readonly.rs` 共享辅助——普通只读 → `PRAGMA query_only` 可写句柄 → `immutable` URI 逐级回退，解决 WAL 数据库在属主应用退出清理 -shm 后无法只读打开的问题；Cursor `state.vscdb` 读取已接入。
 - **WorkBuddy 额度卡**：读取本机 `~/.workbuddy/workbuddy.db` 的 `session_usage` 配额池（used/size → 已用百分比 + 剩余/总额），并汇总全部会话 `credit_json` 显示积分消耗合计；设置 → 订阅额度提供商新增 WorkBuddy 开关（默认关）。
 - Cursor 额度开关默认开启（此前默认关且开关藏在设置深处）；Cursor 额度失败原因细分（HTTP 状态码/网络错误直接透出，便于区分登录态过期与网络问题）。
+- **Cursor 额度通道重写（关键修复）**：新版 Cursor 将登录 token 用 Electron safeStorage（Chromium OSCrypt v10：AES-256-GCM，密钥 DPAPI 包裹于 Local State）加密存储，旧读法拿到密文导致 401。现按 Token Rank 客户端同款配方解密（DPAPI → os_crypt key → AES-GCM），并改用 api2.cursor.sh 的 Connect-Protocol dashboard 端点（Bearer 鉴权），额度卡恢复真实数据（本月花费/调用次数）。401 时提示"登录态已过期，请打开 Cursor 重新登录"。
 
 ### 说明
 
