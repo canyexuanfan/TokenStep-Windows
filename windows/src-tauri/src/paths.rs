@@ -107,6 +107,13 @@ pub fn workbuddy_roots() -> Vec<PathBuf> {
     vec![home_dir().join(".workbuddy")]
 }
 
+/// Per-project JSONL event streams (~/.workbuddy/projects/): each
+/// function_call line carries timestamp/model/message.usage — the same
+/// event_usage source the Token Rank client scans.
+pub fn workbuddy_project_roots() -> Vec<PathBuf> {
+    vec![home_dir().join(".workbuddy").join("projects")]
+}
+
 /// `config/usage-recalibration-v6-pending` — marker file written when a
 /// Codex accounting recalibration occurred. Its presence triggers the green
 /// "Token 已重新校准" notice banner on the dashboard.
