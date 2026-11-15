@@ -147,5 +147,6 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         glm_quota_enabled: s.glm_quota_enabled,
         kimi_quota_enabled: s.kimi_quota_enabled,
         grok_quota_enabled: s.grok_quota_enabled,
+        workbuddy_quota_enabled: s.workbuddy_quota_enabled,
     }
 }

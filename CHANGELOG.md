@@ -8,6 +8,21 @@
 
 ## [未发布] / Unreleased
 
+（0.1.12 待发内容。参见 [`docs/皮肤包上游对齐规划.md`](docs/皮肤包上游对齐规划.md)。）
+
+### 新增（上游 v0.2.24~v0.2.29 相关 + WorkBuddy）
+
+- **SQLite 只读三段降级**（上游 v0.2.26 d270209 移植）：新增 `sqlite_readonly.rs` 共享辅助——普通只读 → `PRAGMA query_only` 可写句柄 → `immutable` URI 逐级回退，解决 WAL 数据库在属主应用退出清理 -shm 后无法只读打开的问题；Cursor `state.vscdb` 读取已接入。
+- **WorkBuddy 额度卡**：读取本机 `~/.workbuddy/workbuddy.db` 的 `session_usage` 配额池（used/size → 已用百分比 + 剩余/总额），并汇总全部会话 `credit_json` 显示积分消耗合计；设置 → 订阅额度提供商新增 WorkBuddy 开关（默认关）。
+- Cursor 额度开关默认开启（此前默认关且开关藏在设置深处）；Cursor 额度失败原因细分（HTTP 状态码/网络错误直接透出，便于区分登录态过期与网络问题）。
+
+### 说明
+
+- WorkBuddy 额度模型来自本机 `workbuddy.db`（`session_usage.used/size` 配额池 + `credit_json` 按账号分解消费），无网络请求。
+- 上游 v0.2.24~v0.2.29 其余改动（Trae 额度提供商、macOS 公证流程修复等）暂不移植；采集器去重索引化（e4877c6）经对照确认 Windows 端去重已是 BTreeSet 索引结构，无需移植。
+
+## [未发布] / Unreleased
+
 （开发中。参见 [`windows/docs/ROADMAP.md`](windows/docs/ROADMAP.md)。）
 
 ## [0.1.11] - 上游 v0.2.14 榜单身份兼容 + v0.2.7 更新检查韧性

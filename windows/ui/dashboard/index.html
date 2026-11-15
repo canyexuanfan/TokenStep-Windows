@@ -800,7 +800,7 @@
           displayable.forEach(function (p) { knownProviders[p.provider] = true; });
           var missing = quotaFallbacks.filter(function (p) { return !knownProviders[p.provider]; }).slice(0, Math.max(0, 4 - displayable.length));
           host.innerHTML = '<div class="today-quota-provider-grid" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">' + displayable.map(function (p) {
-            var name = p.displayName || p.display_name || { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', local: window.TS.t('本地模型') }[p.provider] || p.provider;
+            var name = p.displayName || p.display_name || { codex: 'Codex', claude: 'Claude Code', cursor: 'Cursor', glm: 'GLM', kimi: 'Kimi', grok: 'Grok', work_buddy: 'WorkBuddy', openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', local: window.TS.t('本地模型') }[p.provider] || p.provider;
             var color = quotaColors[p.provider] || 'var(--green)';
             var w = p.windows[0] || {};
             var used = Math.max(0, Math.min(100, w.used_percent != null ? Number(w.used_percent) : (w.total > 0 && w.remaining != null ? 100 - w.remaining / w.total * 100 : 0)));
@@ -1088,6 +1088,7 @@
         html += providerToggle('glm', 'GLM', settings.glm_quota_enabled, window.TS.t('填写 Coding Plan API Key，只进本机凭据存储'));
         html += providerToggle('kimi', 'Kimi', settings.kimi_quota_enabled, window.TS.t('Kimi 需要 OAuth，不要用开放平台 key'));
         html += providerToggle('grok', 'Grok', settings.grok_quota_enabled, window.TS.t('Grok 需要 grok login，普通 xAI key 无效'));
+        html += providerToggle('work_buddy', 'WorkBuddy', settings.workbuddy_quota_enabled, window.TS.t('读取本机 WorkBuddy 配额池与积分消耗'));
         html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('凭证') + '</div></div></div>';
         ['glm', 'kimi', 'grok'].forEach(function (acct) {
           html += '<div class="setting-row"><div><div class="setting-label" style="text-transform:none">' + acct.toUpperCase() + '</div></div>' +

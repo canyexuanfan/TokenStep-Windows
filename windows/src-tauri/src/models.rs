@@ -374,6 +374,9 @@ pub struct TokenStepSettings {
     pub kimi_quota_enabled: bool,
     #[serde(rename = "grok_quota_enabled", default)]
     pub grok_quota_enabled: bool,
+    /// WorkBuddy credit-pool card (local workbuddy.db), default off.
+    #[serde(rename = "workbuddy_quota_enabled", default)]
+    pub workbuddy_quota_enabled: bool,
 }
 
 fn default_lang() -> String {
@@ -430,11 +433,12 @@ impl Default for TokenStepSettings {
             merge_history_all_devices: false,
             hidden_device_ids: vec![],
             show_experimental_agent_sources: false,
-            cursor_quota_enabled: false,
+            cursor_quota_enabled: true,
             cursor_code_signal_enabled: false,
             glm_quota_enabled: false,
             kimi_quota_enabled: false,
             grok_quota_enabled: false,
+            workbuddy_quota_enabled: false,
         }
     }
 }

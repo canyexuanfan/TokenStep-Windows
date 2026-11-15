@@ -17,6 +17,7 @@ pub enum QuotaProvider {
     Glm,
     Kimi,
     Grok,
+    WorkBuddy,
 }
 
 impl QuotaProvider {
@@ -28,6 +29,7 @@ impl QuotaProvider {
             QuotaProvider::Glm => "glm",
             QuotaProvider::Kimi => "kimi",
             QuotaProvider::Grok => "grok",
+            QuotaProvider::WorkBuddy => "work_buddy",
         }
     }
     pub fn display_name(&self) -> &'static str {
@@ -38,6 +40,7 @@ impl QuotaProvider {
             QuotaProvider::Glm => "GLM",
             QuotaProvider::Kimi => "Kimi",
             QuotaProvider::Grok => "Grok",
+            QuotaProvider::WorkBuddy => "WorkBuddy",
         }
     }
 }
@@ -541,7 +544,20 @@ pub fn fetch_cursor() -> ProviderQuota {
         .send()
     {
         Ok(r) if r.status().is_success() => r.json().unwrap_or_default(),
-        _ => serde_json::Value::default(),
+        Ok(r) => {
+            return unavailable(
+                provider,
+                Some(format!("Cursor 额度暂不可用（usage-summary HTTP {}）", r.status().as_u16()).as_str()),
+                QuotaStatus::Unavailable,
+            )
+        }
+        Err(e) => {
+            return unavailable(
+                provider,
+                Some(format!("Cursor 额度暂不可用（网络错误: {e}）").as_str()),
+                QuotaStatus::Unavailable,
+            )
+        }
     };
     if let Some(windows) = parse(&value) {
         if !windows.is_empty() {
@@ -565,6 +581,67 @@ pub fn fetch_cursor() -> ProviderQuota {
         }
     }
     unavailable(provider, Some("Cursor 额度暂不可用"), QuotaStatus::Unavailable)
+}
+
+// ── WorkBuddy quota (local workbuddy.db session_usage pool) ──────────────
+
+pub fn fetch_workbuddy() -> ProviderQuota {
+    let provider = QuotaProvider::WorkBuddy;
+    let db = crate::paths::home_dir().join(".workbuddy").join("workbuddy.db");
+    if !db.is_file() {
+        return unavailable(provider, Some("未安装 WorkBuddy"), QuotaStatus::NotLoggedIn);
+    }
+    let Some(conn) = crate::sqlite_readonly::open_readonly(&db) else {
+        return unavailable(provider, Some("WorkBuddy 数据库暂不可用"), QuotaStatus::Unavailable);
+    };
+    // The most recently updated session_usage row is the live quota pool
+    // (used / size in credits); older rows are past sessions.
+    let pool = conn
+        .query_row(
+            "select used, size from session_usage where size > 0 order by updated_at desc limit 1",
+            [],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)),
+        )
+        .ok();
+    let Some((used, size)) = pool else {
+        return unavailable(provider, Some("暂无 WorkBuddy 用量记录"), QuotaStatus::Unavailable);
+    };
+    if size <= 0 {
+        return unavailable(provider, Some("WorkBuddy 配额池无效"), QuotaStatus::Unavailable);
+    }
+    let used_percent = (used as f64 / size as f64 * 100.0).clamp(0.0, 100.0);
+    let credit_spent: f64 = {
+        let mut stmt = match conn.prepare("select credit_json from session_usage where credit_json is not null") {
+            Ok(s) => s,
+            Err(_) => return unavailable(provider, Some("WorkBuddy 数据库暂不可用"), QuotaStatus::Unavailable),
+        };
+        let mut total = 0.0;
+        let _ = stmt.query_map([], |r| r.get::<_, String>(0)).and_then(|rows| {
+            for row in rows.flatten() {
+                if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&row) {
+                    for v in map.values() {
+                        if let Some(n) = v.as_f64() {
+                            total += n;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        });
+        total
+    };
+    ProviderQuota {
+        provider,
+        windows: vec![QuotaWindow {
+            kind: QuotaWindowKind::Spend,
+            used_percent,
+            remaining: Some((size - used).max(0) as f64),
+            total: Some(size as f64),
+            resets_at: None,
+        }],
+        status: QuotaStatus::Available,
+        message: Some(format!("积分消耗合计 {:.0}", credit_spent)),
+    }
 }
 
 // ── coordinator ───────────────────────────────────────────────────────────
@@ -596,6 +673,7 @@ pub fn fetch_providers(providers: &[QuotaProvider]) -> BTreeMap<String, Provider
                     unavailable(p, None, QuotaStatus::Unavailable)
                 }
                 QuotaProvider::Cursor => fetch_cursor(),
+                QuotaProvider::WorkBuddy => fetch_workbuddy(),
                 QuotaProvider::Glm => fetch_glm(),
                 QuotaProvider::Kimi => fetch_kimi(),
                 QuotaProvider::Grok => fetch_grok(),

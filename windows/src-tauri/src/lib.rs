@@ -7,6 +7,7 @@
 //!   - a background refresh timer driven by the user's refresh interval
 
 mod agent_sources;
+mod sqlite_readonly;
 mod collector;
 mod cursor_usage;
 mod claude_quota;
@@ -512,6 +513,7 @@ fn set_quota_provider_enabled(provider: String, enabled: bool) -> Result<TokenSt
         "glm" => s.glm_quota_enabled = enabled,
         "kimi" => s.kimi_quota_enabled = enabled,
         "grok" => s.grok_quota_enabled = enabled,
+        "work_buddy" => s.workbuddy_quota_enabled = enabled,
         _ => return Err("unknown provider".into()),
     }
     settings::save(&s).map_err(|e| e.to_string())?;
@@ -541,6 +543,9 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
     let mut enabled: Vec<quota::QuotaProvider> = Vec::new();
     if s.cursor_quota_enabled {
         enabled.push(quota::QuotaProvider::Cursor);
+    }
+    if s.workbuddy_quota_enabled {
+        enabled.push(quota::QuotaProvider::WorkBuddy);
     }
     if s.glm_quota_enabled {
         enabled.push(quota::QuotaProvider::Glm);

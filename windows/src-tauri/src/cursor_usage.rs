@@ -32,12 +32,9 @@ pub fn read_credential() -> Option<CursorCredential> {
     if !db.is_file() {
         return None;
     }
-    let uri = format!("file:{}?mode=ro", db.display().to_string().replace('\\', "/"));
-    let conn = rusqlite::Connection::open_with_flags(
-        &uri,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .ok()?;
+    // WAL fallback ladder (upstream v0.2.26): a plain read-only handle fails
+    // once Cursor exits and removes the -shm sidecar of its WAL database.
+    let conn = crate::sqlite_readonly::open_readonly(&db)?;
     let token: String = conn
         .query_row(
             "select value from ItemTable where key='cursorAuth/accessToken' limit 1",
