@@ -13,8 +13,8 @@ use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-const PRIMARY_URL: &str = "https://cursor.com/api/dashboard/get-filtered-usage-events";
-const FALLBACK_URL: &str = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetFilteredUsageEvents";
+const PRIMARY_URL: &str = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetFilteredUsageEvents";
+const FALLBACK_URL: &str = "https://cursor.com/api/dashboard/get-filtered-usage-events";
 const MAX_PAGES: usize = 20;
 const PAGE_SIZE: usize = 100;
 
@@ -50,13 +50,24 @@ pub fn read_credential() -> Option<CursorCredential> {
     // WAL fallback ladder (upstream v0.2.26): a plain read-only handle fails
     // once Cursor exits and removes the -shm sidecar of its WAL database.
     let conn = crate::sqlite_readonly::open_readonly(&db)?;
-    let token: String = conn
+    // Newer Cursor builds safeStorage-encrypt the WorkOS token (Chromium
+    // OSCrypt v10); older builds stored a plaintext JWT. Decrypt when the
+    // marker is present, otherwise use the value as-is.
+    let blob: String = conn
         .query_row(
             "select value from ItemTable where key='cursorAuth/accessToken' limit 1",
             [],
             |r| r.get(0),
         )
         .ok()?;
+    if blob.trim().is_empty() {
+        return None;
+    }
+    let token = if blob.starts_with("cursor-safe-storage:v1:") {
+        crate::cursor_safe::decrypt_safe_storage(&blob)?
+    } else {
+        blob
+    };
     if token.trim().is_empty() {
         return None;
     }
@@ -172,27 +183,42 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
 
     let mut events: Vec<CursorUsageEvent> = Vec::new();
     for page in 1..=MAX_PAGES {
-        let body = serde_json::json!({
-            "startDate": start_ms.to_string(),
-            "endDate": end_ms.to_string(),
-            "page": page,
-            "pageSize": PAGE_SIZE,
-            "userId": cred.dashboard_user_id,
-        });
+        // Connect-Protocol request body: epoch-millisecond numbers, no
+        // pagination/userId fields (the Connect endpoint rejects unknown
+        // fields and returns everything within the window in one page).
+        let body = if page == 1 {
+            serde_json::json!({
+                "startDate": start_ms,
+                "endDate": end_ms,
+            })
+        } else {
+            serde_json::json!({
+                "startDate": start_ms,
+                "endDate": end_ms,
+                "page": page,
+                "pageSize": PAGE_SIZE,
+            })
+        };
         match fetch_page(PRIMARY_URL, &cred, &body)
-            .or_else(|| fetch_page(FALLBACK_URL, &cred, &body))
+            .or_else(|e| fetch_page(FALLBACK_URL, &cred, &body).map_err(|fe| if fe.is_empty() { e.clone() } else { fe }))
         {
-            Some(page_events) => {
+            Ok(page_events) => {
                 let got = page_events.len();
                 events.extend(page_events);
                 if got < PAGE_SIZE {
                     break;
                 }
             }
-            None => {
-                // Partial success is acceptable once we have data.
+            Err(e) => {
+                // Diagnostics: persist the real failure so overlay-verify can
+                // surface it; the pass itself must not hard-fail on one source.
+                let diag = paths::app_support_root()
+                    .join("cache")
+                    .join("cursor-usage-diag.json");
+                let safe = e.replace('"', "'");
+                let _ = std::fs::write(&diag, format!("{{\"error\":\"{safe}\"}}"));
                 if events.is_empty() {
-                    return Err("Cursor 用量暂不可用".to_string());
+                    return Err(format!("Cursor 用量暂不可用（{e}）"));
                 }
                 break;
             }
@@ -235,31 +261,37 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
     Ok(cache)
 }
 
-fn fetch_page(url: &str, cred: &CursorCredential, body: &serde_json::Value) -> Option<Vec<CursorUsageEvent>> {
+fn fetch_page(url: &str, cred: &CursorCredential, body: &serde_json::Value) -> Result<Vec<CursorUsageEvent>, String> {
+    // Header set mirrors the live-verified recipe: a full browser UA (the
+    // "TokenStep" UA is rejected by cursor.com's gateway) and NO Origin
+    // header (cursor.com answers state-changing POSTs with 403 "invalid
+    // origin" when it is present). The decrypted WorkOS token rides the
+    // cookie; a generous timeout absorbs TLS-handshake stalls.
     let client = net::blocking_client()
-        .user_agent("TokenStep")
-        .timeout(std::time::Duration::from_secs(8))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(30))
         .build()
-        .ok()?;
-    let cookie = format!("WorkosCursorSessionToken={}::{}", cred.user_id, cred.access_token);
+        .map_err(|e| format!("client: {e}"))?;
     let resp = client
         .post(url)
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
-        .header("Origin", "https://cursor.com")
-        .header("Cookie", cookie)
+        .header("Cookie", format!("WorkosCursorSessionToken={}::{}", cred.user_id, cred.access_token))
         .json(body)
         .send()
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
+        .map_err(|e| format!("transport: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body_text = resp.text().unwrap_or_default();
+        return Err(format!("HTTP {}: {}", status.as_u16(), body_text.chars().take(160).collect::<String>()));
     }
-    let value: serde_json::Value = resp.json().ok()?;
+    let value: serde_json::Value = resp.json().map_err(|e| format!("json: {e}"))?;
     let rows = value
         .get("usageEventsDisplay")
-        .or_else(|| value.get("usageEvents"))?
-        .as_array()?
-        .clone();
+        .or_else(|| value.get("usageEvents"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .ok_or_else(|| "响应缺少 usageEventsDisplay".to_string())?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let usage = row.get("tokenUsage").unwrap_or(&row);
@@ -298,7 +330,7 @@ fn fetch_page(url: &str, cred: &CursorCredential, body: &serde_json::Value) -> O
                 .to_string(),
         });
     }
-    Some(out)
+    Ok(out)
 }
 
 fn date_to_epoch_ms(day: &str) -> i64 {

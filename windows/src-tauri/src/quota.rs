@@ -227,7 +227,7 @@ fn percent_from(v: &serde_json::Value) -> Option<f64> {
 
 fn http_json(url: &str, headers: &[(&str, String)]) -> Result<serde_json::Value, String> {
     let client = net::blocking_client()
-        .user_agent("TokenStep")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(8))
         .build()
         .map_err(|e| e.to_string())?;
@@ -491,8 +491,8 @@ pub fn fetch_cursor() -> ProviderQuota {
     let Some(token) = crate::cursor_safe::decrypt_safe_storage(&blob) else {
         return unavailable(provider, Some("无法解密 Cursor 凭据（safeStorage）"), QuotaStatus::Unavailable);
     };
-    let client = match net::blocking_client()
-        .user_agent("TokenStep")
+    let client = match net::blocking_client_direct()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(20))
         .build()
     {

@@ -85,6 +85,13 @@ fn read_windows_registry_proxy() -> Option<String> {
 }
 
 /// Build a blocking client with the discovered proxy applied (if any).
+/// Direct client WITHOUT system-proxy discovery — for endpoints where the
+/// local proxy interferes (api2.cursor.sh rejects proxied sessions with 401).
+pub fn blocking_client_direct() -> reqwest::blocking::ClientBuilder {
+    let builder = reqwest::blocking::Client::builder();
+    builder.no_proxy()
+}
+
 pub fn blocking_client() -> reqwest::blocking::ClientBuilder {
     let mut builder = reqwest::blocking::Client::builder();
     if let Some(proxy) = system_proxy() {

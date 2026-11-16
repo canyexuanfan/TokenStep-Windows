@@ -1316,6 +1316,11 @@ pub fn run() {
 
 /// Public shim used by the `check` example to run a collection pass without
 /// booting the full Tauri app.
+/// Public shim for the cursor_diag example: the decrypted credential.
+pub fn cursor_credential_for_check() -> Option<crate::cursor_usage::CursorCredential> {
+    crate::cursor_usage::read_credential()
+}
+
 pub fn collect_for_check() -> models::UsageSnapshot {
     collector::collect(false, None)
 }
