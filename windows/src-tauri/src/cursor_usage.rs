@@ -199,27 +199,40 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
                 "pageSize": PAGE_SIZE,
             })
         };
-        match fetch_page(PRIMARY_URL, &cred, &body)
-            .or_else(|e| fetch_page(FALLBACK_URL, &cred, &body).map_err(|fe| if fe.is_empty() { e.clone() } else { fe }))
-        {
-            Ok(page_events) => {
-                let got = page_events.len();
-                events.extend(page_events);
-                if got < PAGE_SIZE {
-                    break;
+        let primary = fetch_page(PRIMARY_URL, &cred, &body);
+        let mut primary_err = String::new();
+        let page_events = match primary {
+            Ok(ev) => ev,
+            Err(e1) => {
+                primary_err = e1;
+                match fetch_page(FALLBACK_URL, &cred, &body) {
+                    Ok(ev) => ev,
+                    Err(e2) => {
+                        // Both endpoints failed: persist BOTH reasons for the
+                        // overlay-verify loop (the pass must not hard-fail).
+                        let diag = paths::app_support_root()
+                            .join("cache")
+                            .join("cursor-usage-diag.json");
+                        let safe = format!(
+                            "{{\"primary\":\"{}\",\"fallback\":\"{}\"}}",
+                            primary_err.replace('"', "'"),
+                            e2.replace('"', "'")
+                        );
+                        let _ = std::fs::write(&diag, safe);
+                        if events.is_empty() {
+                            return Err(format!(
+                                "Cursor 用量暂不可用（primary: {primary_err} | fallback: {e2}）"
+                            ));
+                        }
+                        break;
+                    }
                 }
             }
-            Err(e) => {
-                // Diagnostics: persist the real failure so overlay-verify can
-                // surface it; the pass itself must not hard-fail on one source.
-                let diag = paths::app_support_root()
-                    .join("cache")
-                    .join("cursor-usage-diag.json");
-                let safe = e.replace('"', "'");
-                let _ = std::fs::write(&diag, format!("{{\"error\":\"{safe}\"}}"));
-                if events.is_empty() {
-                    return Err(format!("Cursor 用量暂不可用（{e}）"));
-                }
+        };
+        {
+            let got = page_events.len();
+            events.extend(page_events);
+            if got < PAGE_SIZE {
                 break;
             }
         }
@@ -270,6 +283,7 @@ fn fetch_page(url: &str, cred: &CursorCredential, body: &serde_json::Value) -> R
     let client = net::blocking_client()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(30))
+        .http1_only()
         .build()
         .map_err(|e| format!("client: {e}"))?;
     let resp = client
