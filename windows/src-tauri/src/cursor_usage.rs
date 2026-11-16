@@ -275,22 +275,23 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
 }
 
 fn fetch_page(url: &str, cred: &CursorCredential, body: &serde_json::Value) -> Result<Vec<CursorUsageEvent>, String> {
-    // Header set mirrors the live-verified recipe: a full browser UA (the
-    // "TokenStep" UA is rejected by cursor.com's gateway) and NO Origin
-    // header (cursor.com answers state-changing POSTs with 403 "invalid
-    // origin" when it is present). The decrypted WorkOS token rides the
-    // cookie; a generous timeout absorbs TLS-handshake stalls.
-    let client = net::blocking_client()
+    // Header set mirrors the live-verified recipe (cursor_diag 5th test):
+    // Chrome UA, Connect-Protocol-Version, and **Bearer auth with the
+    // DECRYPTED WorkOS token**. The cookie form (encrypted blob) 401s on
+    // current Cursor builds; Origin must be absent (403 otherwise). The
+    // system proxy path breaks this endpoint ("Invalid origin" — the proxy
+    // injects/rewrites Origin), so the direct client is REQUIRED here.
+    let client = net::blocking_client_direct()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(30))
-        .http1_only()
         .build()
         .map_err(|e| format!("client: {e}"))?;
     let resp = client
         .post(url)
         .header("Accept", "application/json")
         .header("Content-Type", "application/json")
-        .header("Cookie", format!("WorkosCursorSessionToken={}::{}", cred.user_id, cred.access_token))
+        .header("Connect-Protocol-Version", "1")
+        .header("Authorization", format!("Bearer {}", cred.access_token))
         .json(body)
         .send()
         .map_err(|e| format!("transport: {e}"))?;

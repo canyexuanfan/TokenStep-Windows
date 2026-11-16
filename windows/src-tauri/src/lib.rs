@@ -1327,6 +1327,14 @@ pub fn collect_for_check() -> models::UsageSnapshot {
 
 /// Public shim used by the `quota_diag` example: runs the codex/claude quota
 /// readers end-to-end (binary discovery included) without booting the app.
+/// Public shim for diagnostics: run the cursor usage refresh for real.
+pub fn cursor_refresh_for_check(days: i64) -> serde_json::Value {
+    match crate::cursor_usage::refresh(days) {
+        Ok(cache) => serde_json::json!({ "ok": true, "days": cache.days.len(), "total": cache.days.iter().map(|d| d.total_tokens).sum::<i64>() }),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+    }
+}
+
 pub fn quota_diag_for_check() -> serde_json::Value {
     let q = codex_quota::read();
     let cq = claude_quota::read();
