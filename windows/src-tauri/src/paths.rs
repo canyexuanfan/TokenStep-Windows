@@ -110,6 +110,11 @@ pub fn workbuddy_roots() -> Vec<PathBuf> {
 /// Per-project JSONL event streams (~/.workbuddy/projects/): each
 /// function_call line carries timestamp/model/message.usage — the same
 /// event_usage source the Token Rank client scans.
+/// ~/.cursor/projects — Cursor agent session transcripts (JSONL).
+pub fn cursor_transcript_roots() -> Vec<PathBuf> {
+    vec![home_dir().join(".cursor").join("projects")]
+}
+
 pub fn workbuddy_project_roots() -> Vec<PathBuf> {
     vec![home_dir().join(".workbuddy").join("projects")]
 }
