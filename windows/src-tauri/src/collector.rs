@@ -2222,6 +2222,38 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
         .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
         .format("%Y-%m-%d")
         .to_string();
+    // composerId → modelConfig.modelName map (Cursor stores the selected
+    // model per conversation in state.vscdb composerData rows).
+    let mut composer_models: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(conn) = crate::sqlite_readonly::open_readonly(&crate::paths::cursor_state_vscdb()) {
+        let query_result = conn
+            .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData%'")
+            .and_then(|mut st| {
+                st.query_map([], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })
+                    .map(|rows| rows.collect::<Result<Vec<_>, _>>().unwrap_or_default())
+            });
+        if let Ok(rows) = query_result {
+            for row in rows {
+                if let Ok(j) = serde_json::from_str::<serde_json::Value>(&row.1) {
+                    let id = row.0.strip_prefix("composerData:").unwrap_or("").to_string();
+                    let model = j
+                        .pointer("/modelConfig/modelName")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                        .or_else(|| {
+                            j.pointer("/modelConfig/selectedModels/0/modelId")
+                                .and_then(|v| v.as_str())
+                                .map(String::from)
+                        });
+                    if let (Some(m), true) = (model, !id.is_empty()) {
+                        composer_models.insert(id, m);
+                    }
+                }
+            }
+        }
+    }
     for root in paths::cursor_transcript_roots() {
         for path in jsonl_files_under(&root) {
             let key = path.to_string_lossy().to_string();
@@ -2234,6 +2266,14 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
             let Ok(text) = fs::read_to_string(&path) else {
                 continue;
             };
+            let session_id = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let model = composer_models
+                .get(&session_id)
+                .cloned()
+                .unwrap_or_else(|| "unknown".into());
             let meta_day = fs::metadata(&path)
                 .ok()
                 .and_then(|m| m.modified().ok())
@@ -2297,7 +2337,7 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
                     date: day.clone(),
                     timestamp: None,
                     tool: "Cursor".into(),
-                    model: "unknown".into(),
+                    model: model.clone(),
                     usage: TokenUsageCounts {
                         input_tokens: *tokens,
                         output_tokens: 0,
@@ -2316,7 +2356,7 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
                     date: day.clone(),
                     timestamp: None,
                     tool: "Cursor".into(),
-                    model: "unknown".into(),
+                    model: model.clone(),
                     usage: TokenUsageCounts {
                         input_tokens: *tokens,
                         output_tokens: 0,
