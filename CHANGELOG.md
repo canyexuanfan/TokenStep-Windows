@@ -18,6 +18,7 @@
 - **DeepSeek Harness 用量采集**：读取 `~/.dsh/.dshw-usage.json` 逐事件计费日志（events[]：ts/day/model/tokens），按事件 token 总量计入 "DSH"（DeepSeek Harness 的产品名；单写 "DeepSeek" 易与模型名混淆）客户端，并按模型（deepseek-flash 等）归属。注意：该日志 2026-11-16 因 recharge-fix 重建，更早历史仅存在于压缩会话文件（zstd），暂未解析。
 - **Codex 采集防冻结（关键修复）**：用户将 `~/.codex/sessions` 迁移为指向 G 盘的 junction（41 GB、仅元数据遍历 >2 分钟），原实现每轮同步扫描会挂死整个刷新流程（首轮快照永不出现）。现 Codex JSONL 扫描在独立线程上运行（私有缓存副本），刷新线程最多等待 20 秒，超时后回退：优先上一次成功扫描结果（memo），无 memo 时直接用共享缓存里已解析的 Codex 历史记录（Codex 不再从统计中消失），来源标记 `*_scan_timeout` 降级；遍历改为日期降序优先（新会话先发现）+ 30 秒预算；扫描不完整时跳过缓存清理（防止误删历史）。
 - **今日页「30 天活动热力图」更名「30 天活动条形图」**：该图本就是条形图而非热力图；图中与横轴平行的横虚线是每日目标参考线（带"目标 X"标签，柱子按相对目标的比例分档上色 <50% / 50–90% / ≥90%），保留不动。
+- **Codex 订阅额度开关默认开启**：此前 `show_codex_quota` 默认关闭且藏在设置深处，订阅额度卡从未出现 Codex（同 Cursor 额度默认开启的处理）；未登录 Codex 时卡片如实显示原因而非隐藏。现有用户配置文件不受影响。
 
 ### 用量准确性审计（独立求和比对）
 
@@ -62,6 +63,7 @@
 - **MiniMax usage collector (full history)**: reads both same-schema SQLite stores — legacy `~/.minimax/sqlite.db` (May–Jul 2026) and the live `~/.minimax/v2/sqlite/runtime-state.sqlite` — with full-row-fingerprint cross-store dedup (turn_id fans out to many rows per turn). ~2.94B tokens locally; rows without a recorded model display as "MiniMax".
 - **DeepSeek Harness usage collector**: reads the `~/.dsh/.dshw-usage.json` per-call billing journal (events: ts/day/model/tokens) as the "DSH" client (the harness product name — "DeepSeek" alone would read as a model) with per-model attribution. Journal was rebuilt on 2026-11-16 (recharge-fix); older history lives only in zstd-compressed session files.
 - Today-page card renamed 「30 天活动热力图」 → 「30 天活动条形图」 (it is a bar chart, not a heatmap). The horizontal dashed line is the daily-goal reference line (tagged "目标 X"; bars are intensity-graded against it) — kept as is.
+- The Codex subscription-quota toggle now defaults to on (it used to sit off by default, buried in settings, so the quota card never showed Codex — same treatment as the Cursor quota default-on flip). Existing settings files are untouched.
 - **WorkBuddy quota card**: reads the local `~/.workbuddy/workbuddy.db` credit pool (used/total, credits spent) — no network requests. Settings → Quota providers → WorkBuddy toggle (default off).
 - **WorkBuddy usage collector**: scans the per-project JSONL event streams (`~/.workbuddy/projects/**/*.jsonl`) — per-request tokens now feed the per-client card and totals.
 - SQLite read-only three-step fallback (readOnly → query_only → immutable), ported from upstream v0.2.26; Cursor's state.vscdb uses it.

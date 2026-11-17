@@ -324,9 +324,12 @@ pub struct TokenStepSettings {
     #[serde(rename = "language", default = "default_lang")]
     pub language: String,
     /// Whether the Codex quota card (5h / 7d rate limits) is shown on the
-    /// Today view. Mirrors upstream `showCodexQuota`; default off so the card
-    /// only appears when the user opts in.
-    #[serde(rename = "show_codex_quota", default)]
+    /// Today view. Mirrors upstream `showCodexQuota`; default ON (0.1.12:
+    /// the toggle used to sit off by default and buried in settings, so the
+    /// Codex subscription quota silently never appeared — same treatment as
+    /// the Cursor quota default-on flip). Without a Codex login the card
+    /// explains why instead of hiding.
+    #[serde(rename = "show_codex_quota", default = "default_true")]
     pub show_codex_quota: bool,
     /// Agent-work-rank card visibility (upstream `AgentWorkRankVisibility`):
     /// "automatic" (show when a local Token Rank identity is detected),
