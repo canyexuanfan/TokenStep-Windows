@@ -90,6 +90,10 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     let (cursor_transcript_records, cursor_transcript_source) = collect_cursor_transcripts(&mut cache);
     records.extend(cursor_transcript_records.iter().cloned());
     records.extend(workbuddy_records.iter().cloned());
+    let (minimax_records, minimax_source) = collect_minimax();
+    records.extend(minimax_records.iter().cloned());
+    let (dsh_records, dsh_source) = collect_dsh();
+    records.extend(dsh_records.iter().cloned());
 
 
     // Stamp per-source record counts (recount precisely per tool, since the
@@ -117,6 +121,8 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     sources.insert("Hermes Agent".to_string(), hermes_source);
     sources.insert("WorkBuddy".to_string(), workbuddy_source);
     sources.insert("Cursor".to_string(), cursor_transcript_source);
+    sources.insert("MiniMax".to_string(), minimax_source);
+    sources.insert("DeepSeek".to_string(), dsh_source);
 
     aggregate(records, &pricing_data, sources)
 }
@@ -125,29 +131,123 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
 // Codex
 // ---------------------------------------------------------------------------
 
+/// How long the collector waits for a Codex JSONL scan before falling back to
+/// the last completed scan. The sessions root can be a junction onto a
+/// pathologically slow volume where a single read_dir/stat blocks for
+/// minutes — nothing an in-loop deadline can cancel — so the scan runs on a
+/// throwaway thread and a hung volume degrades Codex freshness instead of
+/// freezing every refresh pass.
+const CODEX_SCAN_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Result of one Codex JSONL scan, kept so later passes can serve the last
+/// good data while a scan thread is still stuck on slow storage.
+#[derive(Debug, Clone)]
+struct CodexScanOutcome {
+    records: Vec<UsageRecord>,
+    files: i64,
+    timed_out: bool,
+    live_paths: BTreeSet<String>,
+    codex_entries: BTreeMap<String, CachedUsageFile>,
+}
+
+static CODEX_SCAN_MEMO: std::sync::Mutex<Option<CodexScanOutcome>> = std::sync::Mutex::new(None);
+
+/// Set while a codex-scan thread is alive. While it stays set (thread stuck
+/// on slow storage), later passes serve the memo instead of spawning more
+/// threads — one detached thread max, not one per refresh interval.
+static CODEX_SCAN_IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     // Primary: JSONL rollouts (per-turn token counts), matching the Python
     // collector's precedence. SQLite `threads` (per-thread totals) is only a
     // fallback when no JSONL data exists. The cache is shared with the other
     // collectors (single load/save per pass — fixing the historic clobber
     // where each collector's save wiped the others' entries).
-    let mut live_paths: BTreeSet<String> = BTreeSet::new();
-    let (records, files) = collect_codex_jsonl(cache, &mut live_paths);
-    let stale: Vec<String> = cache
-        .files
-        .iter()
-        .filter(|(k, entry)| entry.tool == "Codex" && !live_paths.contains(k.as_str()))
-        .map(|(k, _)| k.clone())
-        .collect();
-    for k in stale {
-        cache.files.remove(&k);
+    //
+    // The scan itself runs on a detached thread with a private cache clone:
+    // every cached_records() freshness check stats files on the (possibly
+    // glacial) sessions volume, which must never block the refresh pass.
+    // Completed outcomes are memoized; a timed-out wait serves the memo.
+    let job_files = cache.files.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<CodexScanOutcome>();
+    let mut spawn_ok = false;
+    if !CODEX_SCAN_IN_FLIGHT.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        spawn_ok = std::thread::Builder::new().name("codex-scan".into()).spawn(move || {
+            let mut local_cache = CollectorCache {
+                version: COLLECTOR_CACHE_VERSION,
+                files: job_files,
+            };
+            let mut live_paths = BTreeSet::new();
+            let (records, files, timed_out) = collect_codex_jsonl(&mut local_cache, &mut live_paths);
+            let codex_entries: BTreeMap<String, CachedUsageFile> = local_cache
+                .files
+                .into_iter()
+                .filter(|(_, e)| e.tool == "Codex")
+                .collect();
+            let outcome = CodexScanOutcome {
+                records,
+                files,
+                timed_out,
+                live_paths,
+                codex_entries,
+            };
+            if let Ok(mut memo) = CODEX_SCAN_MEMO.lock() {
+                *memo = Some(outcome.clone());
+            }
+            let _ = tx.send(outcome);
+            CODEX_SCAN_IN_FLIGHT.store(false, std::sync::atomic::Ordering::SeqCst);
+        })
+        .is_ok();
+    }
+    let outcome = if spawn_ok {
+        match rx.recv_timeout(CODEX_SCAN_WAIT) {
+            Ok(o) => Some(o),
+            Err(_) => CODEX_SCAN_MEMO.lock().ok().and_then(|m| m.clone()),
+        }
+    } else {
+        // A scan is already in flight (or spawn failed): serve the memo.
+        CODEX_SCAN_MEMO.lock().ok().and_then(|m| m.clone())
+    };
+
+    let Some(outcome) = outcome else {
+        // First pass under a fully hung volume: report degraded, keep cache
+        // untouched (no prune, no entries — nothing was scanned).
+        return (
+            Vec::new(),
+            SourceInfo {
+                status: Some("degraded_scan_timeout".to_string()),
+                files: None,
+                records: None,
+                ..Default::default()
+            },
+        );
+    };
+
+    // Merge the scanned codex entries into the shared cache. A timed-out scan
+    // saw only part of the tree: its live_paths are incomplete, so pruning
+    // cached entries would delete valid history — skip the prune then.
+    if !outcome.timed_out {
+        let stale: Vec<String> = cache
+            .files
+            .iter()
+            .filter(|(k, entry)| entry.tool == "Codex" && !outcome.live_paths.contains(k.as_str()))
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in stale {
+            cache.files.remove(&k);
+        }
+    }
+    for (k, entry) in outcome.codex_entries {
+        cache.files.insert(k, entry);
     }
 
-    if !records.is_empty() {
+    let scan_timed_out = outcome.timed_out;
+    let files = outcome.files;
+    if !outcome.records.is_empty() {
         return (
-            records,
+            outcome.records,
             SourceInfo {
-                status: Some("ok".to_string()),
+                status: Some(if scan_timed_out { "ok_scan_timeout".to_string() } else { "ok".to_string() }),
                 files: Some(files),
                 records: None,
                 ..Default::default()
@@ -161,7 +261,7 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
             return (
                 records,
                 SourceInfo {
-                    status: Some("ok_sqlite".to_string()),
+                    status: Some(if scan_timed_out { "ok_sqlite_scan_timeout".to_string() } else { "ok_sqlite".to_string() }),
                     files: Some(files as i64),
                     records: None,
                     ..Default::default()
@@ -173,7 +273,7 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     (
         Vec::new(),
         SourceInfo {
-            status: Some("missing".to_string()),
+            status: Some(if scan_timed_out { "degraded_scan_timeout".to_string() } else { "missing".to_string() }),
             files: Some(files),
             records: None,
             ..Default::default()
@@ -233,14 +333,24 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
     Some((records, 1))
 }
 
+/// Per-pass scan budget for the Codex JSONL source. The sessions root can be
+/// a junction onto a pathologically slow volume; this bounds walk + reads so
+/// a refresh pass stays predictable. Cached history keeps working when the
+/// budget runs out (marked `*_scan_timeout` in sources).
+const CODEX_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+
 fn collect_codex_jsonl(
     cache: &mut CollectorCache,
     live_paths: &mut BTreeSet<String>,
-) -> (Vec<UsageRecord>, i64) {
+) -> (Vec<UsageRecord>, i64, bool) {
+    let scan_deadline = std::time::Instant::now() + CODEX_SCAN_BUDGET;
     let roots = paths::codex_jsonl_roots();
     let mut all_paths = Vec::new();
+    let mut scan_timed_out = false;
     for root in &roots {
-        all_paths.extend(jsonl_files_under(root));
+        let (mut files, timed_out) = jsonl_files_under_budget(root, scan_deadline);
+        scan_timed_out |= timed_out;
+        all_paths.append(&mut files);
     }
     all_paths.sort();
 
@@ -265,6 +375,10 @@ fn collect_codex_jsonl(
                 .clone()
                 .unwrap_or_else(|| fallback_session_from_path(path));
             metas.push((key, session, entry.codex_parent_session.clone(), entry.codex_created_at));
+            continue;
+        }
+        if std::time::Instant::now() >= scan_deadline {
+            scan_timed_out = true;
             continue;
         }
         let (session, parent, created) = codex_head_meta(path);
@@ -292,6 +406,10 @@ fn collect_codex_jsonl(
             }
         }
         // Uncached parent file: extract its anchors by streaming.
+        if std::time::Instant::now() >= scan_deadline {
+            scan_timed_out = true;
+            continue;
+        }
         let anchors = codex_scan_anchors(path);
         anchors_by_session.insert(own_session.clone(), anchors);
     }
@@ -323,6 +441,10 @@ fn collect_codex_jsonl(
         // between consecutive cumulative values (with sentinel / reset
         // handling). Fork files inherit the parent's anchor so the inherited
         // history is counted exactly once.
+        if std::time::Instant::now() >= scan_deadline {
+            scan_timed_out = true;
+            continue;
+        }
         let mut session_id = path
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
@@ -459,7 +581,7 @@ fn collect_codex_jsonl(
         let _ = inherited_from;
     }
 
-    (records, all_paths.len() as i64)
+    (records, all_paths.len() as i64, scan_timed_out)
 }
 
 /// Fallback session key for cache entries saved before `codex_session`
@@ -1918,6 +2040,53 @@ fn jsonl_files_under(root: &Path) -> Vec<PathBuf> {
     entries.flatten().filter(|p| p.is_file()).collect()
 }
 
+/// Newest-first, deadline-bounded DFS for JSONL rollouts (Codex).
+///
+/// The Codex sessions root can be a junction onto a slow volume where even a
+/// metadata walk takes minutes (41 GB / cloud-synced backups). The glob walk
+/// cannot be cancelled and enumerates oldest-first, so on such roots the
+/// collector would hang every pass AND never reach the newest sessions. This
+/// walker descends directory names in DESCENDING order (date-structured
+/// trees hit the newest days first) and stops at `deadline`.
+/// Returns (files, timed_out); `timed_out` means the tree was NOT fully
+/// enumerated and the result must not be treated as exhaustive.
+fn jsonl_files_under_budget(
+    root: &Path,
+    deadline: std::time::Instant,
+) -> (Vec<PathBuf>, bool) {
+    let mut out: Vec<PathBuf> = Vec::new();
+    // Descending sort: pop() takes the "largest" name first → newest first
+    // for year/month/day style layouts.
+    let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
+    let mut timed_out = false;
+    while let Some(dir) = stack.pop() {
+        if std::time::Instant::now() >= deadline {
+            timed_out = true;
+            break;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(ft) if ft.is_dir() => dirs.push(path),
+                Ok(ft) if ft.is_file() => {
+                    if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                        out.push(path);
+                    }
+                }
+                _ => {}
+            }
+        }
+        dirs.sort_unstable();
+        dirs.reverse();
+        stack.extend(dirs);
+    }
+    (out, timed_out)
+}
+
 fn percent(value: i64, total: i64) -> f64 {
     if total <= 0 {
         0.0
@@ -2415,6 +2584,236 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
     (records, status)
 }
 
+/// MiniMax (Mavis desktop runtime) per-turn usage from two same-schema
+/// SQLite stores covering disjoint date ranges:
+///   - `~/.minimax/sqlite.db` table `token_usage` (May–Jul 2026 era)
+///   - `~/.minimax/v2/sqlite/runtime-state.sqlite` table
+///     `local_runtime_token_usage` (live store, Jul 2026 → now)
+/// Schema: id / session_id / agent_name / framework_type / turn_id / model
+/// ("minimax/MiniMax-M3", often NULL in the live store) / ts (epoch ms) /
+/// input_tokens / output_tokens / reasoning_tokens / cache_read_tokens /
+/// cache_write_tokens / cost_usd / raw. In `raw` total = input + output +
+/// cache_read, so input EXCLUDES cached tokens
+/// (inputIncludesCachedTokens=false). NOTE: turn_id is NOT unique (one turn
+/// fans out to many API-call rows), so cross-store dedup keys on the full
+/// row fingerprint (ts + per-component counts) instead — verified unique
+/// within each store and collision-free across them. Rows without a model
+/// display as "MiniMax" (the client DB simply doesn't record it).
+fn collect_minimax() -> (Vec<UsageRecord>, SourceInfo) {
+    let mut records: Vec<UsageRecord> = Vec::new();
+    let mut seen_rows: BTreeSet<String> = BTreeSet::new();
+    let mut dbs_found = 0usize;
+    let mut dbs_ok = 0usize;
+    for (path, table) in [
+        (paths::minimax_db_path(), "token_usage"),
+        (paths::minimax_runtime_db_path(), "local_runtime_token_usage"),
+    ] {
+        if !path.exists() {
+            continue;
+        }
+        dbs_found += 1;
+        let (mut recs, ok) = read_minimax_usage_db(&path, table, &mut seen_rows);
+        if ok {
+            dbs_ok += 1;
+        }
+        records.append(&mut recs);
+    }
+    let status = match (dbs_ok, dbs_found) {
+        (0, 0) => "missing_db",
+        (0, _) => "schema_mismatch",
+        _ => "ok",
+    };
+    let count = records.len() as i64;
+    (records, SourceInfo {
+        status: Some(status.into()),
+        files: Some(dbs_ok as i64),
+        records: Some(count),
+        ..Default::default()
+    })
+}
+
+/// Read one MiniMax usage SQLite store; returns (records, schema_ok).
+fn read_minimax_usage_db(
+    db_path: &Path,
+    table: &str,
+    seen_rows: &mut BTreeSet<String>,
+) -> (Vec<UsageRecord>, bool) {
+    let conn = match rusqlite::Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(c) => c,
+        Err(_) => return (vec![], false),
+    };
+    // Probe required columns (app schema may change between versions).
+    let available_columns: BTreeSet<String> = conn
+        .prepare(&format!("pragma table_info({table})"))
+        .and_then(|mut s| {
+            let mut cols = BTreeSet::new();
+            let mut rows = s.query([])?;
+            while let Some(row) = rows.next()? {
+                if let Ok(name) = row.get::<_, String>(1) {
+                    cols.insert(name);
+                }
+            }
+            Ok(cols)
+        })
+        .unwrap_or_default();
+    let required_cols = [
+        "model", "ts", "turn_id", "input_tokens", "output_tokens", "reasoning_tokens",
+        "cache_read_tokens", "cache_write_tokens", "cost_usd",
+    ];
+    if required_cols.iter().any(|c| !available_columns.contains(*c)) {
+        return (vec![], false);
+    }
+    let sql = format!(
+        r#"select
+    coalesce(nullif({table}.model, ''), '') as display_model,
+    {table}.ts,
+    coalesce({table}.input_tokens, 0),
+    coalesce({table}.output_tokens, 0),
+    coalesce({table}.reasoning_tokens, 0),
+    coalesce({table}.cache_read_tokens, 0),
+    coalesce({table}.cache_write_tokens, 0),
+    coalesce({table}.cost_usd, 0.0)
+from {table}
+where coalesce({table}.input_tokens, 0)
+    + coalesce({table}.output_tokens, 0)
+    + coalesce({table}.reasoning_tokens, 0)
+    + coalesce({table}.cache_read_tokens, 0)
+    + coalesce({table}.cache_write_tokens, 0) > 0
+order by {table}.ts, {table}.id"#
+    );
+    let mut stmt = match conn.prepare(sql.as_str()) {
+        Ok(s) => s,
+        Err(_) => return (vec![], false),
+    };
+    let rows = stmt.query_map([], |row| {
+        let model: String = row.get::<_, Option<String>>(0)?.unwrap_or_default();
+        let ts_ms: i64 = row.get(1)?;
+        let input: i64 = row.get(2)?;
+        let output: i64 = row.get(3)?;
+        let reasoning: i64 = row.get(4)?;
+        let cache_read: i64 = row.get(5)?;
+        let cache_write: i64 = row.get(6)?;
+        let cost: f64 = row.get(7)?;
+        Ok((model, ts_ms, input, output, reasoning, cache_read, cache_write, cost))
+    });
+    let mut records = Vec::new();
+    if let Ok(iter) = rows {
+        for row in iter.flatten() {
+            let (model, ts_ms, input, output, reasoning, cache_read, cache_write, cost) = row;
+            // Cross-store dedup: full-row fingerprint (turn_id is NOT unique —
+            // one turn fans out to many API-call rows).
+            let fingerprint = format!("{ts_ms}/{input}/{output}/{cache_read}/{cache_write}/{reasoning}");
+            if !seen_rows.insert(fingerprint) {
+                continue;
+            }
+            // Strip the provider prefix ("minimax/MiniMax-M3" → "MiniMax-M3");
+            // rows the client left without a model display as "MiniMax".
+            let model = if model.is_empty() {
+                "MiniMax".to_string()
+            } else {
+                model
+                    .split_once('/')
+                    .map(|(_, m)| m.to_string())
+                    .unwrap_or(model)
+            };
+            let usage = crate::agent_sources::canonical_counts(
+                input,
+                output,
+                cache_read,
+                cache_write,
+                reasoning,
+                false,
+                None,
+            );
+            let date = day_string_from_epoch(ts_ms as f64 / 1000.0);
+            let ts = iso_string_from_epoch(ts_ms as f64 / 1000.0);
+            records.push(UsageRecord {
+                date,
+                timestamp: Some(ts),
+                tool: "MiniMax".to_string(),
+                model,
+                usage,
+                cost_usd: Some(cost),
+            });
+        }
+    }
+    (records, true)
+}
+
+/// DeepSeek Harness per-call usage from `~/.dsh/.dshw-usage.json`. Each
+/// `events[]` entry: {ts (epoch ms), day ("YYYY-MM-DD"), model, cost (CNY),
+/// tokens}. Only a grand total per call is recorded (no input/output split),
+/// so the total lands on input; cost is CNY and is not mapped to cost_usd.
+/// The journal was rebuilt on 2026-11-16 (recharge-fix), so pre-2026-11-16
+/// history is not in this file.
+fn collect_dsh() -> (Vec<UsageRecord>, SourceInfo) {
+    let path = paths::dsh_usage_json();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return (vec![], SourceInfo {
+            status: Some("missing".into()),
+            ..Default::default()
+        });
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return (vec![], SourceInfo {
+            status: Some("unreadable".into()),
+            ..Default::default()
+        });
+    };
+    let Some(events) = value.get("events").and_then(|v| v.as_array()) else {
+        return (vec![], SourceInfo {
+            status: Some("no_events".into()),
+            ..Default::default()
+        });
+    };
+    let mut records = Vec::new();
+    for ev in events {
+        let ts_ms = ev.get("ts").and_then(|v| v.as_i64()).unwrap_or(0);
+        let tokens = ev.get("tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+        if ts_ms <= 0 || tokens <= 0 {
+            continue;
+        }
+        let model = ev
+            .get("model")
+            .and_then(|v| v.as_str())
+            .filter(|m| !m.is_empty())
+            .unwrap_or("deepseek")
+            .to_string();
+        let date = ev
+            .get("day")
+            .and_then(|v| v.as_str())
+            .filter(|d| !d.is_empty())
+            .map(String::from)
+            .unwrap_or_else(|| day_string_from_epoch(ts_ms as f64 / 1000.0));
+        let ts = iso_string_from_epoch(ts_ms as f64 / 1000.0);
+        records.push(UsageRecord {
+            date,
+            timestamp: Some(ts),
+            tool: "DeepSeek".to_string(),
+            model,
+            usage: TokenUsageCounts {
+                input_tokens: tokens,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                reasoning_output_tokens: 0,
+                total_tokens: tokens,
+            },
+            cost_usd: None,
+        });
+    }
+    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let count = records.len() as i64;
+    (records, SourceInfo {
+        status: Some(status.into()),
+        files: Some(1),
+        records: Some(count),
+        ..Default::default()
+    })
+}
 
 fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
     let db_path = paths::zcode_db_path();

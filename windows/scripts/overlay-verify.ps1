@@ -69,7 +69,7 @@ function ClipShot([string]$name, [int]$x, [int]$y, [int]$w, [int]$h) {
 
 # Wait for the first collection+refresh pass (cursor_usage overlay merges).
 Start-Sleep -Seconds 12
-$deadline = [DateTime]::UtcNow.AddSeconds(300)
+$deadline = [DateTime]::UtcNow.AddSeconds(480)
 $done = $false
 while ([DateTime]::UtcNow -lt $deadline -and -not $done) {
   $r = Invoke-Eval @'
@@ -79,13 +79,14 @@ while ([DateTime]::UtcNow -lt $deadline -and -not $done) {
   return JSON.stringify({
     sync: sync ? sync.textContent.trim() : '?',
     tools: snap.tools || [],
+    models: (snap.models || []).filter(function (m) { return m.tool === 'MiniMax' || m.tool === 'Cursor'; }),
     sources: Object.keys(snap.sources || {})
   });
 })()
 '@
   $v = $r.result.result.value
   Write-Output ("[check] " + $v)
-  if ($v -match 'Cursor') { $done = $true }
+  if ($v -match 'Cursor' -and $v -match 'MiniMax') { $done = $true }
   if (-not $done) { Start-Sleep -Seconds 20 }
 }
 

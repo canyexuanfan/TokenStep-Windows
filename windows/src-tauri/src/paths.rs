@@ -115,6 +115,29 @@ pub fn cursor_transcript_roots() -> Vec<PathBuf> {
     vec![home_dir().join(".cursor").join("projects")]
 }
 
+/// `~/.minimax/sqlite.db` — MiniMax desktop runtime usage store (legacy,
+/// May–Jul 2026 era; table `token_usage`).
+pub fn minimax_db_path() -> PathBuf {
+    home_dir().join(".minimax").join("sqlite.db")
+}
+
+/// `~/.dsh/.dshw-usage.json` — DeepSeek Harness per-call billing journal
+/// (events: [{ts, day, model, cost, tokens}]; the dir is usually a symlink
+/// to the harness install's data root).
+pub fn dsh_usage_json() -> PathBuf {
+    home_dir().join(".dsh").join(".dshw-usage.json")
+}
+
+/// `~/.minimax/v2/sqlite/runtime-state.sqlite` — the live MiniMax runtime
+/// store (table `local_runtime_token_usage`, same schema as the legacy one).
+pub fn minimax_runtime_db_path() -> PathBuf {
+    home_dir()
+        .join(".minimax")
+        .join("v2")
+        .join("sqlite")
+        .join("runtime-state.sqlite")
+}
+
 pub fn workbuddy_project_roots() -> Vec<PathBuf> {
     vec![home_dir().join(".workbuddy").join("projects")]
 }

@@ -483,8 +483,26 @@ pub fn fetch_grok() -> ProviderQuota {
 
 pub fn fetch_cursor() -> ProviderQuota {
     let provider = QuotaProvider::Cursor;
-    // The WorkOS access token is safeStorage-encrypted in newer Cursor builds;
-    // decrypt it via the OS crypt key (DPAPI-wrapped in Local State).
+    // Cursor rotates accessToken frequently while it runs; a token read from
+    // the DB can be already-rotated (401) moments later. Retry with a fresh
+    // DB read each time before giving up.
+    for attempt in 0..3u32 {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_secs(3 * attempt as u64));
+        }
+        let result = fetch_cursor_once(&provider);
+        match &result.status {
+            QuotaStatus::Available => return result,
+            QuotaStatus::NotLoggedIn if attempt == 2 => return result,
+            QuotaStatus::Unavailable if attempt == 2 => return result,
+            _ => continue,
+        }
+    }
+    unreachable!("retry ladder always returns on attempt 2")
+}
+
+fn fetch_cursor_once(provider: &QuotaProvider) -> ProviderQuota {
+    let provider = *provider;
     let Some(blob) = crate::cursor_usage::read_cursor_auth_blob() else {
         return unavailable(provider, Some("未登录 Cursor"), QuotaStatus::NotLoggedIn);
     };
