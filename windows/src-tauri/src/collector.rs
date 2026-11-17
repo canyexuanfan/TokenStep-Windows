@@ -122,7 +122,7 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     sources.insert("WorkBuddy".to_string(), workbuddy_source);
     sources.insert("Cursor".to_string(), cursor_transcript_source);
     sources.insert("MiniMax".to_string(), minimax_source);
-    sources.insert("DeepSeek".to_string(), dsh_source);
+    sources.insert("DSH".to_string(), dsh_source);
 
     aggregate(records, &pricing_data, sources)
 }
@@ -210,14 +210,32 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     };
 
     let Some(outcome) = outcome else {
-        // First pass under a fully hung volume: report degraded, keep cache
-        // untouched (no prune, no entries — nothing was scanned).
+        // Scan unavailable (first pass still stuck on slow storage): serve
+        // the records already parsed into the shared cache so Codex doesn't
+        // vanish from the stats while the scan thread keeps working.
+        let mut records = Vec::new();
+        let mut files = 0i64;
+        for entry in cache.files.values().filter(|e| e.tool == "Codex") {
+            files += 1;
+            for c in &entry.records {
+                records.push(UsageRecord {
+                    date: c.date.clone(),
+                    timestamp: c.timestamp.clone(),
+                    tool: c.tool.clone(),
+                    model: c.model.clone(),
+                    usage: c.usage.clone(),
+                    cost_usd: c.cost_usd,
+                });
+            }
+        }
+        let status = if records.is_empty() { "degraded_scan_timeout" } else { "cached_scan_timeout" };
+        let count = records.len() as i64;
         return (
-            Vec::new(),
+            records,
             SourceInfo {
-                status: Some("degraded_scan_timeout".to_string()),
-                files: None,
-                records: None,
+                status: Some(status.into()),
+                files: Some(files),
+                records: Some(count),
                 ..Default::default()
             },
         );
@@ -2743,12 +2761,13 @@ order by {table}.ts, {table}.id"#
     (records, true)
 }
 
-/// DeepSeek Harness per-call usage from `~/.dsh/.dshw-usage.json`. Each
-/// `events[]` entry: {ts (epoch ms), day ("YYYY-MM-DD"), model, cost (CNY),
-/// tokens}. Only a grand total per call is recorded (no input/output split),
-/// so the total lands on input; cost is CNY and is not mapped to cost_usd.
-/// The journal was rebuilt on 2026-11-16 (recharge-fix), so pre-2026-11-16
-/// history is not in this file.
+/// DeepSeek Harness per-call usage from `~/.dsh/.dshw-usage.json`, surfaced
+/// under the client name "DSH" (the harness product name — "DeepSeek" alone
+/// would read as a model). Each `events[]` entry: {ts (epoch ms), day
+/// ("YYYY-MM-DD"), model, cost (CNY), tokens}. Only a grand total per call
+/// is recorded (no input/output split), so the total lands on input; cost is
+/// CNY and is not mapped to cost_usd. The journal was rebuilt on
+/// 2026-11-16 (recharge-fix), so pre-2026-11-16 history is not in this file.
 fn collect_dsh() -> (Vec<UsageRecord>, SourceInfo) {
     let path = paths::dsh_usage_json();
     let Ok(text) = fs::read_to_string(&path) else {
@@ -2792,7 +2811,7 @@ fn collect_dsh() -> (Vec<UsageRecord>, SourceInfo) {
         records.push(UsageRecord {
             date,
             timestamp: Some(ts),
-            tool: "DeepSeek".to_string(),
+            tool: "DSH".to_string(),
             model,
             usage: TokenUsageCounts {
                 input_tokens: tokens,
