@@ -55,11 +55,12 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     let pricing_data = pricing::load();
 
     // One shared collector cache for the whole pass: each collector only
-    // prunes its own entries (single save at the end).
+    // prunes its own entries (single save AFTER all collectors — placing it
+    // mid-pass once stranded the later collectors' fresh entries in memory,
+    // forcing full rescans of WorkBuddy/Cursor/MiniMax/Antigravity every pass).
     let mut cache = load_cache();
     let (codex_records, mut codex_source) = collect_codex(&mut cache);
     let (claude_records, mut claude_source) = collect_claude_code(&mut cache);
-    save_cache(&cache);
     let (ccswitch_records, mut ccswitch_source) = collect_ccswitch();
 
     // Stamp accounting revision on Codex source (forward compat with macOS).
@@ -127,6 +128,7 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     sources.insert("DSH".to_string(), dsh_source);
     sources.insert("Antigravity".to_string(), antigravity_source);
 
+    save_cache(&cache);
     aggregate(records, &pricing_data, sources)
 }
 
@@ -380,8 +382,11 @@ fn collect_codex_jsonl(
 
     // ── Phase 0: per-file fork metadata (own session / parent / created_at) ──
     // session_meta sits near the head of each rollout, so only the first
-    // chunk of every file is read here.
-    let mut metas: Vec<(String, String, Option<String>, Option<f64>)> =
+    // chunk of every file is read here. Metas stay INDEX-ALIGNED with
+    // all_paths: deadline-exceeded files push None (skipped in later phases).
+    // (A plain Vec<..> here once desynced from all_paths and Phase 2 indexed
+    // metas[index] out of bounds → panic=abort killed the whole app.)
+    let mut metas: Vec<Option<(String, String, Option<String>, Option<f64>)>> =
         Vec::with_capacity(all_paths.len());
     for path in &all_paths {
         let key = path.to_string_lossy().to_string();
@@ -395,27 +400,32 @@ fn collect_codex_jsonl(
                 .codex_session
                 .clone()
                 .unwrap_or_else(|| fallback_session_from_path(path));
-            metas.push((key, session, entry.codex_parent_session.clone(), entry.codex_created_at));
+            metas.push(Some((key, session, entry.codex_parent_session.clone(), entry.codex_created_at)));
             continue;
         }
         if std::time::Instant::now() >= scan_deadline {
             scan_timed_out = true;
+            metas.push(None);
             continue;
         }
         let (session, parent, created) = codex_head_meta(path);
-        metas.push((key, session, parent, created));
+        metas.push(Some((key, session, parent, created)));
     }
 
     // Parent sessions that at least one live file forks from.
     let parent_ids: BTreeSet<String> = metas
         .iter()
+        .flatten()
         .filter_map(|(_, _, parent, _)| parent.clone())
         .collect();
 
     // ── Phase 1: anchors keyed by the file's OWN session id (children look
     // their parent up here). Only files referenced as a parent need anchors.
     let mut anchors_by_session: BTreeMap<String, Vec<CachedAnchor>> = BTreeMap::new();
-    for (index, (key, own_session, _, _)) in metas.iter().enumerate() {
+    for (index, meta) in metas.iter().enumerate() {
+        let Some((key, own_session, _, _)) = meta else {
+            continue;
+        };
         if !parent_ids.contains(own_session) {
             continue;
         }
@@ -437,11 +447,12 @@ fn collect_codex_jsonl(
 
     // ── Phase 2: per-file scan + delta (fork files inherit the parent anchor) ──
     for (index, path) in all_paths.iter().enumerate() {
-        let key = path.to_string_lossy().to_string();
-        let (own_session, parent, created_at) = {
-            let (_, s, p, c) = &metas[index];
-            (s.clone(), p.clone(), *c)
+        let Some((key, own_session, parent, created_at)) = &metas[index] else {
+            continue;
         };
+        let key = key.clone();
+        let (own_session, parent, created_at) =
+            (own_session.clone(), parent.clone(), *created_at);
 
         if let Some(cached) = cached_records(cache, &key, "Codex", path) {
             records.extend(cached);
