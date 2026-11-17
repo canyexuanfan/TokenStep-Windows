@@ -201,6 +201,14 @@ pub enum SourceStatusClass {
 pub fn source_status_class(status: &str) -> SourceStatusClass {
     match status {
         "ok" | "ok_sqlite" => SourceStatusClass::Success,
+        // Codex scan-degradation states carry usable data (last scan memo or
+        // the shared cache fallback) — they are freshness limits, not
+        // failures. Only `degraded_scan_timeout` (zero records at all) counts
+        // as a failure, otherwise the badge would nag 部分来源失败 whenever
+        // the G-drive junction scan exceeds its budget.
+        "ok_scan_timeout" | "ok_sqlite_scan_timeout" | "cached_scan_timeout" => {
+            SourceStatusClass::Success
+        }
         // Absent ≠ failed: a missing tool must not flag the channel red.
         // "discovered_no_usage" = the tool is installed but produced no
         // usage today — an absence per the upstream comment's intent

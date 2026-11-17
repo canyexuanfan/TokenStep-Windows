@@ -22,6 +22,10 @@
 - **Antigravity 订阅额度卡**：复刻 cockpit 插件的官方配额链路——解密 `Roaming/Antigravity` 密钥存储中 cockpit 封存的账号凭据（Electron safeStorage v10，应用密钥在 `Local State`），按需刷新 access token 后调用 `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`，渲染官方周限额 / 5 小时限额窗口。当前试用池账号无有效 license 时如实显示「当前账号无有效订阅许可」；设置 → 订阅额度提供商新增 Antigravity 开关（默认开）。
 - **Codex 订阅额度开关默认开启**：此前 `show_codex_quota` 默认关闭且藏在设置深处，订阅额度卡从未出现 Codex（同 Cursor 额度默认开启的处理）；未登录 Codex 时卡片如实显示原因而非隐藏。现有用户配置文件不受影响。
 
+### 修复（同步徽标误报）
+
+- **「部分来源失败」误报修复**：Codex 的扫描降级状态（`ok_scan_timeout` / `ok_sqlite_scan_timeout` / `cached_scan_timeout`）此前被新鲜度判定归类为"失败"——但这三个状态表示数据已从上次扫描或缓存回退、**可用且完整**（如 G 盘 junction 慢扫期间 Codex 170 亿照常显示），只是新鲜度受限。现归入成功类，徽标恢复「已同步」；仅 `degraded_scan_timeout`（完全无数据，新装机且无缓存）仍算失败。
+
 ### 修复（分享卡）
 
 - **分享卡四处显示修复（日报卡/今日概览全页图）**：圈内大数字改自适应字号（「13.27亿」不再溢出圆环）；总完成度去掉 999% 上限、显示真实值（1327%）；「昨日来源/主力模型」不再截断前 4 项、全量展示（面板与画布高度同步自适应）；新增客户端品牌色——DSH 靛蓝、MiniMax 红、WorkBuddy 琥珀、Antigravity 品红、ChatGPT 翠绿（此前新客户端落灰色兜底，「颜色代表客户端」形同虚设）；概览卡分布面板的百分比分母改回全天总量（截断时曾扭曲占比）。
@@ -82,6 +86,8 @@
 - SQLite read-only three-step fallback (readOnly → query_only → immutable), ported from upstream v0.2.26; Cursor's state.vscdb uses it.
 
 ### Fixed
+
+- **「部分来源失败」false alarm fix**: Codex scan-degradation states (`ok_scan_timeout` / `ok_sqlite_scan_timeout` / `cached_scan_timeout`) were classified as failures by the freshness badge even though they carry usable, complete data from the last scan or cache fallback (Codex's 17.0B kept showing during slow G-drive scans). They now classify as success — the badge reads 已同步 again; only `degraded_scan_timeout` (zero data) remains a failure.
 
 - **Share cards, four display fixes (daily card + today overview)**: the in-ring token number now auto-fits its font (「13.27亿」no longer overflows the ring); the completion percent drops its 999% cap and shows the real value (1327%); the source/model breakdowns list ALL nonzero entries instead of the top 4 (panel + canvas heights scale accordingly); new clients get distinct brand colors — DSH indigo, MiniMax red, WorkBuddy amber, Antigravity fuchsia, ChatGPT emerald (they used to fall into graphite gray). The overview distribution panel's percent denominator is the full-day total again (truncation used to skew it).
 
