@@ -2775,14 +2775,103 @@ order by {table}.ts, {table}.id"#
     (records, true)
 }
 
-/// DeepSeek Harness per-call usage from `~/.dsh/.dshw-usage.json`, surfaced
-/// under the client name "DSH" (the harness product name — "DeepSeek" alone
-/// would read as a model). Each `events[]` entry: {ts (epoch ms), day
-/// ("YYYY-MM-DD"), model, cost (CNY), tokens}. Only a grand total per call
-/// is recorded (no input/output split), so the total lands on input; cost is
-/// CNY and is not mapped to cost_usd. The journal was rebuilt on
-/// 2026-11-16 (recharge-fix), so pre-2026-11-16 history is not in this file.
+/// DeepSeek Harness usage, surfaced under the client name "DSH" (the
+/// harness product name — "DeepSeek" alone would read as a model).
+///
+/// PRIMARY: `~/.dsh/dsh-tokenlens/usage-cache.json` — the harness's own
+/// TokenLens statistics cache, i.e. the exact source its stats panel renders
+/// (per session file: `models` → {"providerId/modelId": {model,
+/// today:{day:counts}, total:counts}}, counts {input, output, cacheRead,
+/// cacheWrite, total}). Input EXCLUDES cached tokens
+/// (total = input+output+cacheRead+cacheWrite). Full history — matches the
+/// panel's 1.5B exactly; day-level resolution only (no hour data used yet).
+///
+/// FALLBACK: the per-call billing journal `~/.dsh/.dshw-usage.json`
+/// (events: {ts, day, model, cost, tokens}); it was rebuilt on 2026-11-16
+/// (recharge-fix) so it misses older history, but covers fresh installs that
+/// haven't opened the TokenLens panel yet.
 fn collect_dsh() -> (Vec<UsageRecord>, SourceInfo) {
+    if let Some((records, status)) = collect_dsh_tokenlens() {
+        return (records, status);
+    }
+    collect_dsh_journal()
+}
+
+/// TokenLens cache path (primary DSH source).
+fn collect_dsh_tokenlens() -> Option<(Vec<UsageRecord>, SourceInfo)> {
+    let path = paths::dsh_tokenlens_cache();
+    let text = fs::read_to_string(&path).ok()?;
+    let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+    let Some(files_map) = value.get("files").and_then(|v| v.as_object()) else {
+        return None;
+    };
+    // Aggregate (day, model) → counts across all session files.
+    let mut by_day_model: BTreeMap<(String, String), (i64, i64, i64, i64)> = BTreeMap::new();
+    for entry in files_map.values() {
+        let Some(models) = entry.get("models").and_then(|v| v.as_object()) else {
+            continue;
+        };
+        for m in models.values() {
+            let model = m
+                .get("model")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("deepseek")
+                .to_string();
+            let Some(today) = m.get("today").and_then(|v| v.as_object()) else {
+                continue;
+            };
+            for (day, counts) in today {
+                let input = counts.get("input").and_then(|v| v.as_i64()).unwrap_or(0);
+                let output = counts.get("output").and_then(|v| v.as_i64()).unwrap_or(0);
+                let cache_read = counts.get("cacheRead").and_then(|v| v.as_i64()).unwrap_or(0);
+                let cache_write = counts.get("cacheWrite").and_then(|v| v.as_i64()).unwrap_or(0);
+                let sum = input + output + cache_read + cache_write;
+                if sum <= 0 {
+                    continue;
+                }
+                let slot = by_day_model
+                    .entry((day.clone(), model.clone()))
+                    .or_insert((0, 0, 0, 0));
+                slot.0 += input;
+                slot.1 += output;
+                slot.2 += cache_read;
+                slot.3 += cache_write;
+            }
+        }
+    }
+    let mut records = Vec::new();
+    for ((day, model), (input, output, cache_read, cache_write)) in &by_day_model {
+        let usage = crate::agent_sources::canonical_counts(
+            *input,
+            *output,
+            *cache_read,
+            *cache_write,
+            0,
+            false,
+            None,
+        );
+        records.push(UsageRecord {
+            date: day.clone(),
+            timestamp: None, // day-level only (the cache also has hours data; unused for now)
+            tool: "DSH".to_string(),
+            model: model.clone(),
+            usage,
+            cost_usd: None,
+        });
+    }
+    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let count = records.len() as i64;
+    Some((records, SourceInfo {
+        status: Some(status.into()),
+        files: Some(files_map.len() as i64),
+        records: Some(count),
+        ..Default::default()
+    }))
+}
+
+/// Billing-journal fallback (rebuilt 2026-11-16; per-call totals only).
+fn collect_dsh_journal() -> (Vec<UsageRecord>, SourceInfo) {
     let path = paths::dsh_usage_json();
     let Ok(text) = fs::read_to_string(&path) else {
         return (vec![], SourceInfo {

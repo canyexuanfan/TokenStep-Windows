@@ -123,9 +123,23 @@ pub fn minimax_db_path() -> PathBuf {
 
 /// `~/.dsh/.dshw-usage.json` — DeepSeek Harness per-call billing journal
 /// (events: [{ts, day, model, cost, tokens}]; the dir is usually a symlink
-/// to the harness install's data root).
+/// to the harness install's data root). FALLBACK source only: it was rebuilt
+/// on 2026-11-16 (recharge-fix), so it misses older history.
 pub fn dsh_usage_json() -> PathBuf {
     home_dir().join(".dsh").join(".dshw-usage.json")
+}
+
+/// `~/.dsh/dsh-tokenlens/usage-cache.json` — the harness's own TokenLens
+/// statistics cache (the exact source its stats panel renders). Per session
+/// file: {mtimeMs, size, frames, days, providers, models, hours, ...} where
+/// `models` maps "providerId/modelId" → {model, today:{day:counts},
+/// total:counts} with counts {input, output, cacheRead, cacheWrite, total,
+/// messages}. Authoritative full history (matches the panel's 1.5B).
+pub fn dsh_tokenlens_cache() -> PathBuf {
+    home_dir()
+        .join(".dsh")
+        .join("dsh-tokenlens")
+        .join("usage-cache.json")
 }
 
 /// Antigravity brain transcript roots: `~/.gemini/antigravity{,-cli,-ide}/
