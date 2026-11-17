@@ -15,8 +15,9 @@
 - **Cursor 用量采集（对话文件估算口径）**：解析 `~/.cursor/projects/**/agent-transcripts/**/*.jsonl`，按对话内容估算 token（CJK 0.6/字、其余 1/3.5），日期取自 user 行 `<timestamp>` 标签；官方 API 只记录 Cursor 官方计费模型事件，第三方模型（grok/claude/gemini 等）不产生官方事件，本地对话文件是唯一可算口径。
 - **Cursor 按模型归属**：启动时从 `state.vscdb` 的 `cursorDiskKV` composerData 行构建 composerId → modelConfig.modelName 映射（含 selectedModels 回退），会话估算 token 计入其模型（grok-4.6 / claude-opus-5-5 等）。
 - **MiniMax 用量采集（全量口径）**：同时读取新旧两个同构 SQLite 存储——`~/.minimax/sqlite.db`（2026-05~07 旧库，token_usage）与 `~/.minimax/v2/sqlite/runtime-state.sqlite`（现行运行时库，local_runtime_token_usage，持续写入）。两库日期区间无缝衔接；跨库用整行指纹（ts+各项 token 数）去重（turn_id 一个回合对应多行，不可用作去重键）。本机全量 29.42 亿 tokens（旧库 3.98 亿 + 运行时库 25.44 亿）；运行时库多数行不记录模型名，显示为 "MiniMax"，显式记录的行归入对应模型（MiniMax-M3 等）。
-- **DeepSeek Harness 用量采集**：读取 `~/.dsh/.dshw-usage.json` 逐事件计费日志（events[]：ts/day/model/tokens），按事件 token 总量计入 "DeepSeek" 客户端并按模型（deepseek-flash 等）归属。注意：该日志 2026-11-16 因 recharge-fix 重建，更早历史仅存在于压缩会话文件（zstd），暂未解析。
-- **Codex 采集防冻结（关键修复）**：用户将 `~/.codex/sessions` 迁移为指向 G 盘的 junction（41 GB、仅元数据遍历 >2 分钟），原实现每轮同步扫描会挂死整个刷新流程（首轮快照永不出现）。现 Codex JSONL 扫描在独立线程上运行（私有缓存副本），刷新线程最多等待 20 秒，超时后回退到最后一次成功扫描结果（memo），来源标记 `*_scan_timeout` 降级；遍历改为日期降序优先（新会话先发现）+ 30 秒预算；扫描不完整时跳过缓存清理（防止误删历史）。
+- **DeepSeek Harness 用量采集**：读取 `~/.dsh/.dshw-usage.json` 逐事件计费日志（events[]：ts/day/model/tokens），按事件 token 总量计入 "DSH"（DeepSeek Harness 的产品名；单写 "DeepSeek" 易与模型名混淆）客户端，并按模型（deepseek-flash 等）归属。注意：该日志 2026-11-16 因 recharge-fix 重建，更早历史仅存在于压缩会话文件（zstd），暂未解析。
+- **Codex 采集防冻结（关键修复）**：用户将 `~/.codex/sessions` 迁移为指向 G 盘的 junction（41 GB、仅元数据遍历 >2 分钟），原实现每轮同步扫描会挂死整个刷新流程（首轮快照永不出现）。现 Codex JSONL 扫描在独立线程上运行（私有缓存副本），刷新线程最多等待 20 秒，超时后回退：优先上一次成功扫描结果（memo），无 memo 时直接用共享缓存里已解析的 Codex 历史记录（Codex 不再从统计中消失），来源标记 `*_scan_timeout` 降级；遍历改为日期降序优先（新会话先发现）+ 30 秒预算；扫描不完整时跳过缓存清理（防止误删历史）。
+- **今日页「30 天活动热力图」更名「30 天活动条形图」**：该图本就是条形图而非热力图；图中与横轴平行的横虚线是每日目标参考线（带"目标 X"标签，柱子按相对目标的比例分档上色 <50% / 50–90% / ≥90%），保留不动。
 
 ### 用量准确性审计（独立求和比对）
 
@@ -59,14 +60,15 @@
 - **Cursor usage collector (transcript estimation)**: parses `~/.cursor/projects/**/agent-transcripts/**/*.jsonl` and estimates tokens from conversation text (CJK ≈ 0.6/char, other ≈ 1/3.5); the official API only records Cursor-billed models, so local transcripts are the only source for third-party models.
 - **Cursor per-model attribution**: builds a composerId → modelConfig.modelName map from `state.vscdb` composerData rows at startup; each session's estimate lands on its model.
 - **MiniMax usage collector (full history)**: reads both same-schema SQLite stores — legacy `~/.minimax/sqlite.db` (May–Jul 2026) and the live `~/.minimax/v2/sqlite/runtime-state.sqlite` — with full-row-fingerprint cross-store dedup (turn_id fans out to many rows per turn). ~2.94B tokens locally; rows without a recorded model display as "MiniMax".
-- **DeepSeek Harness usage collector**: reads the `~/.dsh/.dshw-usage.json` per-call billing journal (events: ts/day/model/tokens) as the "DeepSeek" client with per-model attribution. Journal was rebuilt on 2026-11-16 (recharge-fix); older history lives only in zstd-compressed session files.
+- **DeepSeek Harness usage collector**: reads the `~/.dsh/.dshw-usage.json` per-call billing journal (events: ts/day/model/tokens) as the "DSH" client (the harness product name — "DeepSeek" alone would read as a model) with per-model attribution. Journal was rebuilt on 2026-11-16 (recharge-fix); older history lives only in zstd-compressed session files.
+- Today-page card renamed 「30 天活动热力图」 → 「30 天活动条形图」 (it is a bar chart, not a heatmap). The horizontal dashed line is the daily-goal reference line (tagged "目标 X"; bars are intensity-graded against it) — kept as is.
 - **WorkBuddy quota card**: reads the local `~/.workbuddy/workbuddy.db` credit pool (used/total, credits spent) — no network requests. Settings → Quota providers → WorkBuddy toggle (default off).
 - **WorkBuddy usage collector**: scans the per-project JSONL event streams (`~/.workbuddy/projects/**/*.jsonl`) — per-request tokens now feed the per-client card and totals.
 - SQLite read-only three-step fallback (readOnly → query_only → immutable), ported from upstream v0.2.26; Cursor's state.vscdb uses it.
 
 ### Fixed
 
-- **Codex collector freeze**: a 41 GB G-drive junction at `~/.codex/sessions` made the synchronous per-pass scan hang the whole refresh pipeline (first snapshot never arrived). The scan now runs on a detached thread (private cache clone); the refresh waits at most 20 s, then falls back to the last completed scan (memo) with a `*_scan_timeout` degraded status. Newest-first walk with a 30 s budget; cache pruning is skipped after partial scans to protect history.
+- **Codex collector freeze**: a 41 GB G-drive junction at `~/.codex/sessions` made the synchronous per-pass scan hang the whole refresh pipeline (first snapshot never arrived). The scan now runs on a detached thread (private cache clone); the refresh waits at most 20 s, then falls back to the last completed scan (memo) — or, before any memo exists, to the Codex records already parsed in the shared cache, so Codex never disappears from the stats (`*_scan_timeout` degraded status). Newest-first walk with a 30 s budget; cache pruning is skipped after partial scans to protect history.
 
 ### Changed
 
