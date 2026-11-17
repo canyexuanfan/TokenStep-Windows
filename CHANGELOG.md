@@ -22,6 +22,10 @@
 - **Antigravity 订阅额度卡**：复刻 cockpit 插件的官方配额链路——解密 `Roaming/Antigravity` 密钥存储中 cockpit 封存的账号凭据（Electron safeStorage v10，应用密钥在 `Local State`），按需刷新 access token 后调用 `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`，渲染官方周限额 / 5 小时限额窗口。当前试用池账号无有效 license 时如实显示「当前账号无有效订阅许可」；设置 → 订阅额度提供商新增 Antigravity 开关（默认开）。
 - **Codex 订阅额度开关默认开启**：此前 `show_codex_quota` 默认关闭且藏在设置深处，订阅额度卡从未出现 Codex（同 Cursor 额度默认开启的处理）；未登录 Codex 时卡片如实显示原因而非隐藏。现有用户配置文件不受影响。
 
+### 修复（分享卡）
+
+- **分享卡四处显示修复（日报卡/今日概览全页图）**：圈内大数字改自适应字号（「13.27亿」不再溢出圆环）；总完成度去掉 999% 上限、显示真实值（1327%）；「昨日来源/主力模型」不再截断前 4 项、全量展示（面板与画布高度同步自适应）；新增客户端品牌色——DSH 靛蓝、MiniMax 红、WorkBuddy 琥珀、Antigravity 品红、ChatGPT 翠绿（此前新客户端落灰色兜底，「颜色代表客户端」形同虚设）；概览卡分布面板的百分比分母改回全天总量（截断时曾扭曲占比）。
+
 ### 修复（启动崩溃 + 缓存保存点）
 
 - **应用启动后崩溃（0xc0000409，关键）**：codex-scan 线程在 30 秒扫描预算耗尽时跳过部分文件的 meta 收集，后续阶段仍按原始文件列表索引 metas → 越界 panic；release `panic = "abort"` 下直接 fail-fast 杀死整个进程（表现为打开后数分钟内崩溃卡退，Codex 会话文件涨到 79+ 后必现）。修复：metas 改为与文件列表索引对齐的 Option 结构（超时文件记 None，后续阶段跳过）——扫描超时只降级、绝不崩溃。
@@ -78,6 +82,8 @@
 - SQLite read-only three-step fallback (readOnly → query_only → immutable), ported from upstream v0.2.26; Cursor's state.vscdb uses it.
 
 ### Fixed
+
+- **Share cards, four display fixes (daily card + today overview)**: the in-ring token number now auto-fits its font (「13.27亿」no longer overflows the ring); the completion percent drops its 999% cap and shows the real value (1327%); the source/model breakdowns list ALL nonzero entries instead of the top 4 (panel + canvas heights scale accordingly); new clients get distinct brand colors — DSH indigo, MiniMax red, WorkBuddy amber, Antigravity fuchsia, ChatGPT emerald (they used to fall into graphite gray). The overview distribution panel's percent denominator is the full-day total again (truncation used to skew it).
 
 - **App crash right after startup (0xc0000409, critical)**: when the Codex scan budget ran out, skipped files desynced the metadata list from the file list and a later phase indexed out of bounds — with `panic = "abort"` that fail-fasted the whole process. Metas are now index-aligned Options (timed-out files record None; later phases skip them) — a scan timeout degrades, never crashes. The collector cache is also saved after ALL collectors now (previously WorkBuddy/Cursor/MiniMax/DSH/Antigravity updates never hit disk, forcing full rescans every pass).
 

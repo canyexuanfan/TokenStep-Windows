@@ -522,14 +522,14 @@ function renderShareDailyCard(canvas, opts) {
   const footerH = 20;
 
   // Count breakdown rows to size those panels.
+  // No slice: the breakdown panels list every nonzero entry (0.1.12), so
+  // the height math must count them all or the canvas clips the last rows.
   const toolEntries = Object.keys(day.tools || {})
     .filter(function (k) { return day.tools[k] > 0; })
-    .sort(function (a, b) { return day.tools[b] - day.tools[a]; })
-    .slice(0, 4);
+    .sort(function (a, b) { return day.tools[b] - day.tools[a]; });
   const modelEntries = Object.keys(day.models || {})
     .filter(function (k) { return day.models[k] > 0; })
-    .sort(function (a, b) { return day.models[b] - day.models[a]; })
-    .slice(0, 4);
+    .sort(function (a, b) { return day.models[b] - day.models[a]; });
   // Breakdown panel height MUST equal drawShareBreakdownPanel's returned
   // panelH = padding*2(32) + headerH(34) + entries.length*rowH(25). Keep in
   // sync with that function. Empty data → entries.length 0 → 66px panel.
@@ -626,12 +626,20 @@ function renderShareDailyCard(canvas, opts) {
   ctx.arc(ringCx, ringCy, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.max(0, Math.min(lap.currentLapProgress, 1)));
   ctx.stroke();
   ctx.restore();
-  // Ring center: big token number (54px black) + per-lap goal label.
-  // 54px (not 64) so the number fits the ring inner diameter comfortably.
+  // Ring center: big token number (auto-fit) + per-lap goal label.
+  // 54px when it fits; the font shrinks so values like 「13.27亿」never
+  // overflow the ring inner diameter (0.1.12: fixed 54px clipped at 6+ chars).
   ctx.fillStyle = C.ink;
   ctx.textAlign = "center";
-  ctx.font = "800 54px 'Segoe UI', sans-serif";
-  ctx.fillText(formatTokens(day.total_tokens), ringCx, ringCy + 6);
+  const ringLabel = formatTokens(day.total_tokens);
+  const ringMaxW = (ringSize - ringStroke * 2) * 0.9;
+  let ringFontPx = 54;
+  for (;;) {
+    ctx.font = "800 " + ringFontPx + "px 'Segoe UI', sans-serif";
+    if (ringFontPx <= 20 || ctx.measureText(ringLabel).width <= ringMaxW) break;
+    ringFontPx -= 2;
+  }
+  ctx.fillText(ringLabel, ringCx, ringCy + 6);
   ctx.fillStyle = C.muted;
   ctx.font = "700 14px 'Segoe UI', sans-serif";
   ctx.fillText(tf(t("/ %@ 每圈"), formatTokens(goal, true)), ringCx, ringCy + 30);
@@ -651,7 +659,7 @@ function renderShareDailyCard(canvas, opts) {
   ctx.fillText(isYesterday ? t("昨天我和 AI 一起完成了") : t("今天我和 AI 一起消耗了"), rightX, ry + introH);
   ry += introH + 6;
   // Big completion% (58px black) in lap color, baseline-aligned label.
-  const completionPct = Math.min(999, Math.round(lap.rawProgress * 100));
+  const completionPct = Math.round(lap.rawProgress * 100); // no clamp: 13.27亿/1亿 = 1327% must read as 1327%
   const pctText = formatPercent(completionPct);
   ctx.fillStyle = lapColor;
   ctx.font = "900 52px 'Segoe UI', sans-serif";
@@ -769,8 +777,13 @@ function renderTodayOverview(canvas, opts) {
   const pillGap = 14;
   const metricStripH = 104;
   const activityPanelH = 16 * 2 + 30 + 10 + 96 + 14 + 22; // pad + title + gap + bars + gap + legend
-  // Distribution: two side-by-side panels. Height = pad*2 + title(28) + 5 rows*32.
-  const distPanelH = 16 * 2 + 28 + 5 * 32;
+  // Distribution: two side-by-side panels. Height = pad*2 + title(28) +
+  // rows*32, sized for ALL nonzero entries (no truncation since 0.1.12).
+  const ovToolRows = Math.max(
+    Object.keys(today.tools || {}).filter(function (k) { return today.tools[k] > 0; }).length, 1);
+  const ovModelRows = Math.max(
+    Object.keys(today.models || {}).filter(function (k) { return today.models[k] > 0; }).length, 1);
+  const distPanelH = 16 * 2 + 28 + Math.max(ovToolRows, ovModelRows) * 32;
   const footerH = 22;
 
   // lap-chip row (same rule as the share card).
@@ -874,8 +887,15 @@ function renderTodayOverview(canvas, opts) {
   // Ring center: token number + per-lap goal (front-end sizing: 42px value).
   ctx.fillStyle = C.ink;
   ctx.textAlign = "center";
-  ctx.font = "800 42px 'Segoe UI', sans-serif";
-  ctx.fillText(formatTokens(today.total_tokens), ringCx, ringCy + 4);
+  const ovRingLabel = formatTokens(today.total_tokens);
+  const ovRingMaxW = (ringSize - ringStroke * 2) * 0.9;
+  let ovRingPx = 42;
+  for (;;) {
+    ctx.font = "800 " + ovRingPx + "px 'Segoe UI', sans-serif";
+    if (ovRingPx <= 18 || ctx.measureText(ovRingLabel).width <= ovRingMaxW) break;
+    ovRingPx -= 2;
+  }
+  ctx.fillText(ovRingLabel, ringCx, ringCy + 4);
   ctx.fillStyle = C.muted;
   ctx.font = "700 16px 'Segoe UI', sans-serif";
   ctx.fillText("/ " + formatTokens(goal, true) + " " + t("每圈"), ringCx, ringCy + 28);
@@ -1075,11 +1095,12 @@ function drawOverviewDistPanel(ctx, C, x, y, w, panelH, title, values, useToolCo
   ctx.font = "800 18px 'Segoe UI', sans-serif";
   ctx.textAlign = "left";
   ctx.fillText(title, innerX, y + padding + 18);
+  // No slice (0.1.12): every nonzero entry, and the percent denominator is
+  // the full day total — truncating both shrunk amounts AND skewed pcts.
   const entries = Object.keys(values)
     .filter(function (k) { return values[k] > 0; })
-    .sort(function (a, b) { return values[b] - values[a]; })
-    .slice(0, 5);
-  const total = entries.reduce(function (a, k) { return a + values[k]; }, 0) || 1;
+    .sort(function (a, b) { return values[b] - values[a]; });
+  const total = Math.max(dayValuesSum(values), 1);
   const rowStart = y + padding + 28 + 8;
   const rowH = 32;
   if (!entries.length) {
@@ -1287,10 +1308,11 @@ function drawShareBreakdownPanel(ctx, C, x, y, w, title, subtitle, values, useTo
   // totalOverride: percent denominator from the caller (the projects panel
   // measures against the whole DAY total, upstream projectRows parity).
   const total = Math.max(totalOverride != null ? totalOverride : dayValuesSum(values), 1);
+  // No slice (0.1.12): list every nonzero entry — 颜色代表客户端 requires
+  // all clients visible, and the panel height grows with the row count.
   const entries = Object.keys(values)
     .filter(function (k) { return values[k] > 0; })
-    .sort(function (a, b) { return values[b] - values[a]; })
-    .slice(0, 4);
+    .sort(function (a, b) { return values[b] - values[a]; });
   const padding = 16;
   const radius = 22;
   const headerH = 34; // title + subtitle
@@ -2231,6 +2253,16 @@ function tokenToolColor(tool) {
       return "rgb(51,133,235)"; // blue (port of upstream v0.1.44)
     case "Cursor":
       return "rgb(13,148,136)"; // teal (design sheet client color)
+    case "WorkBuddy":
+      return "rgb(245,158,11)"; // amber (0.1.12: new clients get distinct brand hues — graphite fallback made share-card rows look uniform)
+    case "MiniMax":
+      return "rgb(239,68,68)"; // red
+    case "DSH":
+      return "rgb(99,102,241)"; // indigo (DeepSeek Harness)
+    case "Antigravity":
+      return "rgb(217,70,239)"; // fuchsia
+    case "ChatGPT":
+      return "rgb(16,163,127)"; // emerald (OpenAI brand green)
     case "Copilot":
       return "rgb(37,99,235)"; // blue (design sheet client color)
     case "Codex via CC Switch":
