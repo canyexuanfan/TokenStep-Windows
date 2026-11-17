@@ -1089,6 +1089,7 @@
         html += providerToggle('kimi', 'Kimi', settings.kimi_quota_enabled, window.TS.t('Kimi 需要 OAuth，不要用开放平台 key'));
         html += providerToggle('grok', 'Grok', settings.grok_quota_enabled, window.TS.t('Grok 需要 grok login，普通 xAI key 无效'));
         html += providerToggle('work_buddy', 'WorkBuddy', settings.workbuddy_quota_enabled, window.TS.t('读取本机 WorkBuddy 配额池与积分消耗'));
+        html += providerToggle('antigravity', 'Antigravity', settings.antigravity_quota_enabled, window.TS.t('官方周限额 + 5 小时限额（读取本机 IDE 登录凭据，联网查询）'));
         html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('凭证') + '</div></div></div>';
         ['glm', 'kimi', 'grok'].forEach(function (acct) {
           html += '<div class="setting-row"><div><div class="setting-label" style="text-transform:none">' + acct.toUpperCase() + '</div></div>' +

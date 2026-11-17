@@ -128,6 +128,31 @@ pub fn dsh_usage_json() -> PathBuf {
     home_dir().join(".dsh").join(".dshw-usage.json")
 }
 
+/// Antigravity brain transcript roots: `~/.gemini/antigravity{,-cli,-ide}/
+/// brain/<session>/.system_generated/logs/chunks/transcript/*.jsonl`. The
+/// IDE/CLI keep per-session agent transcripts (with per-turn token counts)
+/// here, alongside the legacy Gemini CLI tree the same home already hosts.
+pub fn antigravity_brain_roots() -> Vec<PathBuf> {
+    let gemini = home_dir().join(".gemini");
+    vec![
+        gemini.join("antigravity"),
+        gemini.join("antigravity-cli"),
+        gemini.join("antigravity-ide"),
+    ]
+}
+
+/// `Roaming/Antigravity/User/globalStorage/state.vscdb` — the Antigravity
+/// app's VS Code-style state store; its ItemTable holds the cockpit
+/// extension's sealed account credentials (secret:// keys).
+pub fn antigravity_secret_db() -> PathBuf {
+    let roaming = std::env::var("APPDATA").unwrap_or_default();
+    PathBuf::from(roaming)
+        .join("Antigravity")
+        .join("User")
+        .join("globalStorage")
+        .join("state.vscdb")
+}
+
 /// `~/.minimax/v2/sqlite/runtime-state.sqlite` — the live MiniMax runtime
 /// store (table `local_runtime_token_usage`, same schema as the legacy one).
 pub fn minimax_runtime_db_path() -> PathBuf {

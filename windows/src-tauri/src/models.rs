@@ -337,6 +337,11 @@ pub struct TokenStepSettings {
     /// network). Default "hidden" — absence must never silently enable.
     #[serde(rename = "agent_work_rank_visibility", default = "default_rank_visibility")]
     pub agent_work_rank_visibility: String,
+    /// Whether the Antigravity quota card (official weekly / 5h windows via
+    /// cloudcode-pa) is shown. Default on (0.1.12): the user-facing surface
+    /// mirrors the cockpit plugin's authorized-quota view; toggleable.
+    #[serde(rename = "antigravity_quota_enabled", default = "default_true")]
+    pub antigravity_quota_enabled: bool,
     /// Per-source experimental agent toggles (source display names). `None`
     /// = master switch alone (legacy ZCode/Hermes/WorkBuddy semantics, and
     /// auto-enroll detected T1 sources); an explicit list decides which T1
@@ -429,6 +434,7 @@ impl Default for TokenStepSettings {
             language: "zhHans".to_string(),
             skipped_update_version: None,
             show_codex_quota: false,
+            antigravity_quota_enabled: true,
             agent_work_rank_visibility: "hidden".to_string(),
             experimental_agent_sources: None,
             device_sync_enabled: false,

@@ -8,5 +8,7 @@ use tokenstep_lib as app;
 
 fn main() {
     let diag = app::quota_diag_for_check();
+    let cred = app::antigravity_cred_probe();
+    println!("ag_cred: {}", serde_json::to_string_pretty(&cred).unwrap_or_default());
     println!("{}", serde_json::to_string_pretty(&diag).unwrap_or_default());
 }

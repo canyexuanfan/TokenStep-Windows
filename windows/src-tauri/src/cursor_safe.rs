@@ -19,6 +19,24 @@ fn local_state_path() -> PathBuf {
     PathBuf::from(roaming).join("Cursor").join("Local State")
 }
 
+/// `Roaming/Antigravity/Local State` — the Antigravity app's OSCrypt store.
+fn antigravity_local_state_path() -> PathBuf {
+    let roaming = std::env::var("APPDATA").unwrap_or_default();
+    PathBuf::from(roaming).join("Antigravity").join("Local State")
+}
+
+fn os_crypt_key_from(local_state: &std::path::Path) -> Option<Vec<u8>> {
+    let text = std::fs::read_to_string(local_state).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let wrapped_b64 = json.get("os_crypt")?.get("encrypted_key")?.as_str()?;
+    let wrapped = base64::engine::general_purpose::STANDARD.decode(wrapped_b64).ok()?;
+    if wrapped.starts_with(b"DPAPI") {
+        dpapi_unprotect(&wrapped[5..])
+    } else {
+        None
+    }
+}
+
 fn dpapi_unprotect(data: &[u8]) -> Option<Vec<u8>> {
     #[repr(C)]
     struct DataBlob {
@@ -59,15 +77,7 @@ fn dpapi_unprotect(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn os_crypt_key() -> Option<Vec<u8>> {
-    let text = std::fs::read_to_string(local_state_path()).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let wrapped_b64 = json.get("os_crypt")?.get("encrypted_key")?.as_str()?;
-    let wrapped = base64::engine::general_purpose::STANDARD.decode(wrapped_b64).ok()?;
-    if wrapped.starts_with(b"DPAPI") {
-        dpapi_unprotect(&wrapped[5..])
-    } else {
-        None
-    }
+    os_crypt_key_from(&local_state_path())
 }
 
 /// Decrypt `cursor-safe-storage:v1:...` values from Cursor's state.vscdb.
@@ -80,6 +90,20 @@ pub fn decrypt_safe_storage(payload: &str) -> Option<String> {
         return None;
     }
     let key = os_crypt_key()?;
+    let aes = Aes256Gcm::new_from_slice(&key).ok()?;
+    let nonce = Nonce::from_slice(&raw[3..15]);
+    let plaintext = aes.decrypt(nonce, &raw[15..]).ok()?;
+    String::from_utf8(plaintext).ok()
+}
+
+/// Decrypt an Antigravity-app safeStorage v10 blob (`v10` prefix + 12-byte
+/// nonce + ciphertext/tag) with the app key from `Antigravity/Local State`.
+/// Used for the cockpit's sealed account credentials (Antigravity quota).
+pub fn decrypt_v10_with_antigravity(raw: &[u8]) -> Option<String> {
+    if raw.len() < 15 || &raw[..3] != b"v10" {
+        return None;
+    }
+    let key = os_crypt_key_from(&antigravity_local_state_path())?;
     let aes = Aes256Gcm::new_from_slice(&key).ok()?;
     let nonce = Nonce::from_slice(&raw[3..15]);
     let plaintext = aes.decrypt(nonce, &raw[15..]).ok()?;

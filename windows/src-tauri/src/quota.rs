@@ -4,6 +4,7 @@
 //! Card rule (v0.2.1): `should_display = is_available` — an unconfigured or
 //! failed provider renders NOTHING, never 0%. Failures keep the last value.
 
+use base64::Engine as _;
 use crate::net;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -18,6 +19,7 @@ pub enum QuotaProvider {
     Kimi,
     Grok,
     WorkBuddy,
+    Antigravity,
 }
 
 impl QuotaProvider {
@@ -30,6 +32,7 @@ impl QuotaProvider {
             QuotaProvider::Kimi => "kimi",
             QuotaProvider::Grok => "grok",
             QuotaProvider::WorkBuddy => "work_buddy",
+            QuotaProvider::Antigravity => "antigravity",
         }
     }
     pub fn display_name(&self) -> &'static str {
@@ -41,6 +44,7 @@ impl QuotaProvider {
             QuotaProvider::Kimi => "Kimi",
             QuotaProvider::Grok => "Grok",
             QuotaProvider::WorkBuddy => "WorkBuddy",
+            QuotaProvider::Antigravity => "Antigravity",
         }
     }
 }
@@ -664,6 +668,211 @@ pub fn fetch_workbuddy() -> ProviderQuota {
     }
 }
 
+/// Antigravity subscription quota (0.1.12): Google's official quota summary
+/// RPC (`/v1internal:retrieveUserQuotaSummary` on cloudcode-pa.googleapis
+/// .com) — the same surface the third-party cockpit extension renders.
+///
+/// Credentials: the cockpit extension seals the signed-in account's OAuth
+/// client + refresh token into the Antigravity app's VS Code secret storage
+/// (`Roaming/Antigravity/User/globalStorage/state.vscdb`, ItemTable key
+/// `secret://{"extensionId":"jlcodes.antigravity-cockpit","key":"antigravity
+/// .autoTrigger.credential"}`), Electron-safeStorage v10 with the app key
+/// DPAPI-wrapped in `Roaming/Antigravity/Local State` (same recipe as
+/// Cursor's credential chain). The access token is refreshed in memory when
+/// expired; tokens are never persisted by TokenStep.
+pub fn fetch_antigravity() -> ProviderQuota {
+    let provider = QuotaProvider::Antigravity;
+    let db = crate::paths::antigravity_secret_db();
+    let Some(conn) = crate::sqlite_readonly::open_readonly(&db) else {
+        return unavailable(provider, Some("未安装 Antigravity"), QuotaStatus::NotLoggedIn);
+    };
+    let key_prefix = r#"secret://{"extensionId":"jlcodes.antigravity-cockpit","key":"antigravity.autoTrigger.credential""#;
+    let raw_value = conn
+        .query_row(
+            "select value from ItemTable where key = ?1",
+            [[&key_prefix[..], "\"}"].concat()],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .or_else(|| {
+            // Fall back to a prefix scan if the exact key serialization differs.
+            let mut stmt = conn
+                .prepare("select value from ItemTable where key like ?1 || '%'")
+                .ok()?;
+            stmt.query_row([format!("{key_prefix}%")], |r| r.get::<_, String>(0)).ok()
+        });
+    let Some(raw_value) = raw_value else {
+        return unavailable(provider, Some("未登录 Antigravity（未找到账号凭据）"), QuotaStatus::NotLoggedIn);
+    };
+    // The secret value is either a JSON Buffer wrapper or raw base64.
+    let cipher = serde_json::from_str::<serde_json::Value>(&raw_value)
+        .ok()
+        .and_then(|v| {
+            let bytes: Option<Vec<u8>> = v
+                .get("data")?
+                .as_array()?
+                .iter()
+                .map(|b| b.as_u64().map(|n| n as u8))
+                .collect::<Option<Vec<u8>>>();
+            bytes
+        })
+        .or_else(|| base64::engine::general_purpose::STANDARD.decode(&raw_value).ok());
+    let Some(cipher) = cipher else {
+        return unavailable(provider, Some("凭据格式暂不支持"), QuotaStatus::Unavailable);
+    };
+    let Some(plain) = crate::cursor_safe::decrypt_v10_with_antigravity(&cipher) else {
+        return unavailable(provider, Some("凭据解密失败"), QuotaStatus::Unavailable);
+    };
+    let Some(cred) = serde_json::from_str::<serde_json::Value>(&plain).ok() else {
+        return unavailable(provider, Some("凭据内容暂不支持"), QuotaStatus::Unavailable);
+    };
+    let email = cred
+        .get("email")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let client_id = cred
+        .get("clientId")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let client_secret = cred
+        .get("clientSecret")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    // Use the cached access token while it still covers the next minute;
+    // otherwise exchange the refresh token for a fresh one (in memory only).
+    let expires_at_ms = cred.get("expiresAt").and_then(|v| v.as_i64()).unwrap_or(0);
+    let mut access_token = cred
+        .get("accessToken")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    if access_token.is_empty() || expires_at_ms - now_ms < 60_000 {
+        let refresh_token = cred
+            .get("refreshToken")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string();
+        if refresh_token.is_empty() || client_id.is_empty() || client_secret.is_empty() {
+            return unavailable(provider, Some("登录态已过期，请打开 Antigravity 重新登录"), QuotaStatus::NeedsLogin);
+        }
+        let client = match crate::net::blocking_client()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+        {
+            Ok(c) => c,
+            Err(_) => return unavailable(provider, Some("网络客户端初始化失败"), QuotaStatus::Unavailable),
+        };
+        let params = [
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("refresh_token", refresh_token.as_str()),
+            ("grant_type", "refresh_token"),
+        ];
+        let Ok(resp) = client.post("https://oauth2.googleapis.com/token").form(&params).send() else {
+            return unavailable(provider, Some("刷新登录态失败（网络）"), QuotaStatus::Unavailable);
+        };
+        let Ok(value) = resp.json::<serde_json::Value>() else {
+            return unavailable(provider, Some("刷新登录态失败（响应异常）"), QuotaStatus::Unavailable);
+        };
+        match value.get("access_token").and_then(|v| v.as_str()) {
+            Some(t) => access_token = t.to_string(),
+            None => {
+                return unavailable(provider, Some("登录态已过期，请打开 Antigravity 重新登录"), QuotaStatus::NeedsLogin)
+            }
+        }
+    }
+    // Official quota summary: groups[] → buckets[] with remainingFraction.
+    // Google-served: the system proxy is REQUIRED on this network (unlike
+    // Cursor's api2, which rejects proxy paths).
+    let client = match crate::net::blocking_client()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return unavailable(provider, Some("网络客户端初始化失败"), QuotaStatus::Unavailable),
+    };
+    let project_id = cred.get("projectId").and_then(|v| v.as_str()).unwrap_or_default();
+    let body = if project_id.is_empty() {
+        "{}".to_string()
+    } else {
+        serde_json::json!({ "project": project_id }).to_string()
+    };
+    let Ok(resp) = client
+        .post("https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary")
+        .header("Authorization", format!("Bearer {access_token}"))
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+    else {
+        return unavailable(provider, Some("配额请求失败（网络）"), QuotaStatus::Unavailable);
+    };
+    if !resp.status().is_success() {
+        let status = resp.status();
+        if status.as_u16() == 401 {
+            return unavailable(provider, Some("登录态已过期，请打开 Antigravity 重新登录"), QuotaStatus::NeedsLogin);
+        }
+        if status.as_u16() == 403 {
+            // Google returns 403 "no valid license" for trial-pool accounts
+            // whose trial has been exhausted — the account itself is fine.
+            return unavailable(provider, Some("当前账号无有效订阅许可（账号池请切换账号后再试）"), QuotaStatus::NeedsLogin);
+        }
+        return unavailable(provider, Some(&format!("配额请求失败（HTTP {status}）")), QuotaStatus::Unavailable);
+    }
+    let Ok(value) = resp.json::<serde_json::Value>() else {
+        return unavailable(provider, Some("配额响应解析失败"), QuotaStatus::Unavailable);
+    };
+    let mut windows = Vec::new();
+    if let Some(groups) = value.get("groups").and_then(|v| v.as_array()) {
+        for group in groups {
+            if let Some(buckets) = group.get("buckets").and_then(|v| v.as_array()) {
+                for bucket in buckets {
+                    let frac = bucket
+                        .get("remainingFraction")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(1.0);
+                    let window_id = bucket.get("window").and_then(|v| v.as_str()).unwrap_or("");
+                    let bucket_id = bucket.get("bucketId").and_then(|v| v.as_str()).unwrap_or("");
+                    let kind = if bucket_id.contains("5h") || window_id.contains("5") {
+                        QuotaWindowKind::FiveHour
+                    } else if bucket_id.contains("weekly") || window_id.contains("week") {
+                        QuotaWindowKind::SevenDay
+                    } else {
+                        QuotaWindowKind::OtherModels
+                    };
+                    windows.push(QuotaWindow {
+                        kind,
+                        used_percent: (1.0 - frac).clamp(0.0, 1.0) * 100.0,
+                        remaining: None,
+                        total: None,
+                        resets_at: bucket.get("resetTime").and_then(|v| v.as_str()).map(String::from),
+                    });
+                }
+            }
+        }
+    }
+    if windows.is_empty() {
+        return unavailable(provider, Some("暂无配额分组数据"), QuotaStatus::Unavailable);
+    }
+    let account_note = if email.is_empty() {
+        String::new()
+    } else {
+        format!(" · {email}")
+    };
+    ProviderQuota {
+        provider,
+        windows,
+        status: QuotaStatus::Available,
+        message: Some(format!("官方配额{account_note}")),
+    }
+}
+
 
 // ── coordinator ───────────────────────────────────────────────────────────
 
@@ -695,6 +904,7 @@ pub fn fetch_providers(providers: &[QuotaProvider]) -> BTreeMap<String, Provider
                 }
                 QuotaProvider::Cursor => fetch_cursor(),
                 QuotaProvider::WorkBuddy => fetch_workbuddy(),
+                QuotaProvider::Antigravity => fetch_antigravity(),
                 QuotaProvider::Glm => fetch_glm(),
                 QuotaProvider::Kimi => fetch_kimi(),
                 QuotaProvider::Grok => fetch_grok(),

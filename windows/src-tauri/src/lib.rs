@@ -9,7 +9,7 @@
 mod agent_sources;
 mod sqlite_readonly;
 mod collector;
-mod cursor_safe;
+pub mod cursor_safe;
 mod cursor_usage;
 mod claude_quota;
 mod codex_quota;
@@ -515,6 +515,7 @@ fn set_quota_provider_enabled(provider: String, enabled: bool) -> Result<TokenSt
         "kimi" => s.kimi_quota_enabled = enabled,
         "grok" => s.grok_quota_enabled = enabled,
         "work_buddy" => s.workbuddy_quota_enabled = enabled,
+        "antigravity" => s.antigravity_quota_enabled = enabled,
         _ => return Err("unknown provider".into()),
     }
     settings::save(&s).map_err(|e| e.to_string())?;
@@ -547,6 +548,9 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
     }
     if s.workbuddy_quota_enabled {
         enabled.push(quota::QuotaProvider::WorkBuddy);
+    }
+    if s.antigravity_quota_enabled {
+        enabled.push(quota::QuotaProvider::Antigravity);
     }
     if s.glm_quota_enabled {
         enabled.push(quota::QuotaProvider::Glm);
@@ -1338,7 +1342,71 @@ pub fn cursor_refresh_for_check(days: i64) -> serde_json::Value {
 pub fn quota_diag_for_check() -> serde_json::Value {
     let q = codex_quota::read();
     let cq = claude_quota::read();
-    serde_json::json!({ "codex": q, "claude": cq })
+    let ag = quota::fetch_antigravity();
+    serde_json::json!({ "codex": q, "claude": cq, "antigravity": ag })
+}
+
+/// TEMP-DIAG: decrypt the cockpit credential and report its structure
+/// (values masked) to debug the antigravity quota chain.
+pub fn antigravity_cred_probe() -> serde_json::Value {
+    use rusqlite::OpenFlags;
+    let db = crate::paths::antigravity_secret_db();
+    let conn = match rusqlite::Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+        Ok(c) => c,
+        Err(e) => return serde_json::json!({ "open_error": e.to_string() }),
+    };
+    let Ok(mut stmt) = conn.prepare("select key, length(value) from ItemTable where key like '%autoTrigger%'") else {
+        return serde_json::json!({ "rows": 0 });
+    };
+    let rows: Vec<(String, i64)> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    let mut out = serde_json::json!({ "rows": rows.len() });
+    if let Some((key, _)) = rows.first() {
+        let raw_value: String = conn
+            .query_row("select value from ItemTable where key = ?1", [key], |r| r.get(0))
+            .unwrap_or_default();
+        out["value_len"] = serde_json::json!(raw_value.len());
+        let cipher = serde_json::from_str::<serde_json::Value>(&raw_value)
+            .ok()
+            .and_then(|v| {
+                let bytes: Option<Vec<u8>> = v.get("data")?.as_array()?.iter()
+                    .map(|b| b.as_u64().map(|n| n as u8)).collect::<Option<Vec<u8>>>();
+                bytes
+            });
+        match cipher {
+            Some(data) => {
+                out["cipher_len"] = serde_json::json!(data.len());
+                out["head_hex"] = serde_json::json!(data.iter().take(6).map(|b| format!("{b:02x}")).collect::<String>());
+                match cursor_safe::decrypt_v10_with_antigravity(&data) {
+                    Some(plain) => {
+                        out["plain_len"] = serde_json::json!(plain.len());
+                        let v: serde_json::Value = serde_json::from_str(&plain).unwrap_or(serde_json::Value::Null);
+                        match &v {
+                            serde_json::Value::Object(m) => {
+                                let mut fields = serde_json::Map::new();
+                                for (k, val) in m {
+                                    let masked = matches!(k.to_lowercase().as_str(),
+                                        "accesstoken" | "refreshtoken" | "clientsecret" | "idtoken");
+                                    fields.insert(k.clone(), serde_json::json!(if masked {
+                                        format!("<masked {}>", val.as_str().map(|s| s.len()).unwrap_or(0))
+                                    } else {
+                                        val.to_string().chars().take(60).collect::<String>()
+                                    }));
+                                }
+                                out["fields"] = serde_json::Value::Object(fields);
+                            }
+                            other => out["plaintext_kind"] = serde_json::json!(other.to_string().chars().take(60).collect::<String>()),
+                        }
+                    }
+                    None => out["decrypt"] = serde_json::json!("FAILED"),
+                }
+            }
+            None => out["cipher"] = serde_json::json!("no Buffer data"),
+        }
+    }
+    out
 }
 
 /// Tray-menu "检查更新" handler. Runs the check off the UI thread, then:
