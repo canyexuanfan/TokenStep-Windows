@@ -4496,3 +4496,42 @@ html[data-skin-pack]:not([data-skin-chapter]) #app .reference-brand-logo {
   background: rgb(7, 10, 15) !important;
   border: 1px solid color-mix(in srgb, var(--green) 45%, transparent);
 }
+
+/* ---- 0.1.12: rank-hidden bottom row (Agent 消耗榜隐藏时自适应 3 列) ----
+   The 4-column theme templates reserve a narrow .82fr track for the Agent
+   消耗榜 card. With the rank card hidden the row keeps that empty track
+   (a dead 530px gap on the right) and squeezes 费用估算 into a ~296px column
+   that clips 「¥4,109.54」. The -norank variant restores a 3-column layout:
+   the privacy card reaches the right edge and the cost column fits money. */
+#view .today-design-bottom.today-design-bottom-norank {
+  grid-template-columns: minmax(430px, 1.7fr) minmax(330px, 1.25fr) minmax(360px, 1.3fr);
+}
+
+#view .today-design-bottom.today-design-bottom-norank .today-cost-columns {
+  grid-template-columns: auto 1fr;
+}
+
+#view .today-design-bottom.today-design-bottom-norank .today-cost-columns > div {
+  min-width: 0;
+}
+
+#view .today-design-bottom.today-design-bottom-norank .today-cost-columns strong {
+  white-space: nowrap;
+  letter-spacing: -.02em;
+}
+
+#view .today-design-bottom.today-design-bottom-norank .today-privacy-list {
+  padding-right: 160px;
+}
+
+@media (max-width: 1180px) {
+  #view .today-design-bottom.today-design-bottom-norank {
+    grid-template-columns: minmax(360px, 1.4fr) minmax(250px, 1fr);
+  }
+  #view .today-design-bottom.today-design-bottom-norank .today-privacy-card {
+    grid-column: 1 / -1;
+  }
+  #view .today-design-bottom.today-design-bottom-norank .today-privacy-list {
+    padding-right: 0;
+  }
+}
