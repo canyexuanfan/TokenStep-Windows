@@ -31,8 +31,7 @@ fn migrate_legacy_rank_toggle(s: TokenStepSettings, raw: &str) -> TokenStepSetti
             .ok()
             .and_then(|v| v.get("show_token_rank").and_then(|b| b.as_bool()))
             .unwrap_or(false);
-        s.agent_work_rank_visibility =
-            if legacy_true { "visible" } else { "hidden" }.to_string();
+        s.agent_work_rank_visibility = if legacy_true { "visible" } else { "hidden" }.to_string();
     }
     s
 }
@@ -65,7 +64,15 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         60
     };
     // Upstream v0.2.4 skin packs: classic colors plus the pack themes.
-    let valid_themes = ["green", "ocean", "violet", "amber", "graphite", "voyage", "event_horizon"];
+    let valid_themes = [
+        "green",
+        "ocean",
+        "violet",
+        "amber",
+        "graphite",
+        "voyage",
+        "event_horizon",
+    ];
     let theme = if valid_themes.contains(&s.theme.as_str()) {
         s.theme.clone()
     } else {
@@ -77,7 +84,12 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
     } else {
         "green".to_string()
     };
-    let valid_chapters = ["directors_cut", "aegean_mist", "trojan_inferno", "ash_marble"];
+    let valid_chapters = [
+        "directors_cut",
+        "aegean_mist",
+        "trojan_inferno",
+        "ash_marble",
+    ];
     let odyssey_chapter = if valid_chapters.contains(&s.odyssey_chapter.as_str()) {
         s.odyssey_chapter.clone()
     } else {
@@ -113,7 +125,11 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         screenshot_dir: s.screenshot_dir,
         language: {
             let valid = ["zhHans", "en", "zhHant"];
-            if valid.contains(&s.language.as_str()) { s.language.clone() } else { "zhHans".to_string() }
+            if valid.contains(&s.language.as_str()) {
+                s.language.clone()
+            } else {
+                "zhHans".to_string()
+            }
         },
         skipped_update_version: s.skipped_update_version.filter(|v| !v.trim().is_empty()),
         show_codex_quota: s.show_codex_quota,
@@ -121,7 +137,7 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         experimental_agent_sources: s
             .experimental_agent_sources
             .filter(|list| !list.is_empty())
-            .map(|list| {
+            .and_then(|list| {
                 // Keep only known source names (T1 + legacy display ids).
                 let known: Vec<String> = list
                     .into_iter()
@@ -135,8 +151,7 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
                 } else {
                     Some(known)
                 }
-            })
-            .flatten(),
+            }),
         device_sync_enabled: false, // G-S1: no enablement surface until server ships
         merge_today_all_devices: false,
         merge_history_all_devices: false,

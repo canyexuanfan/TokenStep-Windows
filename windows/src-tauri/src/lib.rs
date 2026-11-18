@@ -7,12 +7,11 @@
 //!   - a background refresh timer driven by the user's refresh interval
 
 mod agent_sources;
-mod sqlite_readonly;
+mod claude_quota;
+mod codex_quota;
 mod collector;
 pub mod cursor_safe;
 mod cursor_usage;
-mod claude_quota;
-mod codex_quota;
 mod energy;
 mod freshness;
 mod github;
@@ -22,6 +21,7 @@ mod paths;
 mod pricing;
 mod quota;
 mod settings;
+mod sqlite_readonly;
 mod token_rank;
 mod update;
 
@@ -105,8 +105,10 @@ fn reset_settings() -> Result<TokenStepSettings, String> {
     // (macOS re-installs its LaunchAgent). Mirror that by keeping the HKCU
     // Run entry in sync instead of leaving a stale registry value behind.
     let previous_autostart = settings::load().autostart;
-    let mut s = TokenStepSettings::default();
-    s.autostart = previous_autostart;
+    let s = TokenStepSettings {
+        autostart: previous_autostart,
+        ..Default::default()
+    };
     settings::save(&s).map_err(|e| e.to_string())?;
     // Sync the registry with the persisted setting (no orphan entries).
     let _ = set_autostart(s.autostart);
@@ -184,7 +186,8 @@ fn set_autostart(enabled: bool) -> Result<TokenStepSettings, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let value = format!("\"{}\"", exe.display());
     if enabled {
-        run.set_value("TokenStep", &value).map_err(|e| e.to_string())?;
+        run.set_value("TokenStep", &value)
+            .map_err(|e| e.to_string())?;
     } else {
         // Ignore "value not found" when removing — already off is fine.
         let _ = run.delete_value("TokenStep");
@@ -215,7 +218,12 @@ fn set_theme(theme: String) -> Result<TokenStepSettings, String> {
 /// remembers the chapter for future switches back into the pack.
 #[tauri::command]
 fn set_odyssey_chapter(chapter: String) -> Result<TokenStepSettings, String> {
-    let valid = ["directors_cut", "aegean_mist", "trojan_inferno", "ash_marble"];
+    let valid = [
+        "directors_cut",
+        "aegean_mist",
+        "trojan_inferno",
+        "ash_marble",
+    ];
     if !valid.contains(&chapter.as_str()) {
         return Err(format!("unknown odyssey chapter: {chapter}"));
     }
@@ -302,11 +310,19 @@ fn agent_source_detection() -> std::collections::BTreeMap<String, String> {
     // Legacy three: ZCode reads a db, Hermes a db, WorkBuddy a directory.
     out.insert(
         "ZCode".into(),
-        if paths::zcode_db_path().is_file() { "installed".into() } else { "missing".into() },
+        if paths::zcode_db_path().is_file() {
+            "installed".into()
+        } else {
+            "missing".into()
+        },
     );
     out.insert(
         "Hermes Agent".into(),
-        if paths::hermes_db_path().is_file() { "installed".into() } else { "missing".into() },
+        if paths::hermes_db_path().is_file() {
+            "installed".into()
+        } else {
+            "missing".into()
+        },
     );
     out.insert(
         "WorkBuddy".into(),
@@ -317,7 +333,10 @@ fn agent_source_detection() -> std::collections::BTreeMap<String, String> {
         },
     );
     for id in agent_sources::ALL_SOURCE_IDS {
-        out.insert(id.to_string(), agent_sources::detector_status(id).to_string());
+        out.insert(
+            id.to_string(),
+            agent_sources::detector_status(id).to_string(),
+        );
     }
     out
 }
@@ -508,7 +527,10 @@ fn set_cursor_code_signal_enabled(enabled: bool) -> Result<TokenStepSettings, St
 }
 
 #[tauri::command]
-fn set_quota_provider_enabled(provider: String, enabled: bool) -> Result<TokenStepSettings, String> {
+fn set_quota_provider_enabled(
+    provider: String,
+    enabled: bool,
+) -> Result<TokenStepSettings, String> {
     let mut s = settings::load();
     match provider.as_str() {
         "glm" => s.glm_quota_enabled = enabled,
@@ -562,7 +584,9 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
         enabled.push(quota::QuotaProvider::Grok);
     }
 
-    let cache_path = paths::app_support_root().join("cache").join("quota-cache.json");
+    let cache_path = paths::app_support_root()
+        .join("cache")
+        .join("quota-cache.json");
     if !force {
         if let Ok(text) = std::fs::read_to_string(&cache_path) {
             if let Ok(mut cached) = serde_json::from_str::<serde_json::Value>(&text) {
@@ -591,8 +615,7 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
                                         let legacy_visible = s.show_codex_quota
                                             && (quota::QuotaProvider::Codex.id() == id
                                                 || quota::QuotaProvider::Claude.id() == id);
-                                        legacy_visible
-                                            || enabled.iter().any(|e| e.id() == id)
+                                        legacy_visible || enabled.iter().any(|e| e.id() == id)
                                     })
                                     .unwrap_or(false)
                             });
@@ -659,11 +682,15 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let payload = serde_json::json!({ "v": 2, "fetched_at_secs": now_secs, "providers": providers });
+    let payload =
+        serde_json::json!({ "v": 2, "fetched_at_secs": now_secs, "providers": providers });
     if let Some(parent) = cache_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(&cache_path, serde_json::to_string_pretty(&payload).unwrap_or_default());
+    let _ = std::fs::write(
+        &cache_path,
+        serde_json::to_string_pretty(&payload).unwrap_or_default(),
+    );
     payload
 }
 
@@ -699,7 +726,7 @@ fn read_cursor_code_signal() -> serde_json::Value {
 /// Refresh official Cursor usage now (15-min TTL inside the service is
 /// skipped when force). Called by run_refresh on its cadence too.
 #[tauri::command]
-fn refresh_cursor_usage(force: bool) -> serde_json::Value {
+fn refresh_cursor_usage(_force: bool) -> serde_json::Value {
     let s = settings::load();
     if !s.cursor_quota_enabled {
         return serde_json::json!({ "ok": false, "reason": "disabled" });
@@ -780,9 +807,16 @@ fn download_and_install_update(
         // (installMode: currentUser → %LOCALAPPDATA%\TokenStep\tokenstep.exe).
         // The relaunch helper starts this path after the silent install.
         let installed_exe = installed_exe_path();
-        update::run_self_update(&asset_url, &asset_name, asset_size, &version, &installed_exe, |p| {
-            let _ = app.emit("update-download-progress", &p);
-        });
+        update::run_self_update(
+            &asset_url,
+            &asset_name,
+            asset_size,
+            &version,
+            &installed_exe,
+            |p| {
+                let _ = app.emit("update-download-progress", &p);
+            },
+        );
         // On success run_self_update exits the process and never reaches here.
         // If it returned, the download failed — tell the frontend so it can
         // show a retry button.
@@ -831,7 +865,8 @@ fn run_refresh(app: &tauri::AppHandle) {
         // Official Cursor usage refresh on the quota cadence (15 min), then
         // the ledger collect.
         {
-            static LAST_CURSOR_REFRESH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            static LAST_CURSOR_REFRESH: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -870,7 +905,8 @@ fn run_refresh(app: &tauri::AppHandle) {
         // source has a revision below current, write the recalibration notice
         // marker so the UI shows the green banner.
         if let Some(codex) = snapshot.sources.get("Codex") {
-            let stored_rev = codex.accounting_revision
+            let stored_rev = codex
+                .accounting_revision
                 .unwrap_or(collector::LEGACY_CODEX_ACCOUNTING_REVISION);
             if stored_rev < collector::CODEX_ACCOUNTING_REVISION && codex.records.unwrap_or(0) > 0 {
                 let marker = paths::usage_recalibration_notice_marker();
@@ -914,7 +950,11 @@ fn render_tray_icon(app: &tauri::AppHandle, tokens: i64, progress: f64, refreshi
     let pct = (progress.clamp(0.0, 1.0) * 100.0).round() as i64;
     let lang = settings::load().language;
     let today_lbl = tray_text("tip_today", &lang);
-    let status = if refreshing { tray_text("tip_syncing", &lang) } else { "" };
+    let status = if refreshing {
+        tray_text("tip_syncing", &lang)
+    } else {
+        ""
+    };
     let _ = tray.set_tooltip(Some(format!(
         "TokenStep — {} {} ({}){}",
         today_lbl,
@@ -1001,7 +1041,11 @@ const LOGO_PNG: &[u8] = include_bytes!("../icons/128x128.png");
 
 /// Recompute today's tokens/progress from the cached snapshot + settings.
 fn today_progress(state: &Arc<AppState>) -> (i64, f64) {
-    let snapshot = state.snapshot.lock().clone().unwrap_or_else(UsageSnapshot::empty);
+    let snapshot = state
+        .snapshot
+        .lock()
+        .clone()
+        .unwrap_or_else(UsageSnapshot::empty);
     let settings = settings::load();
     let tz = chrono::FixedOffset::east_opt(8 * 3600).expect("valid offset");
     let today_key = chrono::Utc::now()
@@ -1108,12 +1152,25 @@ pub fn run() {
             *state.settings.lock() = initial_settings;
 
             // Build the tray menu in the user's saved language.
-            let open = MenuItem::with_id(app, "open", tray_text("open", &lang), true, None::<&str>)?;
-            let refresh_item = MenuItem::with_id(app, "refresh", tray_text("refresh", &lang), true, None::<&str>)?;
+            let open =
+                MenuItem::with_id(app, "open", tray_text("open", &lang), true, None::<&str>)?;
+            let refresh_item = MenuItem::with_id(
+                app,
+                "refresh",
+                tray_text("refresh", &lang),
+                true,
+                None::<&str>,
+            )?;
             let sep1 = PredefinedMenuItem::separator(app)?;
-            let check_update_item =
-                MenuItem::with_id(app, "check-update", tray_text("check_update", &lang), true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", tray_text("quit", &lang), true, None::<&str>)?;
+            let check_update_item = MenuItem::with_id(
+                app,
+                "check-update",
+                tray_text("check_update", &lang),
+                true,
+                None::<&str>,
+            )?;
+            let quit =
+                MenuItem::with_id(app, "quit", tray_text("quit", &lang), true, None::<&str>)?;
             let menu = Menu::with_items(
                 app,
                 &[&open, &refresh_item, &sep1, &check_update_item, &quit],
@@ -1122,7 +1179,8 @@ pub fn run() {
             // Tray icon: the bundled app icon (proven to display reliably on
             // Windows). Runtime set_icon with a dynamic ring was unreliable, so
             // we keep the static logo and surface progress via the tooltip.
-            let icon = app.default_window_icon()
+            let icon = app
+                .default_window_icon()
                 .cloned()
                 .unwrap_or_else(|| tauri::image::Image::new(LOGO_PNG, 128, 128));
             let _tray = TrayIconBuilder::with_id("tokenstep-tray")
@@ -1173,10 +1231,7 @@ pub fn run() {
                     // never open the dashboard still see the new version.
                     if let Some(item) = app_handle.menu().and_then(|m| m.get("check-update")) {
                         if let Some(mi) = item.as_menuitem() {
-                            let _ = mi.set_text(format!(
-                                "发现新版本 v{} →",
-                                result.latest_version
-                            ));
+                            let _ = mi.set_text(format!("发现新版本 v{} →", result.latest_version));
                         }
                     }
                 }
@@ -1238,9 +1293,7 @@ pub fn run() {
                 let app = window.app_handle();
                 let state: tauri::State<'_, Arc<AppState>> = app.state();
                 if !*state.refreshing.lock() {
-                    let requested = settings::load()
-                        .refresh_interval_seconds
-                        .max(1);
+                    let requested = settings::load().refresh_interval_seconds.max(1);
                     let now_epoch = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_secs() as i64)
@@ -1334,7 +1387,9 @@ pub fn collect_for_check() -> models::UsageSnapshot {
 /// Public shim for diagnostics: run the cursor usage refresh for real.
 pub fn cursor_refresh_for_check(days: i64) -> serde_json::Value {
     match crate::cursor_usage::refresh(days) {
-        Ok(cache) => serde_json::json!({ "ok": true, "days": cache.days.len(), "total": cache.days.iter().map(|d| d.total_tokens).sum::<i64>() }),
+        Ok(cache) => {
+            serde_json::json!({ "ok": true, "days": cache.days.len(), "total": cache.days.iter().map(|d| d.total_tokens).sum::<i64>() })
+        }
         Err(e) => serde_json::json!({ "ok": false, "error": e }),
     }
 }
@@ -1355,7 +1410,9 @@ pub fn antigravity_cred_probe() -> serde_json::Value {
         Ok(c) => c,
         Err(e) => return serde_json::json!({ "open_error": e.to_string() }),
     };
-    let Ok(mut stmt) = conn.prepare("select key, length(value) from ItemTable where key like '%autoTrigger%'") else {
+    let Ok(mut stmt) =
+        conn.prepare("select key, length(value) from ItemTable where key like '%autoTrigger%'")
+    else {
         return serde_json::json!({ "rows": 0 });
     };
     let rows: Vec<(String, i64)> = stmt
@@ -1365,39 +1422,64 @@ pub fn antigravity_cred_probe() -> serde_json::Value {
     let mut out = serde_json::json!({ "rows": rows.len() });
     if let Some((key, _)) = rows.first() {
         let raw_value: String = conn
-            .query_row("select value from ItemTable where key = ?1", [key], |r| r.get(0))
+            .query_row("select value from ItemTable where key = ?1", [key], |r| {
+                r.get(0)
+            })
             .unwrap_or_default();
         out["value_len"] = serde_json::json!(raw_value.len());
         let cipher = serde_json::from_str::<serde_json::Value>(&raw_value)
             .ok()
             .and_then(|v| {
-                let bytes: Option<Vec<u8>> = v.get("data")?.as_array()?.iter()
-                    .map(|b| b.as_u64().map(|n| n as u8)).collect::<Option<Vec<u8>>>();
+                let bytes: Option<Vec<u8>> = v
+                    .get("data")?
+                    .as_array()?
+                    .iter()
+                    .map(|b| b.as_u64().map(|n| n as u8))
+                    .collect::<Option<Vec<u8>>>();
                 bytes
             });
         match cipher {
             Some(data) => {
                 out["cipher_len"] = serde_json::json!(data.len());
-                out["head_hex"] = serde_json::json!(data.iter().take(6).map(|b| format!("{b:02x}")).collect::<String>());
+                out["head_hex"] = serde_json::json!(data
+                    .iter()
+                    .take(6)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>());
                 match cursor_safe::decrypt_v10_with_antigravity(&data) {
                     Some(plain) => {
                         out["plain_len"] = serde_json::json!(plain.len());
-                        let v: serde_json::Value = serde_json::from_str(&plain).unwrap_or(serde_json::Value::Null);
+                        let v: serde_json::Value =
+                            serde_json::from_str(&plain).unwrap_or(serde_json::Value::Null);
                         match &v {
                             serde_json::Value::Object(m) => {
                                 let mut fields = serde_json::Map::new();
                                 for (k, val) in m {
-                                    let masked = matches!(k.to_lowercase().as_str(),
-                                        "accesstoken" | "refreshtoken" | "clientsecret" | "idtoken");
-                                    fields.insert(k.clone(), serde_json::json!(if masked {
-                                        format!("<masked {}>", val.as_str().map(|s| s.len()).unwrap_or(0))
-                                    } else {
-                                        val.to_string().chars().take(60).collect::<String>()
-                                    }));
+                                    let masked = matches!(
+                                        k.to_lowercase().as_str(),
+                                        "accesstoken" | "refreshtoken" | "clientsecret" | "idtoken"
+                                    );
+                                    fields.insert(
+                                        k.clone(),
+                                        serde_json::json!(if masked {
+                                            format!(
+                                                "<masked {}>",
+                                                val.as_str().map(|s| s.len()).unwrap_or(0)
+                                            )
+                                        } else {
+                                            val.to_string().chars().take(60).collect::<String>()
+                                        }),
+                                    );
                                 }
                                 out["fields"] = serde_json::Value::Object(fields);
                             }
-                            other => out["plaintext_kind"] = serde_json::json!(other.to_string().chars().take(60).collect::<String>()),
+                            other => {
+                                out["plaintext_kind"] = serde_json::json!(other
+                                    .to_string()
+                                    .chars()
+                                    .take(60)
+                                    .collect::<String>())
+                            }
                         }
                     }
                     None => out["decrypt"] = serde_json::json!("FAILED"),

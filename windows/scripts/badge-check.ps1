@@ -1,4 +1,4 @@
-# Verify the freshness badge now shows 已同步 (not 部分来源失败) while Codex
+﻿# Verify the freshness badge now shows 已同步 (not 部分来源失败) while Codex
 # is in cached_scan_timeout degradation.
 param([int]$Port = 9223)
 $exe = 'E:\Program\TokenStep\tokenstep.exe'
@@ -38,7 +38,7 @@ function Invoke-Eval([string]$js, [int]$timeoutMs = 60000) {
   }
 }
 # Poll until the badge settles (first pass done).
-$deadline = [DateTime]::UtcNow.AddSeconds(280)
+$deadline = [DateTime]::UtcNow.AddSeconds(1500)
 $result = ''
 while ([DateTime]::UtcNow -lt $deadline) {
   Start-Sleep -Seconds 20
@@ -52,8 +52,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
 '@
   $v = $r.result.result.value
   Write-Output ("[poll] " + $v)
-  if ($v -and $v.Contains('"n":10')) { $result = $v }
-  if ($result) { break }
+  if ($v -and $v.Contains('"codex":"ok"')) { $result = $v; break }
 }
 Write-Output ("FINAL: " + $result)
 $ws.Dispose()

@@ -28,20 +28,38 @@ pub fn repo_info() -> RepoInfo {
         .build()
     {
         Ok(c) => c,
-        Err(_) => return RepoInfo { url: REPO_URL.to_string(), stars: 0 },
+        Err(_) => {
+            return RepoInfo {
+                url: REPO_URL.to_string(),
+                stars: 0,
+            }
+        }
     };
-    let Ok(resp) = client.get(REPO_API).header("Accept", "application/vnd.github+json").send() else {
-        return RepoInfo { url: REPO_URL.to_string(), stars: 0 };
+    let Ok(resp) = client
+        .get(REPO_API)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+    else {
+        return RepoInfo {
+            url: REPO_URL.to_string(),
+            stars: 0,
+        };
     };
     if !resp.status().is_success() {
-        return RepoInfo { url: REPO_URL.to_string(), stars: 0 };
+        return RepoInfo {
+            url: REPO_URL.to_string(),
+            stars: 0,
+        };
     }
     let stars = resp
         .json::<serde_json::Value>()
         .ok()
         .and_then(|v| v.get("stargazers_count").and_then(|s| s.as_i64()))
         .unwrap_or(0);
-    RepoInfo { url: REPO_URL.to_string(), stars }
+    RepoInfo {
+        url: REPO_URL.to_string(),
+        stars,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,6 +92,7 @@ pub fn star() -> (bool, StarState) {
 
 enum GhOutcome {
     Status(u16),
+    #[allow(dead_code)] // enum completeness (rate-limit handling paths)
     Unauthorized,
     Failed,
 }
@@ -81,7 +100,9 @@ enum GhOutcome {
 /// Run `gh ...` and classify the HTTP status from `--include` output (the gh
 /// exit code alone cannot distinguish 204/404/401).
 fn gh_api(args: &[&str]) -> GhOutcome {
-    let Some(gh) = find_gh() else { return GhOutcome::Failed };
+    let Some(gh) = find_gh() else {
+        return GhOutcome::Failed;
+    };
     let mut cmd = if gh.ends_with(".cmd") || gh.ends_with(".bat") {
         let mut c = Command::new("cmd.exe");
         c.arg("/c").arg(&gh);
@@ -120,7 +141,7 @@ fn gh_api(args: &[&str]) -> GhOutcome {
     }
     // No status line: gh missing / network failed / not logged in.
     // A PUT that exits 0 with empty output is a success (204).
-    if output.status.success() && text.trim().is_empty() && args.iter().any(|a| *a == "-X") {
+    if output.status.success() && text.trim().is_empty() && args.contains(&"-X") {
         return GhOutcome::Status(204);
     }
     GhOutcome::Failed

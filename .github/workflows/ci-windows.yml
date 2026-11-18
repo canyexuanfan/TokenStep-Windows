@@ -65,14 +65,18 @@ jobs:
         working-directory: windows/src-tauri
         run: cargo build --release --all-targets
 
-      # 风格检查（非阻塞）：提示但不让 CI 失败，避免首次接入就被红叉卡住。
-      # 等代码风格稳定后可去掉 continue-on-error 改为强制。
-      - name: cargo fmt --check (advisory)
+      # 0.1.13（T3）：单元测试升级为阻塞性门槛——0.1.12 三个关键修复的
+      # 回归测试必须全绿（cargo test --lib 覆盖 lib 单测；examples 不在
+      # test 范围内，由 build 步骤覆盖）。
+      - name: Test (release, lib)
         working-directory: windows/src-tauri
-        continue-on-error: true
+        run: cargo test --lib --release
+
+      # 0.1.13（T3）：风格检查从 advisory 升级为强制（本地已清零告警）。
+      - name: cargo fmt --check
+        working-directory: windows/src-tauri
         run: cargo fmt --all -- --check
 
-      - name: cargo clippy (advisory)
+      - name: cargo clippy (-D warnings)
         working-directory: windows/src-tauri
-        continue-on-error: true
-        run: cargo clippy --all-targets --all-features
+        run: cargo clippy --all-targets --all-features -- -D warnings

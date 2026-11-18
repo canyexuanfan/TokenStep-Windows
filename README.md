@@ -56,19 +56,52 @@ TokenStep 适合这些人：
 - 自动刷新，默认 1 分钟。
 - 多种主题色，圆环、活动墙和按钮会一起变化。
 - 一键截图分享当前页面。
-- Codex 5 小时 / 7 天剩余额度可在设置中打开，默认关闭。
-- Claude Code 配额卡片（需已登录 Claude Code）。
+- 订阅额度卡 8 家：Codex（5 小时 / 7 天窗口）、Claude Code、Cursor、GLM、Kimi、Grok、WorkBuddy、Antigravity（各家开关见设置 → 订阅额度提供商；未登录或无订阅时如实显示原因）。
 - 三语界面：简体中文 / English / 繁體中文，切换立即生效。
 - 自动检查更新，发现新版后可一键安装。
 - 本地数据存放在 `%APPDATA%\TokenStep`，不上传任何内容。
 
-## 当前支持
+## 界面一览
 
-- **Codex**：优先读取 Codex 本地 SQLite token 汇总，必要时回退 JSONL。
-- **Claude Code**：读取 `~/.claude/projects` 下的 JSONL 转录日志。
-- **CC Switch**：实验性支持，读取 `~/.cc-switch/cc-switch.db` 的代理请求日志（经过 CC Switch 代理的 Codex/Claude/Gemini 流量）。
+**每日战绩分享卡**（自动圈数 + 达标天数 + 来源/模型分解 + 30 天趋势）：
 
-更多 AI 编程工具支持会逐步加入。
+![每日战绩分享卡](docs/screenshots/share-card-daily.png)
+
+**今日概览**（圆环进度 + 按客户端分色的 30 天柱图 + 客户端/模型分布）：
+
+![今日概览](docs/screenshots/today-overview.png)
+
+**昨日节奏分享卡**（24 小时用量曲线 + 类型判定）：
+
+![节奏分享卡](docs/screenshots/share-card-rhythm.png)
+
+## 当前支持（16 个数据源）
+
+所有采集均为**被动读取**本机文件 / 数据库：不改工具配置、无卸载残留、数据不出本机。
+
+### 专属采集器（9 个，逐客户端实现）
+
+| 客户端 | 数据源 | 精度口径 |
+|---|---|---|
+| Codex | `~/.codex` SQLite + JSONL rollout（rev8 增量校准，多 GB 文件增量尾读） | 精确 |
+| Claude Code | `~/.claude/projects` JSONL 转录（按 response 去重） | 精确 |
+| ZCode | `~/.zcode/cli/db/db.sqlite` model_usage | 精确 |
+| WorkBuddy | `~/.workbuddy/projects` JSONL 事件流 + `workbuddy.db` 配额池 | 精确 |
+| MiniMax | `~/.minimax/sqlite.db`（旧库）+ `v2/sqlite/runtime-state.sqlite`（现行库）双库合并 | 精确（部分记录客户端未写模型名，聚合显示为 MiniMax） |
+| DSH | `~/.dsh/dsh-tokenlens/usage-cache.json`（DeepSeek Harness 统计面板同源） | 精确 |
+| Antigravity | `~/.gemini/antigravity*/brain` 会话转写（模型按 Model Selection 变更事件归属） | 精确 |
+| Cursor | `~/.cursor/projects` 会话转写 + composerData 模型映射 | **估算**（对话文本启发式；官方 API 不记录第三方模型事件） |
+| CC Switch | `~/.cc-switch/cc-switch.db` 代理请求日志（实验性） | 精确（依赖经代理的流量） |
+
+### 通用采集（7 个，同一套事件流解析）
+
+Gemini CLI、Qwen Code、Kimi Code、OpenCode、Amp、Droid、Grok Build —— 各自本地会话 / 事件文件，精度口径为**精确**（读取各客户端自身记录的 usage 字段）。
+
+### 订阅额度卡（8 家）
+
+Codex、Claude Code、Cursor、GLM、Kimi、Grok、WorkBuddy、Antigravity。凭据存放在本机注册表 `Software\TokenStep\credentials`（DPAPI 封存），未登录 / 无订阅 / 接口失败时卡片如实显示原因。MiniMax 与 DSH 暂无公开配额源（客户端本地不存储订阅额度），故未提供额度卡。
+
+更多 AI 编程工具支持会逐步加入（上游 Trae 额度卡在移植计划中，见 `docs/upstream-sync.md`）。
 
 ## 隐私
 

@@ -52,8 +52,7 @@ pub fn enabled_ids(master_enabled: bool, per_source: Option<&Vec<String>>) -> Ve
         Some(list) => list
             .iter()
             .filter(|id| {
-                ALL_SOURCE_IDS.contains(&id.as_str())
-                    || LEGACY_SOURCE_IDS.contains(&id.as_str())
+                ALL_SOURCE_IDS.contains(&id.as_str()) || LEGACY_SOURCE_IDS.contains(&id.as_str())
             })
             .cloned()
             .collect(),
@@ -166,7 +165,9 @@ fn for_each_jsonl_line(path: &Path, mut body: impl FnMut(usize, &Value)) {
     if meta.len() > 512 * 1024 * 1024 {
         return; // absurd guard, same spirit as upstream
     }
-    let Ok(text) = fs::read_to_string(path) else { return };
+    let Ok(text) = fs::read_to_string(path) else {
+        return;
+    };
     for (idx, line) in text.lines().enumerate() {
         if line.len() as u64 > MAX_LINE_BYTES {
             continue;
@@ -289,7 +290,10 @@ fn make_record(
 fn missing_source(status: &str) -> AgentCollectResult {
     AgentCollectResult {
         records: vec![],
-        source: SourceInfo { status: Some(status.to_string()), ..Default::default() },
+        source: SourceInfo {
+            status: Some(status.to_string()),
+            ..Default::default()
+        },
     }
 }
 
@@ -324,11 +328,16 @@ fn collect_gemini() -> AgentCollectResult {
     }
     let mut records: Vec<UsageRecord> = vec![];
     for path in &files {
-        let file_name = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let file_name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
             // JSONL variant: per-line usageMetadata.
             for_each_jsonl_line(path, |idx, obj| {
-                let Some(um) = obj.get("usageMetadata") else { return };
+                let Some(um) = obj.get("usageMetadata") else {
+                    return;
+                };
                 let prompt = aliased_i64(um, &["promptTokenCount"]);
                 let output = aliased_i64(um, &["candidatesTokenCount"]);
                 let cached = aliased_i64(um, &["cachedContentTokenCount"]);
@@ -344,31 +353,42 @@ fn collect_gemini() -> AgentCollectResult {
                 if epoch <= 0.0 {
                     return;
                 }
-                let usage = canonical_counts(prompt, output, cached, 0, thoughts, true, Some(total));
+                let usage =
+                    canonical_counts(prompt, output, cached, 0, thoughts, true, Some(total));
                 records.push(make_record(
                     "Gemini CLI",
                     format!("gemini:{}:{}", file_name, idx),
                     epoch,
                     "gemini".to_string(),
                     usage,
-                    obj.get("cwd").and_then(|v| v.as_str()).and_then(|s| project_display_name(Some(s))),
+                    obj.get("cwd")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| project_display_name(Some(s))),
                 ));
             });
         } else {
             // Single-document JSON: messages[].tokens (type == "gemini").
-            let Ok(text) = fs::read_to_string(path) else { continue };
-            let Ok(doc) = serde_json::from_str::<Value>(&text) else { continue };
+            let Ok(text) = fs::read_to_string(path) else {
+                continue;
+            };
+            let Ok(doc) = serde_json::from_str::<Value>(&text) else {
+                continue;
+            };
             let session_id = doc
                 .get("sessionId")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| file_name.clone());
-            let Some(messages) = doc.get("messages").and_then(|v| v.as_array()) else { continue };
+            let Some(messages) = doc.get("messages").and_then(|v| v.as_array()) else {
+                continue;
+            };
             for (idx, msg) in messages.iter().enumerate() {
                 if msg.get("type").and_then(|v| v.as_str()) != Some("gemini") {
                     continue;
                 }
-                let Some(tokens) = msg.get("tokens") else { continue };
+                let Some(tokens) = msg.get("tokens") else {
+                    continue;
+                };
                 let input = aliased_i64(tokens, &["input"]);
                 let tool_tokens = aliased_i64(tokens, &["tool"]);
                 let output = aliased_i64(tokens, &["output"]);
@@ -380,11 +400,21 @@ fn collect_gemini() -> AgentCollectResult {
                 if combined_input + output == 0 {
                     continue;
                 }
-                let Some(ts) = msg.get("timestamp").and_then(|v| v.as_str()) else { continue };
-                let Some(dt) = collector::parse_iso(ts) else { continue };
+                let Some(ts) = msg.get("timestamp").and_then(|v| v.as_str()) else {
+                    continue;
+                };
+                let Some(dt) = collector::parse_iso(ts) else {
+                    continue;
+                };
                 let epoch = dt.timestamp() as f64;
                 let usage = canonical_counts(
-                    combined_input, output, cached, 0, thoughts, true, Some(total),
+                    combined_input,
+                    output,
+                    cached,
+                    0,
+                    thoughts,
+                    true,
+                    Some(total),
                 );
                 let message_id = msg
                     .get("id")
@@ -397,13 +427,18 @@ fn collect_gemini() -> AgentCollectResult {
                     epoch,
                     "gemini".to_string(),
                     usage,
-                    doc.get("cwd").and_then(|v| v.as_str()).and_then(|s| project_display_name(Some(s))),
+                    doc.get("cwd")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| project_display_name(Some(s))),
                 ));
             }
         }
     }
     let files_count = files.len() as i64;
-    AgentCollectResult { source: ok_source(&records, files_count), records }
+    AgentCollectResult {
+        source: ok_source(&records, files_count),
+        records,
+    }
 }
 
 // ── Qwen Code (upstream L362-426) ─────────────────────────────────────────
@@ -430,7 +465,9 @@ fn collect_qwen() -> AgentCollectResult {
             .unwrap_or_default();
         let mtime = file_mtime_epoch(path);
         for_each_jsonl_line(path, |idx, obj| {
-            let Some(um) = obj.get("usageMetadata") else { return };
+            let Some(um) = obj.get("usageMetadata") else {
+                return;
+            };
             let prompt = aliased_i64(um, &["promptTokenCount"]);
             let output = aliased_i64(um, &["candidatesTokenCount"]);
             let cached = aliased_i64(um, &["cachedContentTokenCount"]);
@@ -460,12 +497,17 @@ fn collect_qwen() -> AgentCollectResult {
                 epoch,
                 "qwen".to_string(),
                 usage,
-                obj.get("cwd").and_then(|v| v.as_str()).and_then(|s| project_display_name(Some(s))),
+                obj.get("cwd")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| project_display_name(Some(s))),
             ));
         });
     }
     let files_count = files.len() as i64;
-    AgentCollectResult { source: ok_source(&records, files_count), records }
+    AgentCollectResult {
+        source: ok_source(&records, files_count),
+        records,
+    }
 }
 
 // ── Kimi Code (upstream L430-502) ─────────────────────────────────────────
@@ -493,7 +535,9 @@ fn collect_kimi() -> AgentCollectResult {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
         for_each_jsonl_line(path, |idx, obj| {
-            let Some(message) = obj.get("message") else { return };
+            let Some(message) = obj.get("message") else {
+                return;
+            };
             let msg_type = message.get("type").and_then(|v| v.as_str()).unwrap_or("");
             if !msg_type.to_lowercase().contains("usagerecord") {
                 return;
@@ -506,10 +550,8 @@ fn collect_kimi() -> AgentCollectResult {
                 usage_obj,
                 &["cached_tokens", "cachedInputTokens", "cache_read_tokens"],
             );
-            let cache_write = aliased_i64(
-                usage_obj,
-                &["cache_creation_tokens", "cacheCreationTokens"],
-            );
+            let cache_write =
+                aliased_i64(usage_obj, &["cache_creation_tokens", "cacheCreationTokens"]);
             let reasoning = aliased_i64(usage_obj, &["reasoning_tokens", "reasoningTokens"]);
             if input + output == 0 {
                 return;
@@ -517,25 +559,36 @@ fn collect_kimi() -> AgentCollectResult {
             let epoch = obj
                 .get("timestamp")
                 .and_then(|v| v.as_f64())
-                .or_else(|| obj.get("timestamp").and_then(|v| v.as_i64()).map(|n| n as f64))
+                .or_else(|| {
+                    obj.get("timestamp")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n as f64)
+                })
                 .unwrap_or(0.0);
             if epoch <= 0.0 {
                 return;
             }
             // Kimi reports cache separately from input.
-            let usage = canonical_counts(input, output, cached, cache_write, reasoning, false, None);
+            let usage =
+                canonical_counts(input, output, cached, cache_write, reasoning, false, None);
             records.push(make_record(
                 "Kimi Code",
                 format!("kimi:{}:{}", session, idx),
                 epoch,
                 "kimi".to_string(),
                 usage,
-                payload.get("cwd").and_then(|v| v.as_str()).and_then(|s| project_display_name(Some(s))),
+                payload
+                    .get("cwd")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| project_display_name(Some(s))),
             ));
         });
     }
     let files_count = files.len() as i64;
-    AgentCollectResult { source: ok_source(&records, files_count), records }
+    AgentCollectResult {
+        source: ok_source(&records, files_count),
+        records,
+    }
 }
 
 // ── OpenCode (upstream L506-582) ──────────────────────────────────────────
@@ -545,7 +598,10 @@ fn collect_opencode() -> AgentCollectResult {
     if !db.is_file() {
         return missing_source("missing_db");
     }
-    let uri = format!("file:{}?mode=ro", db.display().to_string().replace('\\', "/"));
+    let uri = format!(
+        "file:{}?mode=ro",
+        db.display().to_string().replace('\\', "/")
+    );
     let Ok(conn) = rusqlite::Connection::open_with_flags(
         &uri,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -569,15 +625,25 @@ where json_extract(data, '$.role') = 'assistant'"#;
     };
     let rows = stmt.query_map([], |row| {
         let created: i64 = row.get::<_, Option<i64>>(0)?.unwrap_or(0);
-        let model: String =
-            row.get::<_, Option<String>>(1)?.unwrap_or_else(|| "opencode-unknown".into());
+        let model: String = row
+            .get::<_, Option<String>>(1)?
+            .unwrap_or_else(|| "opencode-unknown".into());
         let input: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
         let output: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
         let reasoning: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or(0);
         let cache_read: i64 = row.get::<_, Option<i64>>(5)?.unwrap_or(0);
         let cache_write: i64 = row.get::<_, Option<i64>>(6)?.unwrap_or(0);
         let cwd: Option<String> = row.get(7).ok().flatten();
-        Ok((created, model, input, output, reasoning, cache_read, cache_write, cwd))
+        Ok((
+            created,
+            model,
+            input,
+            output,
+            reasoning,
+            cache_read,
+            cache_write,
+            cwd,
+        ))
     });
     let Ok(rows) = rows else {
         return missing_source("query_failed");
@@ -586,12 +652,24 @@ where json_extract(data, '$.role') = 'assistant'"#;
     for r in rows.flatten() {
         let (created, model, input, output, reasoning, cache_read, cache_write, cwd) = r;
         // Millisecond vs second epoch heuristic (upstream L543).
-        let epoch = if created > 10_000_000_000 { (created / 1000) as f64 } else { created as f64 };
+        let epoch = if created > 10_000_000_000 {
+            (created / 1000) as f64
+        } else {
+            created as f64
+        };
         if epoch <= 0.0 {
             continue;
         }
         // OpenCode reports cache separately from input.
-        let usage = canonical_counts(input, output, cache_read, cache_write, reasoning, false, None);
+        let usage = canonical_counts(
+            input,
+            output,
+            cache_read,
+            cache_write,
+            reasoning,
+            false,
+            None,
+        );
         let total = usage.total_tokens;
         records.push(make_record(
             "OpenCode",
@@ -648,7 +726,11 @@ fn collect_generic(tool: &str, root: &Path) -> AgentCollectResult {
             let output = aliased_i64(usage_obj, &["output_tokens", "outputTokens", "output"]);
             let cache_read = aliased_i64(
                 usage_obj,
-                &["cache_read_tokens", "cachedReadTokens", "cached_input_tokens"],
+                &[
+                    "cache_read_tokens",
+                    "cachedReadTokens",
+                    "cached_input_tokens",
+                ],
             );
             if input + output == 0 {
                 return;
@@ -680,12 +762,17 @@ fn collect_generic(tool: &str, root: &Path) -> AgentCollectResult {
                 epoch,
                 model,
                 usage,
-                obj.get("cwd").and_then(|v| v.as_str()).and_then(|s| project_display_name(Some(s))),
+                obj.get("cwd")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| project_display_name(Some(s))),
             ));
         });
     }
     let files_count = files.len() as i64;
-    AgentCollectResult { source: ok_source(&records, files_count), records }
+    AgentCollectResult {
+        source: ok_source(&records, files_count),
+        records,
+    }
 }
 
 // ── Grok Build (upstream L586-668) ────────────────────────────────────────
@@ -725,11 +812,15 @@ fn collect_grok() -> AgentCollectResult {
             })
             .and_then(|n| if n.is_empty() { None } else { Some(n) });
         for_each_jsonl_line(path, |idx, obj| {
-            let Some(update) = obj.get("params").and_then(|p| p.get("update")) else { return };
+            let Some(update) = obj.get("params").and_then(|p| p.get("update")) else {
+                return;
+            };
             if update.get("sessionUpdate").and_then(|v| v.as_str()) != Some("turn_completed") {
                 return;
             }
-            let Some(usage_obj) = update.get("usage") else { return };
+            let Some(usage_obj) = update.get("usage") else {
+                return;
+            };
             let input = aliased_i64(usage_obj, &["inputTokens"]);
             let output = aliased_i64(usage_obj, &["outputTokens"]);
             let cached = aliased_i64(usage_obj, &["cachedReadTokens"]);
@@ -751,7 +842,11 @@ fn collect_grok() -> AgentCollectResult {
             let epoch = obj
                 .get("timestamp")
                 .and_then(|v| v.as_f64())
-                .or_else(|| obj.get("timestamp").and_then(|v| v.as_i64()).map(|n| n as f64))
+                .or_else(|| {
+                    obj.get("timestamp")
+                        .and_then(|v| v.as_i64())
+                        .map(|n| n as f64)
+                })
                 .unwrap_or(0.0);
             if epoch <= 0.0 {
                 return;
@@ -770,12 +865,17 @@ fn collect_grok() -> AgentCollectResult {
                 epoch,
                 model,
                 usage,
-                project.clone().filter(|n| n.chars().any(|c| c.is_alphanumeric())),
+                project
+                    .clone()
+                    .filter(|n| n.chars().any(|c| c.is_alphanumeric())),
             ));
         });
     }
     let files_count = files.len() as i64;
-    AgentCollectResult { source: ok_source(&records, files_count), records }
+    AgentCollectResult {
+        source: ok_source(&records, files_count),
+        records,
+    }
 }
 
 /// Minimal percent-decoding for URL-encoded directory names.

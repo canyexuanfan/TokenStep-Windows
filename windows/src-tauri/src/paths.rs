@@ -21,7 +21,9 @@ pub fn usage_json() -> PathBuf {
 
 /// `cache/collector-cache.json` — per-file parsed-records cache.
 pub fn collector_cache_json() -> PathBuf {
-    app_support_root().join("cache").join("collector-cache.json")
+    app_support_root()
+        .join("cache")
+        .join("collector-cache.json")
 }
 
 /// `cache/codex-dirs.json` — per-directory walk cache for the Codex
@@ -101,7 +103,11 @@ pub fn token_rank_cache_json() -> PathBuf {
 
 /// `~/.zcode/cli/db/db.sqlite` — ZCode agent usage database.
 pub fn zcode_db_path() -> PathBuf {
-    home_dir().join(".zcode").join("cli").join("db").join("db.sqlite")
+    home_dir()
+        .join(".zcode")
+        .join("cli")
+        .join("db")
+        .join("db.sqlite")
 }
 
 /// `~/.hermes/state.db` — Hermes agent usage database.
@@ -201,7 +207,9 @@ pub fn usage_recalibration_notice_marker() -> PathBuf {
 
 /// `cache/freshness-state.json` — per-channel refresh-attempt records.
 pub fn freshness_state_json() -> PathBuf {
-    app_support_root().join("cache").join("freshness-state.json")
+    app_support_root()
+        .join("cache")
+        .join("freshness-state.json")
 }
 
 // ── T1 experimental agent source paths (port of upstream v0.2.0 G-A1) ────
@@ -237,7 +245,11 @@ pub fn opencode_db_path() -> PathBuf {
 
 /// `~/.local/share/amp/threads` — Amp thread JSONL root.
 pub fn amp_threads_dir() -> PathBuf {
-    home_dir().join(".local").join("share").join("amp").join("threads")
+    home_dir()
+        .join(".local")
+        .join("share")
+        .join("amp")
+        .join("threads")
 }
 
 /// `~/.factory/sessions` — Droid session JSONL root.
@@ -273,10 +285,15 @@ pub fn cursor_state_vscdb() -> PathBuf {
 
 /// Cursor's local code-signal DB: ~/.cursor/ai-tracking/ai-code-tracking.db
 pub fn cursor_code_tracking_db() -> PathBuf {
-    home_dir().join(".cursor").join("ai-tracking").join("ai-code-tracking.db")
+    home_dir()
+        .join(".cursor")
+        .join("ai-tracking")
+        .join("ai-code-tracking.db")
 }
 
 /// cache/cursor-usage-cache.json — official usage events cache.
 pub fn cursor_usage_cache_json() -> PathBuf {
-    app_support_root().join("cache").join("cursor-usage-cache.json")
+    app_support_root()
+        .join("cache")
+        .join("cursor-usage-cache.json")
 }

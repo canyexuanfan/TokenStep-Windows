@@ -52,11 +52,19 @@ pub struct SourceInfo {
     /// Token accounting revision used to collect this source. Mirrors macOS
     /// `SourceInfo.accountingRevision`; the current revision is 8. Legacy
     /// snapshots (pre-rev8) default to 5.
-    #[serde(rename = "accounting_revision", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "accounting_revision",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub accounting_revision: Option<i64>,
     /// When a recalibration occurred, this holds the *previous* revision the
     /// user's data was collected with. Drives the "Token 已重新校准" notice.
-    #[serde(rename = "recalibrated_from_revision", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "recalibrated_from_revision",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub recalibrated_from_revision: Option<i64>,
 }
 
@@ -112,6 +120,7 @@ pub struct HourlyTokenBucket {
 /// consumed. Port of upstream `RhythmTag` (snake_case raw values).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum RhythmTag {
     EarlyStarter,
     MorningPlanner,
@@ -122,13 +131,8 @@ pub enum RhythmTag {
     Fragmented,
     OneShot,
     SteadyCruise,
+    #[default]
     QuietDay,
-}
-
-impl Default for RhythmTag {
-    fn default() -> Self {
-        RhythmTag::QuietDay
-    }
 }
 
 /// A day's rhythm profile: hourly token buckets + derived metrics + a
@@ -145,9 +149,17 @@ pub struct DailyRhythm {
     pub peak_tokens: i64,
     #[serde(rename = "active_hours")]
     pub active_hours: i64,
-    #[serde(rename = "first_active_hour", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "first_active_hour",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub first_active_hour: Option<i64>,
-    #[serde(rename = "last_active_hour", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "last_active_hour",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub last_active_hour: Option<i64>,
     #[serde(rename = "primary_tag")]
     pub primary_tag: RhythmTag,
@@ -228,7 +240,10 @@ pub struct DailyAgentWork {
 impl DailyAgentWork {
     /// Cache hit rate — only valid when coverage is complete and input > 0.
     pub fn cache_hit_rate(&self) -> Option<f64> {
-        if self.cache_coverage_complete && self.input_tokens > 0 && self.cached_input_tokens <= self.input_tokens {
+        if self.cache_coverage_complete
+            && self.input_tokens > 0
+            && self.cached_input_tokens <= self.input_tokens
+        {
             Some(self.cached_input_tokens as f64 / self.input_tokens as f64)
         } else {
             None
@@ -335,7 +350,10 @@ pub struct TokenStepSettings {
     /// "automatic" (show when a local Token Rank identity is detected),
     /// "visible" (always show), or "hidden" (zero identity reads, zero
     /// network). Default "hidden" — absence must never silently enable.
-    #[serde(rename = "agent_work_rank_visibility", default = "default_rank_visibility")]
+    #[serde(
+        rename = "agent_work_rank_visibility",
+        default = "default_rank_visibility"
+    )]
     pub agent_work_rank_visibility: String,
     /// Whether the Antigravity quota card (official weekly / 5h windows via
     /// cloudcode-pa) is shown. Default on (0.1.12): the user-facing surface
@@ -347,7 +365,11 @@ pub struct TokenStepSettings {
     /// auto-enroll detected T1 sources); an explicit list decides which T1
     /// sources participate. New sources are never enabled by legacy
     /// boolean migration.
-    #[serde(rename = "experimental_agent_sources", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "experimental_agent_sources",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub experimental_agent_sources: Option<Vec<String>>,
     /// G-S1 device sync — default off, no enablement surface until the
     /// server contract ships (mirrors upstream v0.2.0 dead-code state).
@@ -362,7 +384,11 @@ pub struct TokenStepSettings {
     /// A version string the user chose to skip via the update dialog.
     /// When the latest release matches this, the update check reports
     /// `has_update: false` so the user isn't nagged about it again.
-    #[serde(rename = "skipped_update_version", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "skipped_update_version",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub skipped_update_version: Option<String>,
     /// Whether experimental agent sources (ZCode / Hermes / WorkBuddy) are
     /// collected and shown. Default off. Mirrors upstream

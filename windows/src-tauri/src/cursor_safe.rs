@@ -22,14 +22,18 @@ fn local_state_path() -> PathBuf {
 /// `Roaming/Antigravity/Local State` — the Antigravity app's OSCrypt store.
 fn antigravity_local_state_path() -> PathBuf {
     let roaming = std::env::var("APPDATA").unwrap_or_default();
-    PathBuf::from(roaming).join("Antigravity").join("Local State")
+    PathBuf::from(roaming)
+        .join("Antigravity")
+        .join("Local State")
 }
 
 fn os_crypt_key_from(local_state: &std::path::Path) -> Option<Vec<u8>> {
     let text = std::fs::read_to_string(local_state).ok()?;
     let json: serde_json::Value = serde_json::from_str(&text).ok()?;
     let wrapped_b64 = json.get("os_crypt")?.get("encrypted_key")?.as_str()?;
-    let wrapped = base64::engine::general_purpose::STANDARD.decode(wrapped_b64).ok()?;
+    let wrapped = base64::engine::general_purpose::STANDARD
+        .decode(wrapped_b64)
+        .ok()?;
     if wrapped.starts_with(b"DPAPI") {
         dpapi_unprotect(&wrapped[5..])
     } else {
@@ -59,7 +63,7 @@ fn dpapi_unprotect(data: &[u8]) -> Option<Vec<u8>> {
     extern "system" {
         fn LocalFree(h_mem: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     }
-    let mut blob_in = DataBlob {
+    let blob_in = DataBlob {
         cb_data: data.len() as u32,
         pb_data: data.as_ptr() as *mut u8,
     };
@@ -67,11 +71,22 @@ fn dpapi_unprotect(data: &[u8]) -> Option<Vec<u8>> {
         cb_data: 0,
         pb_data: std::ptr::null_mut(),
     };
-    let ok = unsafe { CryptUnprotectData(&mut blob_in, std::ptr::null_mut(), std::ptr::null(), std::ptr::null(), std::ptr::null(), 0, &mut blob_out) };
+    let ok = unsafe {
+        CryptUnprotectData(
+            &blob_in,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            &mut blob_out,
+        )
+    };
     if ok == 0 || blob_out.cb_data == 0 {
         return None;
     }
-    let out = unsafe { std::slice::from_raw_parts(blob_out.pb_data, blob_out.cb_data as usize) }.to_vec();
+    let out =
+        unsafe { std::slice::from_raw_parts(blob_out.pb_data, blob_out.cb_data as usize) }.to_vec();
     unsafe { LocalFree(blob_out.pb_data as *mut core::ffi::c_void) };
     Some(out)
 }

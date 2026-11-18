@@ -20,7 +20,10 @@ fn main() {
     // The collector is currently a private module; expose via a shim function.
     let snapshot = app::collect_for_check();
 
-    println!("generated_at: {}", snapshot.generated_at.unwrap_or_default());
+    println!(
+        "generated_at: {}",
+        snapshot.generated_at.unwrap_or_default()
+    );
     println!("total_tokens: {}", human_tokens(snapshot.totals.tokens));
     println!("estimated_cost: ${:.2}", snapshot.totals.cost);
     println!("active_days: {}", snapshot.totals.active_days);
@@ -29,12 +32,23 @@ fn main() {
     println!("tools:");
     for row in &snapshot.tools {
         let pct = row.percent.unwrap_or(0.0);
-        println!("  - {}: {} ({:.1}%)", row.tool, human_tokens(row.tokens), pct);
+        println!(
+            "  - {}: {} ({:.1}%)",
+            row.tool,
+            human_tokens(row.tokens),
+            pct
+        );
     }
     println!("models (top 8):");
     for row in snapshot.models.iter().take(8) {
         let pct = row.percent.unwrap_or(0.0);
-        println!("  - {} / {}: {} ({:.1}%)", row.tool.as_deref().unwrap_or(""), row.model, human_tokens(row.tokens), pct);
+        println!(
+            "  - {} / {}: {} ({:.1}%)",
+            row.tool.as_deref().unwrap_or(""),
+            row.model,
+            human_tokens(row.tokens),
+            pct
+        );
     }
     // Diagnostics: today's row with per-tool split + projects.
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
@@ -54,6 +68,9 @@ fn main() {
     }
     println!("sources:");
     for (name, info) in &snapshot.sources {
-        println!("  - {}: status={:?} files={:?} records={:?}", name, info.status, info.files, info.records);
+        println!(
+            "  - {}: status={:?} files={:?} records={:?}",
+            name, info.status, info.files, info.records
+        );
     }
 }

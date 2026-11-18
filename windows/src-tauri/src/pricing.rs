@@ -128,7 +128,12 @@ pub fn estimate_cost(
 /// OpenAI-style per-part cost: uncached input at `input` rate, cached input at
 /// `cached_input` rate, output+reasoning at `output` rate (per 1M tokens).
 /// Port of macOS `openAICostByParts`.
-fn openai_cost_by_parts(usage: &TokenUsageCounts, input: f64, cached_input: f64, output: f64) -> f64 {
+fn openai_cost_by_parts(
+    usage: &TokenUsageCounts,
+    input: f64,
+    cached_input: f64,
+    output: f64,
+) -> f64 {
     let cached = usage.cache_read_input_tokens.max(0) as f64;
     let uncached_input = (usage.input_tokens as f64 - cached).max(0.0);
     (uncached_input + usage.cache_creation_input_tokens as f64) / 1_000_000.0 * input

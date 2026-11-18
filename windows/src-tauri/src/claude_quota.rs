@@ -83,7 +83,11 @@ fn window_percent(w: Option<&ClaudeUsageWindow>) -> Option<f64> {
     if v <= 0.0 {
         return Some(0.0);
     }
-    Some(if v <= 1.0 { (v * 100.0).min(100.0) } else { v.min(100.0) })
+    Some(if v <= 1.0 {
+        (v * 100.0).min(100.0)
+    } else {
+        v.min(100.0)
+    })
 }
 
 /// Truncate an ISO-8601 timestamp to "YYYY-MM-DD HH:MM" for display.
@@ -107,10 +111,7 @@ fn read_access_token() -> Option<String> {
     let path = paths::claude_credentials_json();
     let text = fs::read_to_string(&path).ok()?;
     let root: serde_json::Value = serde_json::from_str(&text).ok()?;
-    let token = root
-        .get("claudeAiOauth")?
-        .get("accessToken")?
-        .as_str()?;
+    let token = root.get("claudeAiOauth")?.get("accessToken")?.as_str()?;
     let trimmed = token.trim();
     if trimmed.is_empty() {
         None
@@ -178,15 +179,18 @@ fn read_fresh_cache() -> Option<CodexQuotaSnapshot> {
         return None;
     }
     let snap = CodexQuotaSnapshot {
-        available: cache.five_hour_used_percent.is_some()
-            || cache.seven_day_used_percent.is_some(),
+        available: cache.five_hour_used_percent.is_some() || cache.seven_day_used_percent.is_some(),
         five_hour_used_percent: cache.five_hour_used_percent,
         five_hour_resets_at: cache.five_hour_resets_at,
         seven_day_used_percent: cache.seven_day_used_percent,
         seven_day_resets_at: cache.seven_day_resets_at,
         error: None,
     };
-    if snap.available { Some(snap) } else { None }
+    if snap.available {
+        Some(snap)
+    } else {
+        None
+    }
 }
 
 fn write_cache(snap: &CodexQuotaSnapshot, now_secs: u64) {

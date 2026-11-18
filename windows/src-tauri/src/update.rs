@@ -17,10 +17,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use std::os::windows::process::CommandExt;
 
 /// Where the Windows port lives on GitHub. Used for both the API URL and the
 /// Releases page a user is sent to.
@@ -110,7 +110,7 @@ struct GitHubAsset {
 /// a fixed path so the old exe can be overwritten. The portable
 /// `TokenStep_v*.exe` is *not* auto-installable (no fixed path, can't replace
 /// the running image), so we leave it out — those releases can't self-update.
-fn pick_install_asset<'a>(assets: &'a [GitHubAsset]) -> Option<&'a GitHubAsset> {
+fn pick_install_asset(assets: &[GitHubAsset]) -> Option<&GitHubAsset> {
     let mut best: Option<&GitHubAsset> = None;
     for a in assets {
         let name = a.name.to_ascii_lowercase();
@@ -176,7 +176,11 @@ pub fn check() -> UpdateCheck {
     let has_update = honor_skipped(is_newer(&latest, current), &latest);
 
     let (asset_url, asset_name, asset_size) = match pick_install_asset(&release.assets) {
-        Some(a) => (Some(a.browser_download_url.clone()), Some(a.name.clone()), Some(a.size)),
+        Some(a) => (
+            Some(a.browser_download_url.clone()),
+            Some(a.name.clone()),
+            Some(a.size),
+        ),
         None => (None, None, None),
     };
 
@@ -268,7 +272,10 @@ fn fallback_latest_redirect(client: &reqwest::blocking::Client, current: &str) -
         current_version: current.to_string(),
         latest_version: latest,
         release_url: final_url,
-        release_notes: Some("发现新的稳定版本（GitHub API 限速，已通过最新发布页获取），可直接下载安装。".to_string()),
+        release_notes: Some(
+            "发现新的稳定版本（GitHub API 限速，已通过最新发布页获取），可直接下载安装。"
+                .to_string(),
+        ),
         asset_url: Some(asset_url),
         asset_name: Some(asset_name),
         asset_size: None,
@@ -289,9 +296,7 @@ fn release_tag_from_url(url: &str) -> Option<String> {
 
 /// Strip a leading `v`/`V` so "v0.2.0" and "0.2.0" compare equal.
 fn strip_v_prefix(tag: &str) -> String {
-    tag.trim()
-        .trim_start_matches(|c| c == 'v' || c == 'V')
-        .to_string()
+    tag.trim().trim_start_matches(['v', 'V']).to_string()
 }
 
 /// Strict "is `latest` newer than `current`" by numeric segment comparison.
@@ -352,8 +357,13 @@ fn installer_temp_path(version: &str) -> std::path::PathBuf {
 ///
 /// Runs on a background thread (caller is responsible for spawning), so the
 /// blocking reads here never freeze the UI.
-pub fn download<F>(asset_url: &str, _asset_name: &str, expected_size: u64, version: &str, emit: F)
-    -> Option<std::path::PathBuf>
+pub fn download<F>(
+    asset_url: &str,
+    _asset_name: &str,
+    expected_size: u64,
+    version: &str,
+    emit: F,
+) -> Option<std::path::PathBuf>
 where
     F: Fn(DownloadProgress),
 {
@@ -399,7 +409,7 @@ where
     let mut last_emit: u64 = 0;
     loop {
         let n = match reader.read(&mut buf) {
-            Ok(0) => break,            // EOF
+            Ok(0) => break, // EOF
             Ok(n) => n,
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => {
@@ -421,7 +431,11 @@ where
             } else {
                 0.0
             };
-            emit(DownloadProgress { downloaded, total, percent });
+            emit(DownloadProgress {
+                downloaded,
+                total,
+                percent,
+            });
         }
     }
     // Flush + sync so the bytes are on disk before we run it.
@@ -538,7 +552,14 @@ fn escape_bat_path(s: &str) -> String {
 /// Returns `false` if the download failed (so the caller can emit an error
 /// event and let the user retry). Returns `true` only by never returning at
 /// all — on success it runs the installer and exits the process.
-pub fn run_self_update<F>(asset_url: &str, asset_name: &str, asset_size: u64, version: &str, installed_exe: &std::path::Path, emit: F) -> bool
+pub fn run_self_update<F>(
+    asset_url: &str,
+    asset_name: &str,
+    asset_size: u64,
+    version: &str,
+    installed_exe: &std::path::Path,
+    emit: F,
+) -> bool
 where
     F: Fn(DownloadProgress),
 {

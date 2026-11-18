@@ -12,7 +12,14 @@ use reqwest::Proxy;
 /// Resolve the HTTP(S) proxy to use, if any.
 pub fn system_proxy() -> Option<String> {
     // 1. Shell environment (dev / terminal launches).
-    for key in ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"] {
+    for key in [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
         if let Ok(value) = std::env::var(key) {
             let value = value.trim().to_string();
             if !value.is_empty() {
@@ -43,7 +50,8 @@ fn read_windows_registry_proxy() -> Option<String> {
         use winreg::enums::*;
         use winreg::RegKey;
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let Ok(settings) = hkcu.open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
+        let Ok(settings) =
+            hkcu.open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Internet Settings")
         else {
             return None;
         };

@@ -38,9 +38,19 @@ impl UsageErrorKind {
     /// Map a raw error message into a classified kind (keyword fallback —
     /// port of upstream `FreshnessPolicy.classify(error:)` text heuristics;
     /// the URL-layer codes map at the call site).
+    #[allow(dead_code)] // upstream-parity API (v0.2.0 freshness tests)
     pub fn from_error_text(text: &str) -> UsageErrorKind {
         let t = text.to_lowercase();
-        for kw in ["unauthorized", "forbidden", "401", "403", "未授权", "登录", "凭据", "额度"] {
+        for kw in [
+            "unauthorized",
+            "forbidden",
+            "401",
+            "403",
+            "未授权",
+            "登录",
+            "凭据",
+            "额度",
+        ] {
             if t.contains(kw) {
                 return UsageErrorKind::Unauthorized;
             }
@@ -56,7 +66,13 @@ impl UsageErrorKind {
             }
         }
         for kw in [
-            "connect", "network", "dns", "connection", "offline", "网络", "无法连接",
+            "connect",
+            "network",
+            "dns",
+            "connection",
+            "offline",
+            "网络",
+            "无法连接",
         ] {
             if t.contains(kw) {
                 return UsageErrorKind::NetworkFailed;
@@ -69,13 +85,29 @@ impl UsageErrorKind {
 /// One channel's refresh-attempt history (upstream `RefreshAttemptRecord`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct RefreshAttemptRecord {
-    #[serde(rename = "last_attempted_at", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "last_attempted_at",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub last_attempted_at: Option<String>,
-    #[serde(rename = "last_succeeded_at", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "last_succeeded_at",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub last_succeeded_at: Option<String>,
-    #[serde(rename = "last_failed_at", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "last_failed_at",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub last_failed_at: Option<String>,
-    #[serde(rename = "last_error_kind", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "last_error_kind",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub last_error_kind: Option<UsageErrorKind>,
 }
 
@@ -109,6 +141,7 @@ impl RefreshAttemptRecord {
         self.last_error_kind = None;
     }
 
+    #[allow(dead_code)] // upstream-parity API (used when a channel fails)
     pub fn failing(&mut self, kind: UsageErrorKind, now_iso: String) {
         self.last_attempted_at = Some(now_iso.clone());
         self.last_failed_at = Some(now_iso);

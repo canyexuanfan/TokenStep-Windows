@@ -13,7 +13,8 @@ use rusqlite::OpenFlags;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-const PRIMARY_URL: &str = "https://api2.cursor.sh/aiserver.v1.DashboardService/GetFilteredUsageEvents";
+const PRIMARY_URL: &str =
+    "https://api2.cursor.sh/aiserver.v1.DashboardService/GetFilteredUsageEvents";
 const FALLBACK_URL: &str = "https://cursor.com/api/dashboard/get-filtered-usage-events";
 const MAX_PAGES: usize = 20;
 const PAGE_SIZE: usize = 100;
@@ -81,7 +82,11 @@ pub fn read_credential() -> Option<CursorCredential> {
         .ok()
         .flatten();
     let user_id = jwt_subject(&token)?;
-    Some(CursorCredential { user_id, access_token: token, dashboard_user_id })
+    Some(CursorCredential {
+        user_id,
+        access_token: token,
+        dashboard_user_id,
+    })
 }
 
 /// Decode the JWT `sub` claim (base64url payload, second segment).
@@ -174,7 +179,10 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
     let cred = read_credential().ok_or("未登录 Cursor")?;
     let lookback = history_days.clamp(1, 30);
     let tz = chrono::FixedOffset::east_opt(8 * 3600).unwrap();
-    let today = chrono::Utc::now().with_timezone(&tz).format("%Y-%m-%d").to_string();
+    let today = chrono::Utc::now()
+        .with_timezone(&tz)
+        .format("%Y-%m-%d")
+        .to_string();
     let start_day = (chrono::Utc::now().with_timezone(&tz) - chrono::Duration::days(lookback - 1))
         .format("%Y-%m-%d")
         .to_string();
@@ -200,11 +208,10 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
             })
         };
         let primary = fetch_page(PRIMARY_URL, &cred, &body);
-        let mut primary_err = String::new();
         let page_events = match primary {
             Ok(ev) => ev,
             Err(e1) => {
-                primary_err = e1;
+                let primary_err = e1.clone();
                 match fetch_page(FALLBACK_URL, &cred, &body) {
                     Ok(ev) => ev,
                     Err(e2) => {
@@ -255,8 +262,13 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
             for ev in &evs {
                 day.total_tokens += ev.total_tokens();
                 day.cost += ev.charged_cents / 100.0;
-                *day.models.entry(if ev.model.is_empty() { "unknown".into() } else { ev.model.clone() }).or_insert(0) +=
-                    ev.total_tokens();
+                *day.models
+                    .entry(if ev.model.is_empty() {
+                        "unknown".into()
+                    } else {
+                        ev.model.clone()
+                    })
+                    .or_insert(0) += ev.total_tokens();
             }
             day.events = evs;
             day
@@ -274,7 +286,11 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
     Ok(cache)
 }
 
-fn fetch_page(url: &str, cred: &CursorCredential, body: &serde_json::Value) -> Result<Vec<CursorUsageEvent>, String> {
+fn fetch_page(
+    url: &str,
+    cred: &CursorCredential,
+    body: &serde_json::Value,
+) -> Result<Vec<CursorUsageEvent>, String> {
     // Header set mirrors the live-verified recipe (cursor_diag 5th test):
     // Chrome UA, Connect-Protocol-Version, and **Bearer auth with the
     // DECRYPTED WorkOS token**. The cookie form (encrypted blob) 401s on
@@ -298,7 +314,11 @@ fn fetch_page(url: &str, cred: &CursorCredential, body: &serde_json::Value) -> R
     let status = resp.status();
     if !status.is_success() {
         let body_text = resp.text().unwrap_or_default();
-        return Err(format!("HTTP {}: {}", status.as_u16(), body_text.chars().take(160).collect::<String>()));
+        return Err(format!(
+            "HTTP {}: {}",
+            status.as_u16(),
+            body_text.chars().take(160).collect::<String>()
+        ));
     }
     let value: serde_json::Value = resp.json().map_err(|e| format!("json: {e}"))?;
     let rows = value
@@ -365,7 +385,10 @@ fn epoch_ms_to_day(ms: i64) -> String {
 
 fn parse_iso_to_ms(s: &str) -> Option<i64> {
     chrono::DateTime::parse_from_rfc3339(s.trim_end_matches('Z'))
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f").map(|n| n.and_utc().fixed_offset()))
+        .or_else(|_| {
+            chrono::NaiveDateTime::parse_from_str(s.trim_end_matches('Z'), "%Y-%m-%dT%H:%M:%S%.f")
+                .map(|n| n.and_utc().fixed_offset())
+        })
         .ok()
         .map(|dt| dt.timestamp_millis())
 }
@@ -385,10 +408,7 @@ pub fn merge(mut snapshot: UsageSnapshot, days: &[CursorUsageDay]) -> UsageSnaps
             continue;
         }
         // daily
-        let daily = snapshot
-            .daily
-            .iter_mut()
-            .find(|d| d.date == day.date);
+        let daily = snapshot.daily.iter_mut().find(|d| d.date == day.date);
         let daily = match daily {
             Some(d) => d,
             None => {
@@ -406,14 +426,14 @@ pub fn merge(mut snapshot: UsageSnapshot, days: &[CursorUsageDay]) -> UsageSnaps
             *daily.models.entry(m.clone()).or_insert(0) += t;
         }
         // agent work
-        let aw = snapshot
-            .agent_work
-            .iter_mut()
-            .find(|w| w.date == day.date);
+        let aw = snapshot.agent_work.iter_mut().find(|w| w.date == day.date);
         let aw = match aw {
             Some(w) => w,
             None => {
-                snapshot.agent_work.push(DailyAgentWork { date: day.date.clone(), ..Default::default() });
+                snapshot.agent_work.push(DailyAgentWork {
+                    date: day.date.clone(),
+                    ..Default::default()
+                });
                 snapshot.agent_work.last_mut().unwrap()
             }
         };
@@ -435,7 +455,10 @@ pub fn merge(mut snapshot: UsageSnapshot, days: &[CursorUsageDay]) -> UsageSnaps
         // hourly buckets from events
         for ev in &day.events {
             let hour = chrono::DateTime::from_timestamp_millis(ev.timestamp_ms)
-                .map(|dt| dt.with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap()).hour() as i64)
+                .map(|dt| {
+                    dt.with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
+                        .hour() as i64
+                })
                 .unwrap_or(0);
             let bucket = aw.hourly_buckets.iter_mut().find(|b| b.hour == hour);
             let input = ev.input_tokens + ev.cache_read_tokens;
@@ -465,20 +488,22 @@ pub fn merge(mut snapshot: UsageSnapshot, days: &[CursorUsageDay]) -> UsageSnaps
                 });
             }
             // rhythm
-            let rhythm = snapshot
-                .rhythms
-                .iter_mut()
-                .find(|r| r.date == day.date);
+            let rhythm = snapshot.rhythms.iter_mut().find(|r| r.date == day.date);
             let rhythm = match rhythm {
                 Some(r) => r,
                 None => {
-                    snapshot.rhythms.push(DailyRhythm { date: day.date.clone(), ..Default::default() });
+                    snapshot.rhythms.push(DailyRhythm {
+                        date: day.date.clone(),
+                        ..Default::default()
+                    });
                     snapshot.rhythms.last_mut().unwrap()
                 }
             };
             while rhythm.buckets.len() <= hour as usize {
                 let h = rhythm.buckets.len() as i64;
-                rhythm.buckets.push(crate::models::HourlyTokenBucket { hour: h, tokens: 0 });
+                rhythm
+                    .buckets
+                    .push(crate::models::HourlyTokenBucket { hour: h, tokens: 0 });
             }
             rhythm.buckets[hour as usize].tokens += ev.total_tokens();
             rhythm.total_tokens += ev.total_tokens();
@@ -490,7 +515,11 @@ pub fn merge(mut snapshot: UsageSnapshot, days: &[CursorUsageDay]) -> UsageSnaps
                 rhythm.active_hours = rhythm.buckets.iter().filter(|b| b.tokens > 0).count() as i64;
             }
         }
-        aw.active_hours = aw.hourly_buckets.iter().filter(|b| !b.sources.is_empty()).count() as i64;
+        aw.active_hours = aw
+            .hourly_buckets
+            .iter()
+            .filter(|b| !b.sources.is_empty())
+            .count() as i64;
         // totals
         snapshot.totals.tokens += day.total_tokens;
         snapshot.totals.cost += day.cost;
@@ -532,16 +561,23 @@ fn strip_cursor(snapshot: &mut UsageSnapshot) {
         if let Some(aw) = snapshot.agent_work.iter_mut().find(|w| &w.date == date) {
             aw.sources.retain(|s| s.source != "Cursor");
             aw.total_tokens = aw.sources.iter().map(|s| s.tokens).sum();
-            aw.hourly_buckets.iter_mut().for_each(|b| b.sources.retain(|s| s.source != "Cursor"));
+            aw.hourly_buckets
+                .iter_mut()
+                .for_each(|b| b.sources.retain(|s| s.source != "Cursor"));
             aw.hourly_buckets.retain(|b| !b.sources.is_empty());
             aw.active_hours = aw.hourly_buckets.len() as i64;
             aw.model_request_count = aw.sources.iter().map(|s| s.model_request_count).sum();
         }
         if let Some(r) = snapshot.rhythms.iter_mut().find(|r| &r.date == date) {
-            recompute_rhythm_from_agent_work(r, snapshot.agent_work.iter().find(|w| &w.date == date));
+            recompute_rhythm_from_agent_work(
+                r,
+                snapshot.agent_work.iter().find(|w| &w.date == date),
+            );
         }
     }
-    snapshot.daily.retain(|d| d.total_tokens > 0 || !d.tools.is_empty());
+    snapshot
+        .daily
+        .retain(|d| d.total_tokens > 0 || !d.tools.is_empty());
     snapshot.sources.remove("Cursor");
     rebuild_rollups(snapshot);
 }
@@ -557,7 +593,10 @@ fn recompute_rhythm_from_agent_work(r: &mut DailyRhythm, aw: Option<&DailyAgentW
             if t <= 0 {
                 continue;
             }
-            r.buckets.push(crate::models::HourlyTokenBucket { hour: b.hour, tokens: t });
+            r.buckets.push(crate::models::HourlyTokenBucket {
+                hour: b.hour,
+                tokens: t,
+            });
             r.total_tokens += t;
             if t > r.peak_tokens {
                 r.peak_tokens = t;
@@ -590,7 +629,11 @@ fn rebuild_rollups(snapshot: &mut UsageSnapshot) {
     }
     snapshot.tools = tools
         .into_iter()
-        .map(|(tool, tokens)| crate::models::ToolUsage { tool, tokens, percent: None })
+        .map(|(tool, tokens)| crate::models::ToolUsage {
+            tool,
+            tokens,
+            percent: None,
+        })
         .collect();
     snapshot.tools.sort_by(|a, b| b.tokens.cmp(&a.tokens));
     let t_ref = total.max(1) as f64;
@@ -599,7 +642,12 @@ fn rebuild_rollups(snapshot: &mut UsageSnapshot) {
     }
     snapshot.models = models
         .into_iter()
-        .map(|(model, tokens)| crate::models::ModelUsage { model, tool: None, tokens, percent: None })
+        .map(|(model, tokens)| crate::models::ModelUsage {
+            model,
+            tool: None,
+            tokens,
+            percent: None,
+        })
         .collect();
     snapshot.models.sort_by(|a, b| b.tokens.cmp(&a.tokens));
     for m in &mut snapshot.models {
@@ -640,7 +688,10 @@ pub fn read_code_signal() -> Result<CursorCodeSignal, String> {
     if !db.is_file() {
         return Err("missing_db".into());
     }
-    let uri = format!("file:{}?mode=ro", db.display().to_string().replace('\\', "/"));
+    let uri = format!(
+        "file:{}?mode=ro",
+        db.display().to_string().replace('\\', "/")
+    );
     let conn = rusqlite::Connection::open_with_flags(
         &uri,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,

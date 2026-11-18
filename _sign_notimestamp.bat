@@ -8,7 +8,7 @@ if not defined SIGNTOOL (
 )
 set "THUMB=A9E2372BC217D83C27717553132091130C953074"
 set "EXE=F:\zcode\projects\tokenstep\TokenStep\windows\src-tauri\target\release\tokenstep.exe"
-set "SETUP=F:\zcode\projects\tokenstep\TokenStep\windows\src-tauri\target\release\bundle\nsis\TokenStep_0.1.12_x64-setup.exe"
+set "SETUP=F:\zcode\projects\tokenstep\TokenStep\windows\src-tauri\target\release\bundle\nsis\TokenStep_0.1.13_x64-setup.exe"
 echo [patch] applying silent-overwrite patch to installer.nsi
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows\scripts\patch-nsis.ps1"
 if errorlevel 1 (
@@ -21,7 +21,7 @@ echo [sign] %SETUP%
 "%SIGNTOOL%" sign /sha1 %THUMB% /fd SHA256 /d "TokenStep Installer" "%SETUP%"
 echo [deploy] Copying to repo root
 copy /y "%EXE%" "F:\zcode\projects\tokenstep\TokenStep\TokenStep.exe" >nul
-copy /y "%EXE%" "F:\zcode\projects\tokenstep\TokenStep\TokenStep_v0.1.12.exe" >nul
-copy /y "%SETUP%" "F:\zcode\projects\tokenstep\TokenStep\TokenStep_0.1.12_x64-setup.exe" >nul
+copy /y "%EXE%" "F:\zcode\projects\tokenstep\TokenStep\TokenStep_v0.1.13.exe" >nul
+copy /y "%SETUP%" "F:\zcode\projects\tokenstep\TokenStep\TokenStep_0.1.13_x64-setup.exe" >nul
 echo === Done ===
 endlocal

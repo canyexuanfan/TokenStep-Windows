@@ -4,8 +4,8 @@
 //! Card rule (v0.2.1): `should_display = is_available` — an unconfigured or
 //! failed provider renders NOTHING, never 0%. Failures keep the last value.
 
-use base64::Engine as _;
 use crate::net;
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -35,6 +35,7 @@ impl QuotaProvider {
             QuotaProvider::Antigravity => "antigravity",
         }
     }
+    #[allow(dead_code)] // upstream-parity API (settings + tray surfaces)
     pub fn display_name(&self) -> &'static str {
         match self {
             QuotaProvider::Codex => "Codex",
@@ -64,6 +65,7 @@ pub enum QuotaWindowKind {
 }
 
 impl QuotaWindowKind {
+    #[allow(dead_code)] // upstream-parity API (quota card headers)
     pub fn title(&self) -> &'static str {
         use QuotaWindowKind::*;
         match self {
@@ -106,6 +108,7 @@ pub struct QuotaWindow {
 impl QuotaWindow {
     /// Upstream `remainingPercent`: remaining/total*100 when total>0, else
     /// 100 - used, clamped to 0-100.
+    #[allow(dead_code)] // upstream-parity API (T9 low-quota reminder path)
     pub fn remaining_percent(&self) -> f64 {
         let v = if self.total.unwrap_or(0.0) > 0.0 {
             self.remaining.unwrap_or(0.0) / self.total.unwrap() * 100.0
@@ -114,6 +117,7 @@ impl QuotaWindow {
         };
         v.clamp(0.0, 100.0)
     }
+    #[allow(dead_code)] // upstream-parity API (T9 low-quota reminder path)
     pub fn is_low(&self) -> bool {
         self.remaining_percent() < 20.0
     }
@@ -132,12 +136,18 @@ impl ProviderQuota {
     pub fn is_available(&self) -> bool {
         self.status == QuotaStatus::Available && !self.windows.is_empty()
     }
+    #[allow(dead_code)] // upstream-parity API (card-layer filter)
     pub fn should_display(&self) -> bool {
         self.is_available()
     }
+    #[allow(dead_code)] // upstream-parity API (T9 low-quota reminder path)
     pub fn lowest_remaining_percent(&self) -> Option<f64> {
-        self.windows.iter().map(|w| w.remaining_percent()).reduce(f64::min)
+        self.windows
+            .iter()
+            .map(|w| w.remaining_percent())
+            .reduce(f64::min)
     }
+    #[allow(dead_code)] // upstream-parity API (T9 low-quota reminder path)
     pub fn is_low(&self) -> bool {
         self.windows.iter().any(|w| w.is_low())
     }
@@ -168,7 +178,8 @@ mod secrets {
     }
 
     pub fn clear(account: &str) -> Result<(), String> {
-        let k = RegKey::predef(HKEY_CURRENT_USER).open_subkey_with_flags(BASE, KEY_SET_VALUE)
+        let k = RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey_with_flags(BASE, KEY_SET_VALUE)
             .map_err(|e| e.to_string())?;
         let _ = k.delete_value(account);
         Ok(())
@@ -213,7 +224,17 @@ fn json_number(v: &serde_json::Value, keys: &[&str]) -> Option<f64> {
 }
 
 fn percent_from(v: &serde_json::Value) -> Option<f64> {
-    let used = json_number(v, &["used", "usedPercent", "used_percent", "percentUsed", "autoPercentUsed", "apiPercentUsed"])?;
+    let used = json_number(
+        v,
+        &[
+            "used",
+            "usedPercent",
+            "used_percent",
+            "percentUsed",
+            "autoPercentUsed",
+            "apiPercentUsed",
+        ],
+    )?;
     let total = json_number(v, &["total", "totalLimit", "monthlyLimit"]);
     let remaining = json_number(v, &["remaining", "remainingPercent"]);
     if used <= 1.0 && total.is_none() {
@@ -262,10 +283,18 @@ fn glm_token() -> Option<String> {
 pub fn fetch_glm() -> ProviderQuota {
     let provider = QuotaProvider::Glm;
     let Some(token) = glm_token() else {
-        return unavailable(provider, Some("未配置 GLM API Key"), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some("未配置 GLM API Key"),
+            QuotaStatus::Unavailable,
+        );
     };
     if token.starts_with("payg") || token.starts_with("sk-pay") {
-        return unavailable(provider, Some("当前 key 非订阅计划"), QuotaStatus::WrongKeyType);
+        return unavailable(
+            provider,
+            Some("当前 key 非订阅计划"),
+            QuotaStatus::WrongKeyType,
+        );
     }
     let auth = format!("Bearer {}", token);
     let urls = [
@@ -278,9 +307,15 @@ pub fn fetch_glm() -> ProviderQuota {
             let data = value.get("data").unwrap_or(&value).clone();
             let mut windows = Vec::new();
             for (keys, kind) in [
-                (vec!["token_window", "tokenWindow"], QuotaWindowKind::TokenWindow),
+                (
+                    vec!["token_window", "tokenWindow"],
+                    QuotaWindowKind::TokenWindow,
+                ),
                 (vec!["daily", "day"], QuotaWindowKind::FiveHour),
-                (vec!["monthly", "month", "subscription"], QuotaWindowKind::MonthlyCredits),
+                (
+                    vec!["monthly", "month", "subscription"],
+                    QuotaWindowKind::MonthlyCredits,
+                ),
             ] {
                 for k in &keys {
                     if let Some(node) = data.get(*k) {
@@ -298,7 +333,12 @@ pub fn fetch_glm() -> ProviderQuota {
                 }
             }
             if !windows.is_empty() {
-                return ProviderQuota { provider, windows, status: QuotaStatus::Available, message: None };
+                return ProviderQuota {
+                    provider,
+                    windows,
+                    status: QuotaStatus::Available,
+                    message: None,
+                };
             }
         }
     }
@@ -312,8 +352,12 @@ fn kimi_token() -> Option<String> {
     let base = crate::paths::home_dir().join(".kimi");
     for name in ["auth.json", "credentials.json", "oauth.json", "config.json"] {
         let path = base.join(name);
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
         for key in ["access_token", "accessToken", "token", "oauth_token"] {
             if let Some(tok) = v.get(key).and_then(|x| x.as_str()) {
                 let tok = tok.trim();
@@ -332,13 +376,19 @@ pub fn fetch_kimi() -> ProviderQuota {
         return unavailable(provider, Some("未登录 Kimi"), QuotaStatus::NotLoggedIn);
     };
     let auth = format!("Bearer {}", token);
-    for url in ["https://api.kimi.com/coding/usage", "https://www.kimi.com/api/coding/usage"] {
+    for url in [
+        "https://api.kimi.com/coding/usage",
+        "https://www.kimi.com/api/coding/usage",
+    ] {
         if let Ok(value) = http_json(url, &[("Authorization", auth.clone())]) {
             let data = value.get("data").unwrap_or(&value).clone();
             let mut windows = Vec::new();
             for (keys, kind) in [
                 (vec!["session", "session_usage"], QuotaWindowKind::Session),
-                (vec!["weekly", "week", "weekly_usage"], QuotaWindowKind::Weekly),
+                (
+                    vec!["weekly", "week", "weekly_usage"],
+                    QuotaWindowKind::Weekly,
+                ),
             ] {
                 for k in &keys {
                     if let Some(node) = data.get(*k) {
@@ -367,11 +417,20 @@ pub fn fetch_kimi() -> ProviderQuota {
                 }
             }
             if !windows.is_empty() {
-                return ProviderQuota { provider, windows, status: QuotaStatus::Available, message: None };
+                return ProviderQuota {
+                    provider,
+                    windows,
+                    status: QuotaStatus::Available,
+                    message: None,
+                };
             }
         }
     }
-    unavailable(provider, Some("Kimi 额度暂不可用"), QuotaStatus::Unavailable)
+    unavailable(
+        provider,
+        Some("Kimi 额度暂不可用"),
+        QuotaStatus::Unavailable,
+    )
 }
 
 // ── Grok ──────────────────────────────────────────────────────────────────
@@ -385,12 +444,23 @@ fn grok_token_and_user() -> Option<(String, String)> {
         }
     }
     let path = crate::paths::home_dir().join(".grok").join("auth.json");
-    let Ok(text) = std::fs::read_to_string(&path) else { return None };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { return None };
-    for key in ["access_token", "accessToken", "sessionToken", "token", "key"] {
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return None;
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return None;
+    };
+    for key in [
+        "access_token",
+        "accessToken",
+        "sessionToken",
+        "token",
+        "key",
+    ] {
         if let Some(tok) = v.get(key).and_then(|x| x.as_str()) {
             let tok = tok.trim();
-            let looks_session = !tok.starts_with("xai-") && (tok.starts_with("eyJ") || tok.len() >= 40);
+            let looks_session =
+                !tok.starts_with("xai-") && (tok.starts_with("eyJ") || tok.len() >= 40);
             if looks_session {
                 let user = find_json_user_id(&path).unwrap_or_default();
                 return Some((tok.to_string(), user));
@@ -440,7 +510,9 @@ pub fn fetch_grok() -> ProviderQuota {
             ("X-XAI-Token-Auth", "xai-grok-cli".to_string()),
             ("x-userid", user.clone()),
         ];
-        let Ok(value) = http_json(url, &headers) else { continue };
+        let Ok(value) = http_json(url, &headers) else {
+            continue;
+        };
         let data = value.get("data").unwrap_or(&value);
         if let Some(usage) = data.get("creditUsagePercent").and_then(|v| v.as_f64()) {
             let is_weekly = data
@@ -449,31 +521,45 @@ pub fn fetch_grok() -> ProviderQuota {
                 .and_then(|t| t.as_str())
                 .map(|s| s.to_uppercase().contains("WEEK"))
                 .unwrap_or(false);
-            let kind = if is_weekly { QuotaWindowKind::Weekly } else { QuotaWindowKind::MonthlyCredits };
-            windows.insert(kind, QuotaWindow {
+            let kind = if is_weekly {
+                QuotaWindowKind::Weekly
+            } else {
+                QuotaWindowKind::MonthlyCredits
+            };
+            windows.insert(
                 kind,
-                used_percent: usage.clamp(0.0, 100.0),
-                remaining: None,
-                total: None,
-                resets_at: None,
-            });
+                QuotaWindow {
+                    kind,
+                    used_percent: usage.clamp(0.0, 100.0),
+                    remaining: None,
+                    total: None,
+                    resets_at: None,
+                },
+            );
         } else if let (Some(used), Some(limit)) = (
             json_number(data, &["used"]),
             json_number(data, &["monthlyLimit"]),
         ) {
             if limit > 0.0 {
-                windows.insert(QuotaWindowKind::MonthlyCredits, QuotaWindow {
-                    kind: QuotaWindowKind::MonthlyCredits,
-                    used_percent: (used / limit * 100.0).clamp(0.0, 100.0),
-                    remaining: Some(limit - used),
-                    total: Some(limit),
-                    resets_at: None,
-                });
+                windows.insert(
+                    QuotaWindowKind::MonthlyCredits,
+                    QuotaWindow {
+                        kind: QuotaWindowKind::MonthlyCredits,
+                        used_percent: (used / limit * 100.0).clamp(0.0, 100.0),
+                        remaining: Some(limit - used),
+                        total: Some(limit),
+                        resets_at: None,
+                    },
+                );
             }
         }
     }
     if windows.is_empty() {
-        return unavailable(provider, Some("Grok 额度暂不可用"), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some("Grok 额度暂不可用"),
+            QuotaStatus::Unavailable,
+        );
     }
     ProviderQuota {
         provider,
@@ -511,7 +597,11 @@ fn fetch_cursor_once(provider: &QuotaProvider) -> ProviderQuota {
         return unavailable(provider, Some("未登录 Cursor"), QuotaStatus::NotLoggedIn);
     };
     let Some(token) = crate::cursor_safe::decrypt_safe_storage(&blob) else {
-        return unavailable(provider, Some("无法解密 Cursor 凭据（safeStorage）"), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some("无法解密 Cursor 凭据（safeStorage）"),
+            QuotaStatus::Unavailable,
+        );
     };
     let client = match net::blocking_client_direct()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
@@ -545,14 +635,24 @@ fn fetch_cursor_once(provider: &QuotaProvider) -> ProviderQuota {
         Ok(r) if r.status().as_u16() == 401 => {
             return unavailable(
                 provider,
-                Some("Cursor 登录态已过期，请打开 Cursor 应用重新登录后重试".to_string().as_str()),
+                Some(
+                    "Cursor 登录态已过期，请打开 Cursor 应用重新登录后重试"
+                        .to_string()
+                        .as_str(),
+                ),
                 QuotaStatus::NeedsLogin,
             )
         }
         Ok(r) => {
             return unavailable(
                 provider,
-                Some(format!("Cursor 额度暂不可用（dashboard HTTP {}）", r.status().as_u16()).as_str()),
+                Some(
+                    format!(
+                        "Cursor 额度暂不可用（dashboard HTTP {}）",
+                        r.status().as_u16()
+                    )
+                    .as_str(),
+                ),
                 QuotaStatus::Unavailable,
             )
         }
@@ -592,7 +692,10 @@ fn fetch_cursor_once(provider: &QuotaProvider) -> ProviderQuota {
         }
     }
     let dollars = cents / 100.0;
-    let display = format!("本月已用 ${:.2}（{} 次调用）", dollars, calls);
+    let display = format!(
+        "本月已用 ${:.2}（{} 次调用 · {} tokens）",
+        dollars, calls, tokens
+    );
     let windows = vec![QuotaWindow {
         kind: QuotaWindowKind::Spend,
         used_percent: 0.0,
@@ -608,15 +711,20 @@ fn fetch_cursor_once(provider: &QuotaProvider) -> ProviderQuota {
     }
 }
 
-
 pub fn fetch_workbuddy() -> ProviderQuota {
     let provider = QuotaProvider::WorkBuddy;
-    let db = crate::paths::home_dir().join(".workbuddy").join("workbuddy.db");
+    let db = crate::paths::home_dir()
+        .join(".workbuddy")
+        .join("workbuddy.db");
     if !db.is_file() {
         return unavailable(provider, Some("未安装 WorkBuddy"), QuotaStatus::NotLoggedIn);
     }
     let Some(conn) = crate::sqlite_readonly::open_readonly(&db) else {
-        return unavailable(provider, Some("WorkBuddy 数据库暂不可用"), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some("WorkBuddy 数据库暂不可用"),
+            QuotaStatus::Unavailable,
+        );
     };
     // The most recently updated session_usage row is the live quota pool
     // (used / size in credits); older rows are past sessions.
@@ -628,21 +736,39 @@ pub fn fetch_workbuddy() -> ProviderQuota {
         )
         .ok();
     let Some((used, size)) = pool else {
-        return unavailable(provider, Some("暂无 WorkBuddy 用量记录"), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some("暂无 WorkBuddy 用量记录"),
+            QuotaStatus::Unavailable,
+        );
     };
     if size <= 0 {
-        return unavailable(provider, Some("WorkBuddy 配额池无效"), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some("WorkBuddy 配额池无效"),
+            QuotaStatus::Unavailable,
+        );
     }
     let used_percent = (used as f64 / size as f64 * 100.0).clamp(0.0, 100.0);
     let credit_spent: f64 = {
-        let mut stmt = match conn.prepare("select credit_json from session_usage where credit_json is not null") {
+        let mut stmt = match conn
+            .prepare("select credit_json from session_usage where credit_json is not null")
+        {
             Ok(s) => s,
-            Err(_) => return unavailable(provider, Some("WorkBuddy 数据库暂不可用"), QuotaStatus::Unavailable),
+            Err(_) => {
+                return unavailable(
+                    provider,
+                    Some("WorkBuddy 数据库暂不可用"),
+                    QuotaStatus::Unavailable,
+                )
+            }
         };
         let mut total = 0.0;
-        let _ = stmt.query_map([], |r| r.get::<_, String>(0)).and_then(|rows| {
+        let _ = stmt.query_map([], |r| r.get::<_, String>(0)).map(|rows| {
             for row in rows.flatten() {
-                if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(&row) {
+                if let Ok(serde_json::Value::Object(map)) =
+                    serde_json::from_str::<serde_json::Value>(&row)
+                {
                     for v in map.values() {
                         if let Some(n) = v.as_f64() {
                             total += n;
@@ -650,7 +776,6 @@ pub fn fetch_workbuddy() -> ProviderQuota {
                     }
                 }
             }
-            Ok(())
         });
         total
     };
@@ -684,13 +809,17 @@ pub fn fetch_antigravity() -> ProviderQuota {
     let provider = QuotaProvider::Antigravity;
     let db = crate::paths::antigravity_secret_db();
     let Some(conn) = crate::sqlite_readonly::open_readonly(&db) else {
-        return unavailable(provider, Some("未安装 Antigravity"), QuotaStatus::NotLoggedIn);
+        return unavailable(
+            provider,
+            Some("未安装 Antigravity"),
+            QuotaStatus::NotLoggedIn,
+        );
     };
     let key_prefix = r#"secret://{"extensionId":"jlcodes.antigravity-cockpit","key":"antigravity.autoTrigger.credential""#;
     let raw_value = conn
         .query_row(
             "select value from ItemTable where key = ?1",
-            [[&key_prefix[..], "\"}"].concat()],
+            [[key_prefix, "\"}"].concat()],
             |r| r.get::<_, String>(0),
         )
         .ok()
@@ -699,10 +828,15 @@ pub fn fetch_antigravity() -> ProviderQuota {
             let mut stmt = conn
                 .prepare("select value from ItemTable where key like ?1 || '%'")
                 .ok()?;
-            stmt.query_row([format!("{key_prefix}%")], |r| r.get::<_, String>(0)).ok()
+            stmt.query_row([format!("{key_prefix}%")], |r| r.get::<_, String>(0))
+                .ok()
         });
     let Some(raw_value) = raw_value else {
-        return unavailable(provider, Some("未登录 Antigravity（未找到账号凭据）"), QuotaStatus::NotLoggedIn);
+        return unavailable(
+            provider,
+            Some("未登录 Antigravity（未找到账号凭据）"),
+            QuotaStatus::NotLoggedIn,
+        );
     };
     // The secret value is either a JSON Buffer wrapper or raw base64.
     let cipher = serde_json::from_str::<serde_json::Value>(&raw_value)
@@ -716,7 +850,11 @@ pub fn fetch_antigravity() -> ProviderQuota {
                 .collect::<Option<Vec<u8>>>();
             bytes
         })
-        .or_else(|| base64::engine::general_purpose::STANDARD.decode(&raw_value).ok());
+        .or_else(|| {
+            base64::engine::general_purpose::STANDARD
+                .decode(&raw_value)
+                .ok()
+        });
     let Some(cipher) = cipher else {
         return unavailable(provider, Some("凭据格式暂不支持"), QuotaStatus::Unavailable);
     };
@@ -760,14 +898,24 @@ pub fn fetch_antigravity() -> ProviderQuota {
             .unwrap_or_default()
             .to_string();
         if refresh_token.is_empty() || client_id.is_empty() || client_secret.is_empty() {
-            return unavailable(provider, Some("登录态已过期，请打开 Antigravity 重新登录"), QuotaStatus::NeedsLogin);
+            return unavailable(
+                provider,
+                Some("登录态已过期，请打开 Antigravity 重新登录"),
+                QuotaStatus::NeedsLogin,
+            );
         }
         let client = match crate::net::blocking_client()
             .timeout(std::time::Duration::from_secs(30))
             .build()
         {
             Ok(c) => c,
-            Err(_) => return unavailable(provider, Some("网络客户端初始化失败"), QuotaStatus::Unavailable),
+            Err(_) => {
+                return unavailable(
+                    provider,
+                    Some("网络客户端初始化失败"),
+                    QuotaStatus::Unavailable,
+                )
+            }
         };
         let params = [
             ("client_id", client_id.as_str()),
@@ -775,16 +923,32 @@ pub fn fetch_antigravity() -> ProviderQuota {
             ("refresh_token", refresh_token.as_str()),
             ("grant_type", "refresh_token"),
         ];
-        let Ok(resp) = client.post("https://oauth2.googleapis.com/token").form(&params).send() else {
-            return unavailable(provider, Some("刷新登录态失败（网络）"), QuotaStatus::Unavailable);
+        let Ok(resp) = client
+            .post("https://oauth2.googleapis.com/token")
+            .form(&params)
+            .send()
+        else {
+            return unavailable(
+                provider,
+                Some("刷新登录态失败（网络）"),
+                QuotaStatus::Unavailable,
+            );
         };
         let Ok(value) = resp.json::<serde_json::Value>() else {
-            return unavailable(provider, Some("刷新登录态失败（响应异常）"), QuotaStatus::Unavailable);
+            return unavailable(
+                provider,
+                Some("刷新登录态失败（响应异常）"),
+                QuotaStatus::Unavailable,
+            );
         };
         match value.get("access_token").and_then(|v| v.as_str()) {
             Some(t) => access_token = t.to_string(),
             None => {
-                return unavailable(provider, Some("登录态已过期，请打开 Antigravity 重新登录"), QuotaStatus::NeedsLogin)
+                return unavailable(
+                    provider,
+                    Some("登录态已过期，请打开 Antigravity 重新登录"),
+                    QuotaStatus::NeedsLogin,
+                )
             }
         }
     }
@@ -796,9 +960,18 @@ pub fn fetch_antigravity() -> ProviderQuota {
         .build()
     {
         Ok(c) => c,
-        Err(_) => return unavailable(provider, Some("网络客户端初始化失败"), QuotaStatus::Unavailable),
+        Err(_) => {
+            return unavailable(
+                provider,
+                Some("网络客户端初始化失败"),
+                QuotaStatus::Unavailable,
+            )
+        }
     };
-    let project_id = cred.get("projectId").and_then(|v| v.as_str()).unwrap_or_default();
+    let project_id = cred
+        .get("projectId")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     let body = if project_id.is_empty() {
         "{}".to_string()
     } else {
@@ -811,19 +984,35 @@ pub fn fetch_antigravity() -> ProviderQuota {
         .body(body)
         .send()
     else {
-        return unavailable(provider, Some("配额请求失败（网络）"), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some("配额请求失败（网络）"),
+            QuotaStatus::Unavailable,
+        );
     };
     if !resp.status().is_success() {
         let status = resp.status();
         if status.as_u16() == 401 {
-            return unavailable(provider, Some("登录态已过期，请打开 Antigravity 重新登录"), QuotaStatus::NeedsLogin);
+            return unavailable(
+                provider,
+                Some("登录态已过期，请打开 Antigravity 重新登录"),
+                QuotaStatus::NeedsLogin,
+            );
         }
         if status.as_u16() == 403 {
             // Google returns 403 "no valid license" for trial-pool accounts
             // whose trial has been exhausted — the account itself is fine.
-            return unavailable(provider, Some("当前账号无有效订阅许可（账号池请切换账号后再试）"), QuotaStatus::NeedsLogin);
+            return unavailable(
+                provider,
+                Some("当前账号无有效订阅许可（账号池请切换账号后再试）"),
+                QuotaStatus::NeedsLogin,
+            );
         }
-        return unavailable(provider, Some(&format!("配额请求失败（HTTP {status}）")), QuotaStatus::Unavailable);
+        return unavailable(
+            provider,
+            Some(&format!("配额请求失败（HTTP {status}）")),
+            QuotaStatus::Unavailable,
+        );
     }
     let Ok(value) = resp.json::<serde_json::Value>() else {
         return unavailable(provider, Some("配额响应解析失败"), QuotaStatus::Unavailable);
@@ -838,7 +1027,10 @@ pub fn fetch_antigravity() -> ProviderQuota {
                         .and_then(|v| v.as_f64())
                         .unwrap_or(1.0);
                     let window_id = bucket.get("window").and_then(|v| v.as_str()).unwrap_or("");
-                    let bucket_id = bucket.get("bucketId").and_then(|v| v.as_str()).unwrap_or("");
+                    let bucket_id = bucket
+                        .get("bucketId")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     let kind = if bucket_id.contains("5h") || window_id.contains("5") {
                         QuotaWindowKind::FiveHour
                     } else if bucket_id.contains("weekly") || window_id.contains("week") {
@@ -851,7 +1043,10 @@ pub fn fetch_antigravity() -> ProviderQuota {
                         used_percent: (1.0 - frac).clamp(0.0, 1.0) * 100.0,
                         remaining: None,
                         total: None,
-                        resets_at: bucket.get("resetTime").and_then(|v| v.as_str()).map(String::from),
+                        resets_at: bucket
+                            .get("resetTime")
+                            .and_then(|v| v.as_str())
+                            .map(String::from),
                     });
                 }
             }
@@ -873,10 +1068,13 @@ pub fn fetch_antigravity() -> ProviderQuota {
     }
 }
 
-
 // ── coordinator ───────────────────────────────────────────────────────────
 
-fn unavailable(provider: QuotaProvider, message: Option<&str>, status: QuotaStatus) -> ProviderQuota {
+fn unavailable(
+    provider: QuotaProvider,
+    message: Option<&str>,
+    status: QuotaStatus,
+) -> ProviderQuota {
     ProviderQuota {
         provider,
         windows: vec![],
@@ -914,7 +1112,9 @@ pub fn fetch_providers(providers: &[QuotaProvider]) -> BTreeMap<String, Provider
     }
     drop(tx);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(12);
-    while let Ok(quota) = rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+    while let Ok(quota) =
+        rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+    {
         out.insert(quota.provider.id().to_string(), quota);
     }
     for p in providers {

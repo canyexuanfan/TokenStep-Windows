@@ -8,14 +8,18 @@ use tokenstep_lib as app;
 fn main() {
     let cred = match app::cursor_credential_for_check() {
         Some(c) => c,
-        None => { println!("no credential"); return; }
+        None => {
+            println!("no credential");
+            return;
+        }
     };
     let client = reqwest::blocking::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36")
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .unwrap();
-    let body = serde_json::json!({"startDate": 1790000000000i64, "endDate": 1799999999999i64}).to_string();
+    let body =
+        serde_json::json!({"startDate": 1790000000000i64, "endDate": 1799999999999i64}).to_string();
     let resp = client
         .post("https://api2.cursor.sh/aiserver.v1.DashboardService/GetFilteredUsageEvents")
         .header("Content-Type", "application/json")
@@ -27,7 +31,9 @@ fn main() {
     let status = resp.status();
     let value: serde_json::Value = resp.json().unwrap_or_default();
     println!("status: {}", status);
-    let events = value.pointer("/usageEventsDisplay").and_then(|v| v.as_array());
+    let events = value
+        .pointer("/usageEventsDisplay")
+        .and_then(|v| v.as_array());
     match events {
         Some(list) => {
             println!("events: {}", list.len());
@@ -38,8 +44,9 @@ fn main() {
                 println!("  ts={} model={} tokenUsage={}", ts, model, tu);
             }
         }
-        None => println!("no usageEventsDisplay; keys: {:?}", value.as_object().map(|o| o.keys().collect::<Vec<_>>())),
+        None => println!(
+            "no usageEventsDisplay; keys: {:?}",
+            value.as_object().map(|o| o.keys().collect::<Vec<_>>())
+        ),
     }
 }
-
-

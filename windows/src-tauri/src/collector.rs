@@ -10,8 +10,8 @@
 //! on Windows.
 
 use crate::models::{
-    DailyAgentWork, DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, RhythmTag,
-    SourceInfo, TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
+    DailyAgentWork, DailyRhythm, DailyUsage, HourlyTokenBucket, ModelUsage, RhythmTag, SourceInfo,
+    TokenUsageCounts, ToolUsage, UsageSnapshot, UsageTotals,
 };
 use crate::paths;
 use crate::pricing;
@@ -51,7 +51,10 @@ pub struct UsageRecord {
 /// (ZCode / Hermes / WorkBuddy) key off the master switch alone; T1 agent
 /// sources (Gemini CLI / Qwen / Kimi / OpenCode / Amp / Droid / Grok) follow
 /// the per-source list semantics of `agent_sources::enabled_ids`.
-pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec<String>>) -> UsageSnapshot {
+pub fn collect(
+    include_experimental: bool,
+    _experimental_source_ids: Option<&Vec<String>>,
+) -> UsageSnapshot {
     let pricing_data = pricing::load();
 
     // One shared collector cache for the whole pass: each collector only
@@ -74,21 +77,40 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     let (zcode_records, zcode_source) = if include_experimental {
         collect_zcode()
     } else {
-        (vec![], SourceInfo { status: Some("disabled".into()), ..Default::default() })
+        (
+            vec![],
+            SourceInfo {
+                status: Some("disabled".into()),
+                ..Default::default()
+            },
+        )
     };
     let (hermes_records, hermes_source) = if include_experimental {
         collect_hermes()
     } else {
-        (vec![], SourceInfo { status: Some("disabled".into()), ..Default::default() })
+        (
+            vec![],
+            SourceInfo {
+                status: Some("disabled".into()),
+                ..Default::default()
+            },
+        )
     };
     let (workbuddy_records, workbuddy_source) = if include_experimental {
         collect_workbuddy(&mut cache)
     } else {
-        (vec![], SourceInfo { status: Some("disabled".into()), ..Default::default() })
+        (
+            vec![],
+            SourceInfo {
+                status: Some("disabled".into()),
+                ..Default::default()
+            },
+        )
     };
     records.extend(zcode_records.iter().cloned());
     records.extend(hermes_records.iter().cloned());
-    let (cursor_transcript_records, cursor_transcript_source) = collect_cursor_transcripts(&mut cache);
+    let (cursor_transcript_records, cursor_transcript_source) =
+        collect_cursor_transcripts(&mut cache);
     records.extend(cursor_transcript_records.iter().cloned());
     records.extend(workbuddy_records.iter().cloned());
     let (minimax_records, minimax_source) = collect_minimax();
@@ -97,7 +119,6 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     records.extend(dsh_records.iter().cloned());
     let (antigravity_records, antigravity_source) = collect_antigravity(&mut cache);
     records.extend(antigravity_records.iter().cloned());
-
 
     // Stamp per-source record counts (recount precisely per tool, since the
     // CC Switch source name differs from its record `tool` strings — e.g.
@@ -111,7 +132,9 @@ pub fn collect(include_experimental: bool, _experimental_source_ids: Option<&Vec
     // CC Switch groups several tool names ("X via CC Switch"); sum them.
     let ccswitch_count: i64 = counts
         .iter()
-        .filter(|(k, _)| k.ends_with("via CC Switch") || k.ends_with("via CC Switch (experimental)"))
+        .filter(|(k, _)| {
+            k.ends_with("via CC Switch") || k.ends_with("via CC Switch (experimental)")
+        })
         .map(|(_, v)| *v)
         .sum();
     ccswitch_source.records = Some(ccswitch_count);
@@ -160,7 +183,8 @@ static CODEX_SCAN_MEMO: std::sync::Mutex<Option<CodexScanOutcome>> = std::sync::
 /// Set while a codex-scan thread is alive. While it stays set (thread stuck
 /// on slow storage), later passes serve the memo instead of spawning more
 /// threads — one detached thread max, not one per refresh interval.
-static CODEX_SCAN_IN_FLIGHT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static CODEX_SCAN_IN_FLIGHT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     // Primary: JSONL rollouts (per-turn token counts), matching the Python
@@ -177,32 +201,35 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     let (tx, rx) = std::sync::mpsc::channel::<CodexScanOutcome>();
     let mut spawn_ok = false;
     if !CODEX_SCAN_IN_FLIGHT.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        spawn_ok = std::thread::Builder::new().name("codex-scan".into()).spawn(move || {
-            let mut local_cache = CollectorCache {
-                version: COLLECTOR_CACHE_VERSION,
-                files: job_files,
-            };
-            let mut live_paths = BTreeSet::new();
-            let (records, files, timed_out) = collect_codex_jsonl(&mut local_cache, &mut live_paths);
-            let codex_entries: BTreeMap<String, CachedUsageFile> = local_cache
-                .files
-                .into_iter()
-                .filter(|(_, e)| e.tool == "Codex")
-                .collect();
-            let outcome = CodexScanOutcome {
-                records,
-                files,
-                timed_out,
-                live_paths,
-                codex_entries,
-            };
-            if let Ok(mut memo) = CODEX_SCAN_MEMO.lock() {
-                *memo = Some(outcome.clone());
-            }
-            let _ = tx.send(outcome);
-            CODEX_SCAN_IN_FLIGHT.store(false, std::sync::atomic::Ordering::SeqCst);
-        })
-        .is_ok();
+        spawn_ok = std::thread::Builder::new()
+            .name("codex-scan".into())
+            .spawn(move || {
+                let mut local_cache = CollectorCache {
+                    version: COLLECTOR_CACHE_VERSION,
+                    files: job_files,
+                };
+                let mut live_paths = BTreeSet::new();
+                let (records, files, timed_out) =
+                    collect_codex_jsonl(&mut local_cache, &mut live_paths);
+                let codex_entries: BTreeMap<String, CachedUsageFile> = local_cache
+                    .files
+                    .into_iter()
+                    .filter(|(_, e)| e.tool == "Codex")
+                    .collect();
+                let outcome = CodexScanOutcome {
+                    records,
+                    files,
+                    timed_out,
+                    live_paths,
+                    codex_entries,
+                };
+                if let Ok(mut memo) = CODEX_SCAN_MEMO.lock() {
+                    *memo = Some(outcome.clone());
+                }
+                let _ = tx.send(outcome);
+                CODEX_SCAN_IN_FLIGHT.store(false, std::sync::atomic::Ordering::SeqCst);
+            })
+            .is_ok();
     }
     let outcome = if spawn_ok {
         match rx.recv_timeout(CODEX_SCAN_WAIT) {
@@ -233,7 +260,11 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
                 });
             }
         }
-        let status = if records.is_empty() { "degraded_scan_timeout" } else { "cached_scan_timeout" };
+        let status = if records.is_empty() {
+            "degraded_scan_timeout"
+        } else {
+            "cached_scan_timeout"
+        };
         let count = records.len() as i64;
         return (
             records,
@@ -270,7 +301,11 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
         return (
             outcome.records,
             SourceInfo {
-                status: Some(if scan_timed_out { "ok_scan_timeout".to_string() } else { "ok".to_string() }),
+                status: Some(if scan_timed_out {
+                    "ok_scan_timeout".to_string()
+                } else {
+                    "ok".to_string()
+                }),
                 files: Some(files),
                 records: None,
                 ..Default::default()
@@ -284,7 +319,11 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
             return (
                 records,
                 SourceInfo {
-                    status: Some(if scan_timed_out { "ok_sqlite_scan_timeout".to_string() } else { "ok_sqlite".to_string() }),
+                    status: Some(if scan_timed_out {
+                        "ok_sqlite_scan_timeout".to_string()
+                    } else {
+                        "ok_sqlite".to_string()
+                    }),
                     files: Some(files as i64),
                     records: None,
                     ..Default::default()
@@ -296,7 +335,11 @@ fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     (
         Vec::new(),
         SourceInfo {
-            status: Some(if scan_timed_out { "degraded_scan_timeout".to_string() } else { "missing".to_string() }),
+            status: Some(if scan_timed_out {
+                "degraded_scan_timeout".to_string()
+            } else {
+                "missing".to_string()
+            }),
             files: Some(files),
             records: None,
             ..Default::default()
@@ -341,8 +384,10 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
             Some(d) => d,
             None => continue,
         };
-        let mut usage = TokenUsageCounts::default();
-        usage.total_tokens = tokens as i64;
+        let usage = TokenUsageCounts {
+            total_tokens: tokens as i64,
+            ..Default::default()
+        };
         records.push(UsageRecord {
             date: day,
             timestamp: None, // Codex SQLite threads table has no sub-day resolution
@@ -383,17 +428,49 @@ fn collect_codex_jsonl(
     cache: &mut CollectorCache,
     live_paths: &mut BTreeSet<String>,
 ) -> (Vec<UsageRecord>, i64, bool) {
+    collect_codex_jsonl_scoped(cache, live_paths, CodexScanScope::default())
+}
+
+/// Testability seam for the Codex JSONL scan (0.1.13 T2): production callers
+/// use `Default` (real roots + the standard budget deadline). Regression
+/// tests inject a fixture root plus SEPARATE walk/parse deadlines — an
+/// expired PARSE deadline with a live WALK deadline reproduces the 0.1.12
+/// crash state (files enumerated, then Phase 0 skips uncached files, metas
+/// go partially None) without touching the user's sessions directory.
+#[derive(Clone, Copy, Default)]
+struct CodexScanScope<'a> {
+    roots_override: Option<&'a [PathBuf]>,
+    walk_deadline_override: Option<std::time::Instant>,
+    parse_deadline_override: Option<std::time::Instant>,
+}
+
+/// Fork metadata per rollout file: (key, own session, parent session,
+/// created_at epoch secs). Kept as a type alias - the metas list must stay
+/// index-aligned with the enumerated file list (0.1.12 crash fix).
+type CodexFileMeta = (String, String, Option<String>, Option<f64>);
+
+fn collect_codex_jsonl_scoped(
+    cache: &mut CollectorCache,
+    live_paths: &mut BTreeSet<String>,
+    scope: CodexScanScope<'_>,
+) -> (Vec<UsageRecord>, i64, bool) {
     let scan_started = std::time::Instant::now();
-    let scan_deadline = scan_started + CODEX_SCAN_BUDGET;
+    let walk_deadline = scope
+        .walk_deadline_override
+        .unwrap_or_else(|| scan_started + CODEX_SCAN_BUDGET);
+    let scan_deadline = scope.parse_deadline_override.unwrap_or(walk_deadline);
     codex_scan_diag_write(serde_json::json!({
         "phase": "walk_start",
         "elapsed_ms": 0,
     }));
-    let roots = paths::codex_jsonl_roots();
+    let roots: Vec<PathBuf> = scope
+        .roots_override
+        .map(|r| r.to_vec())
+        .unwrap_or_else(paths::codex_jsonl_roots);
     let mut all_paths = Vec::new();
     let mut scan_timed_out = false;
     for root in &roots {
-        let (mut files, timed_out) = jsonl_files_under_budget(root, scan_deadline);
+        let (mut files, timed_out) = jsonl_files_under_budget(root, walk_deadline);
         scan_timed_out |= timed_out;
         all_paths.append(&mut files);
     }
@@ -408,13 +485,14 @@ fn collect_codex_jsonl(
     // all_paths: deadline-exceeded files push None (skipped in later phases).
     // (A plain Vec<..> here once desynced from all_paths and Phase 2 indexed
     // metas[index] out of bounds → panic=abort killed the whole app.)
-    let mut metas: Vec<Option<(String, String, Option<String>, Option<f64>)>> =
-        Vec::with_capacity(all_paths.len());
+    let mut metas: Vec<Option<CodexFileMeta>> = Vec::with_capacity(all_paths.len());
     for path in &all_paths {
         let key = path.to_string_lossy().to_string();
         live_paths.insert(key.clone());
         let cached_meta = cache.files.get(&key).filter(|e| {
-            let Some((size, mtime)) = file_meta(path) else { return false };
+            let Some((size, mtime)) = file_meta(path) else {
+                return false;
+            };
             entry_is_fresh(entry_meta(e), size, mtime)
         });
         if let Some(entry) = cached_meta {
@@ -422,7 +500,12 @@ fn collect_codex_jsonl(
                 .codex_session
                 .clone()
                 .unwrap_or_else(|| fallback_session_from_path(path));
-            metas.push(Some((key, session, entry.codex_parent_session.clone(), entry.codex_created_at)));
+            metas.push(Some((
+                key,
+                session,
+                entry.codex_parent_session.clone(),
+                entry.codex_created_at,
+            )));
             continue;
         }
         if std::time::Instant::now() >= scan_deadline {
@@ -478,8 +561,7 @@ fn collect_codex_jsonl(
             continue;
         };
         let key = key.clone();
-        let (own_session, parent, created_at) =
-            (own_session.clone(), parent.clone(), *created_at);
+        let (own_session, parent, created_at) = (own_session.clone(), parent.clone(), *created_at);
         if index % 5 == 0 || index + 1 == all_paths.len() {
             codex_scan_diag_write(serde_json::json!({
                 "phase": "parse",
@@ -565,7 +647,10 @@ fn collect_codex_jsonl(
                 let ev_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
                 let payload = obj.get("payload");
                 if ev_type == "turn_context" {
-                    if let Some(m) = payload.and_then(|p| p.get("model")).and_then(|v| v.as_str()) {
+                    if let Some(m) = payload
+                        .and_then(|p| p.get("model"))
+                        .and_then(|v| v.as_str())
+                    {
                         if !m.is_empty() {
                             final_model_inc = model_key(m);
                         }
@@ -590,7 +675,10 @@ fn collect_codex_jsonl(
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
                 events_inc.push(CodexTokenEvent {
-                    timestamp: obj.get("timestamp").and_then(|v| v.as_str()).map(String::from),
+                    timestamp: obj
+                        .get("timestamp")
+                        .and_then(|v| v.as_str())
+                        .map(String::from),
                     model: final_model_inc.clone(),
                     cumulative,
                     last,
@@ -608,7 +696,8 @@ fn collect_codex_jsonl(
             };
             let mut seq = vec![head];
             seq.extend(events_inc.iter().cloned());
-            let mut seen_inc: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            let mut seen_inc: std::collections::BTreeSet<String> =
+                std::collections::BTreeSet::new();
             let new_records = codex_delta_records(
                 &session_id_inc,
                 &seq,
@@ -647,18 +736,23 @@ fn collect_codex_jsonl(
                 Some(CachedAnchor::from_usage(ts, u))
             });
             let mut merged_anchors = entry.codex_anchors.clone();
-            merged_anchors.extend(thin_anchors(events_inc.iter().filter_map(|e| {
-                let u = e.cumulative.as_ref()?;
-                if u.total_tokens <= 0 {
-                    return None;
-                }
-                let ts = e
-                    .timestamp
-                    .as_deref()
-                    .and_then(parse_iso)
-                    .map(|dt| dt.timestamp() as f64)?;
-                Some(CachedAnchor::from_usage(ts, u))
-            }).collect()));
+            merged_anchors.extend(thin_anchors(
+                events_inc
+                    .iter()
+                    .filter_map(|e| {
+                        let u = e.cumulative.as_ref()?;
+                        if u.total_tokens <= 0 {
+                            return None;
+                        }
+                        let ts = e
+                            .timestamp
+                            .as_deref()
+                            .and_then(parse_iso)
+                            .map(|dt| dt.timestamp() as f64)?;
+                        Some(CachedAnchor::from_usage(ts, u))
+                    })
+                    .collect(),
+            ));
             if let Some(t) = tail_anchor {
                 merged_anchors.push(t);
             }
@@ -700,7 +794,9 @@ fn collect_codex_jsonl(
         // Stream the file line-by-line instead of read_to_string, so a 9.7 GB
         // rollout never sits fully in memory (memory optimization, port of
         // macOS commit 170f655). Single line is parsed + dropped each iteration.
-        let Ok(file) = fs::File::open(path) else { continue };
+        let Ok(file) = fs::File::open(path) else {
+            continue;
+        };
         let reader = std::io::BufReader::new(file);
         use std::io::BufRead;
         for line in reader.lines().map_while(Result::ok) {
@@ -725,7 +821,10 @@ fn collect_codex_jsonl(
                 }
             }
             if ev_type == "turn_context" {
-                if let Some(m) = payload.and_then(|p| p.get("model")).and_then(|v| v.as_str()) {
+                if let Some(m) = payload
+                    .and_then(|p| p.get("model"))
+                    .and_then(|v| v.as_str())
+                {
                     if !m.is_empty() {
                         final_model = model_key(m);
                     }
@@ -773,10 +872,7 @@ fn collect_codex_jsonl(
             .and_then(|anchors| anchors.first())
             .map(|a| a.usage())
             .filter(|u| u.total_tokens > 0);
-        let inherited_from = parent_anchor
-            .as_ref()
-            .map(|a| a.total_tokens)
-            .unwrap_or(0);
+        let inherited_from = parent_anchor.as_ref().map(|a| a.total_tokens).unwrap_or(0);
 
         let file_records = codex_delta_records(
             &session_id,
@@ -900,7 +996,11 @@ fn codex_head_meta(path: &Path) -> (String, Option<String>, Option<f64>) {
         let created = obj
             .get("timestamp")
             .and_then(|v| v.as_str())
-            .or_else(|| payload.and_then(|p| p.get("timestamp")).and_then(|v| v.as_str()))
+            .or_else(|| {
+                payload
+                    .and_then(|p| p.get("timestamp"))
+                    .and_then(|v| v.as_str())
+            })
             .and_then(parse_iso)
             .map(|dt| dt.timestamp() as f64);
         return (id, parent, created);
@@ -939,7 +1039,9 @@ fn codex_parent_session_id(payload: Option<&serde_json::Value>) -> Option<String
 fn codex_scan_anchors(path: &Path) -> Vec<CachedAnchor> {
     use std::io::BufRead;
     let mut anchors: Vec<CachedAnchor> = Vec::new();
-    let Ok(file) = fs::File::open(path) else { return anchors };
+    let Ok(file) = fs::File::open(path) else {
+        return anchors;
+    };
     let reader = std::io::BufReader::new(file);
     for line in reader.lines().map_while(Result::ok) {
         if !line.contains("token_count") {
@@ -951,13 +1053,12 @@ fn codex_scan_anchors(path: &Path) -> Vec<CachedAnchor> {
         if obj.get("type").and_then(|v| v.as_str()) != Some("event_msg") {
             continue;
         }
-        let Some(info) = obj
-            .get("payload")
-            .and_then(|p| p.get("info"))
-        else {
+        let Some(info) = obj.get("payload").and_then(|p| p.get("info")) else {
             continue;
         };
-        let Some(cumulative) = info.get("total_token_usage") else { continue };
+        let Some(cumulative) = info.get("total_token_usage") else {
+            continue;
+        };
         let usage = normalize_usage(Some(cumulative));
         if usage.total_tokens <= 0 {
             continue;
@@ -981,7 +1082,10 @@ fn codex_scan_anchors(path: &Path) -> Vec<CachedAnchor> {
 
 /// Upstream `codexAnchor(atOrBefore:)`: binary search for the newest anchor
 /// whose timestamp is <= the child's creation time.
-fn codex_anchor_at_or_before(created_at: Option<f64>, anchors: &[CachedAnchor]) -> Option<TokenUsageCounts> {
+fn codex_anchor_at_or_before(
+    created_at: Option<f64>,
+    anchors: &[CachedAnchor],
+) -> Option<TokenUsageCounts> {
     let created = created_at?;
     let idx = anchors.partition_point(|a| a.ts <= created);
     if idx == 0 {
@@ -1075,11 +1179,14 @@ fn entry_meta(entry: &CachedUsageFile) -> (u64, f64) {
 }
 
 fn entry_is_fresh_by_meta(entry: &CachedUsageFile, path: &Path) -> bool {
-    let Some((size, mtime)) = file_meta(path) else { return false };
+    let Some((size, mtime)) = file_meta(path) else {
+        return false;
+    };
     entry_is_fresh(entry_meta(entry), size, mtime)
 }
 
 /// Codex-specific cache write carrying fork metadata + anchors.
+#[allow(clippy::too_many_arguments)]
 fn update_codex_cache(
     cache: &mut CollectorCache,
     key: &str,
@@ -1153,7 +1260,9 @@ fn codex_breakdown_consistent(u: &TokenUsageCounts, total: i64) -> bool {
 /// Upstream `isCodexContextWindowSentinel`: an all-zero cumulative whose total
 /// equals the model context window is a synthetic marker, not usage.
 fn codex_is_context_window_sentinel(event: &CodexTokenEvent) -> bool {
-    let Some(c) = event.cumulative.as_ref() else { return false };
+    let Some(c) = event.cumulative.as_ref() else {
+        return false;
+    };
     c.input_tokens == 0
         && c.output_tokens == 0
         && c.cache_creation_input_tokens == 0
@@ -1181,14 +1290,17 @@ fn codex_is_credible_reset(
         }
     }
     for candidate in events.iter().skip(index + 1) {
-        let Some(next) = candidate.cumulative.as_ref() else { continue };
+        let Some(next) = candidate.cumulative.as_ref() else {
+            continue;
+        };
         if next.total_tokens <= 0 {
             continue;
         }
         if next.total_tokens == current.total_tokens {
             continue;
         }
-        return next.total_tokens > current.total_tokens && next.total_tokens < previous.total_tokens;
+        return next.total_tokens > current.total_tokens
+            && next.total_tokens < previous.total_tokens;
     }
     false
 }
@@ -1217,26 +1329,27 @@ fn codex_increment_usage(
         && current.cache_read_input_tokens >= prev.cache_read_input_tokens
         && current.reasoning_output_tokens >= prev.reasoning_output_tokens;
     if monotonic {
-        let mut result = TokenUsageCounts {
+        let result = TokenUsageCounts {
             input_tokens: current.input_tokens - prev.input_tokens,
             output_tokens: current.output_tokens - prev.output_tokens,
             cache_creation_input_tokens: current.cache_creation_input_tokens
                 - prev.cache_creation_input_tokens,
             cache_read_input_tokens: current.cache_read_input_tokens - prev.cache_read_input_tokens,
-            reasoning_output_tokens: current.reasoning_output_tokens
-                - prev.reasoning_output_tokens,
+            reasoning_output_tokens: current.reasoning_output_tokens - prev.reasoning_output_tokens,
             total_tokens: total,
         };
         if codex_breakdown_consistent(&result, total) {
             return result;
         }
-        result = TokenUsageCounts::default();
-        result.total_tokens = total;
-        return result;
+        return TokenUsageCounts {
+            total_tokens: total,
+            ..Default::default()
+        };
     }
-    let mut result = TokenUsageCounts::default();
-    result.total_tokens = total;
-    result
+    TokenUsageCounts {
+        total_tokens: total,
+        ..Default::default()
+    }
 }
 
 /// Upstream `codexDeltaRecords`: turn one file's token_count events into
@@ -1258,12 +1371,18 @@ fn codex_delta_records(
         // Legacy schema: only `last_token_usage` exists — use it directly
         // (upstream "codex_last_usage_legacy_estimate").
         for event in events {
-            let Some(usage) = event.last.as_ref() else { continue };
+            let Some(usage) = event.last.as_ref() else {
+                continue;
+            };
             if usage.total_tokens <= 0 {
                 continue;
             }
-            let Some(timestamp) = event.timestamp.as_ref() else { continue };
-            let Some(day) = day_string_from_iso(timestamp) else { continue };
+            let Some(timestamp) = event.timestamp.as_ref() else {
+                continue;
+            };
+            let Some(day) = day_string_from_iso(timestamp) else {
+                continue;
+            };
             let fingerprint = format!(
                 "{}:{}:{}:{}:{}:{}",
                 usage.input_tokens,
@@ -1349,12 +1468,18 @@ fn codex_delta_records(
         if !event.cumulative_present() {
             continue;
         }
-        let Some(current) = event.cumulative.as_ref() else { continue };
+        let Some(current) = event.cumulative.as_ref() else {
+            continue;
+        };
         if current.total_tokens <= 0 {
             continue;
         }
-        let Some(timestamp) = event.timestamp.as_ref() else { continue };
-        let Some(day) = day_string_from_iso(timestamp) else { continue };
+        let Some(timestamp) = event.timestamp.as_ref() else {
+            continue;
+        };
+        let Some(day) = day_string_from_iso(timestamp) else {
+            continue;
+        };
 
         let (delta_total, is_reset): (i64, bool);
         match previous.as_ref() {
@@ -1399,8 +1524,10 @@ fn codex_delta_records(
             event.last.as_ref(),
             delta_total,
         );
-        let request_id =
-            format!("codex:cumulative:{session_id}:{epoch}:{}", current.total_tokens);
+        let request_id = format!(
+            "codex:cumulative:{session_id}:{epoch}:{}",
+            current.total_tokens
+        );
         if !seen.insert(request_id) {
             previous = Some(current.clone());
             continue;
@@ -1431,16 +1558,17 @@ fn claude_response_key(
     path_key: &str,
     line_no: usize,
 ) -> String {
-    for value in [
+    for s in [
         message.get("id").and_then(|v| v.as_str()),
         obj.get("requestId").and_then(|v| v.as_str()),
         obj.get("request_id").and_then(|v| v.as_str()),
-    ] {
-        if let Some(s) = value {
-            let t = s.trim();
-            if !t.is_empty() {
-                return format!("response:{}", t);
-            }
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let t = s.trim();
+        if !t.is_empty() {
+            return format!("response:{}", t);
         }
     }
     if let Some(uuid) = obj.get("uuid").and_then(|v| v.as_str()) {
@@ -1491,7 +1619,7 @@ fn collect_claude_code(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
         let key = path.to_string_lossy().to_string();
         live_paths.insert(key.clone());
 
-        if let Some(cached) = cached_records(&cache, &key, "Claude Code", path) {
+        if let Some(cached) = cached_records(cache, &key, "Claude Code", path) {
             records.extend(cached);
             continue;
         }
@@ -1503,10 +1631,12 @@ fn collect_claude_code(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
         // uuid-only dedupe kept the FIRST one, which could be the partial
         // pre-stop row. We now keep the preferred candidate: prefer a row
         // WITH stop_reason, then the newer timestamp, then the later line.
-        let file_records: Vec<UsageRecord>;
+
         let mut responses: BTreeMap<String, ClaudeCandidate> = BTreeMap::new();
         // Stream line-by-line (memory optimization, port of macOS 170f655).
-        let Ok(file) = fs::File::open(path) else { continue };
+        let Ok(file) = fs::File::open(path) else {
+            continue;
+        };
         let reader = std::io::BufReader::new(file);
         use std::io::BufRead;
         for (line_no, line) in reader.lines().map_while(Result::ok).enumerate() {
@@ -1539,12 +1669,7 @@ fn collect_claude_code(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
                 .and_then(|v| v.as_str())
                 .map(|s| !s.trim().is_empty())
                 .unwrap_or(false);
-            let model = model_key(
-                message
-                    .get("model")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(""),
-            );
+            let model = model_key(message.get("model").and_then(|v| v.as_str()).unwrap_or(""));
             let candidate = ClaudeCandidate {
                 day,
                 timestamp: timestamp.to_string(),
@@ -1560,7 +1685,7 @@ fn collect_claude_code(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
             }
             responses.insert(response_key, candidate);
         }
-        file_records = responses
+        let file_records: Vec<UsageRecord> = responses
             .values()
             .map(|c| UsageRecord {
                 date: c.day.clone(),
@@ -1625,11 +1750,27 @@ fn cc_switch_epoch_day(v: &rusqlite::types::Value) -> Option<String> {
         Value::Null => return None,
         Value::Blob(b) => String::from_utf8_lossy(b).parse().ok()?,
     };
-    let secs: i64 = if raw > 1e12 { (raw / 1000.0) as i64 } else { raw as i64 };
+    let secs: i64 = if raw > 1e12 {
+        (raw / 1000.0) as i64
+    } else {
+        raw as i64
+    };
     let tz = local_tz();
     let dt = tz.timestamp_opt(secs, 0).single()?;
     Some(dt.format("%Y-%m-%d").to_string())
 }
+
+/// One CC Switch proxy-log row (values as returned by SQLite, pre-coercion).
+type CCSwitchRow = (
+    rusqlite::types::Value,
+    rusqlite::types::Value,
+    rusqlite::types::Value,
+    rusqlite::types::Value,
+    rusqlite::types::Value,
+    rusqlite::types::Value,
+    rusqlite::types::Value,
+    rusqlite::types::Value,
+);
 
 fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
     let missing = |status: &str| {
@@ -1644,7 +1785,10 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
         )
     };
 
-    let db_path = match paths::ccswitch_db_candidates().into_iter().find(|p| p.exists()) {
+    let db_path = match paths::ccswitch_db_candidates()
+        .into_iter()
+        .find(|p| p.exists())
+    {
         Some(p) => p,
         None => return missing("missing_db"),
     };
@@ -1670,9 +1814,19 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
     // data_source is intentionally NOT required (older DBs lack it; upstream
     // v0.1.32 treats it as optional).
     let required: BTreeSet<&str> = [
-        "request_id", "app_type", "provider_id", "model", "request_model",
-        "pricing_model", "input_tokens", "output_tokens", "cache_read_tokens",
-        "cache_creation_tokens", "total_cost_usd", "status_code", "created_at",
+        "request_id",
+        "app_type",
+        "provider_id",
+        "model",
+        "request_model",
+        "pricing_model",
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cache_creation_tokens",
+        "total_cost_usd",
+        "status_code",
+        "created_at",
     ]
     .into_iter()
     .collect();
@@ -1714,11 +1868,7 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
         data_source_filter
     );
 
-    let row_data: Vec<(
-        rusqlite::types::Value, rusqlite::types::Value, rusqlite::types::Value,
-        rusqlite::types::Value, rusqlite::types::Value, rusqlite::types::Value,
-        rusqlite::types::Value, rusqlite::types::Value,
-    )> = match conn.prepare(&sql) {
+    let row_data: Vec<CCSwitchRow> = match conn.prepare(&sql) {
         Ok(mut s) => match s.query_map([], |row| {
             Ok((
                 row.get::<_, rusqlite::types::Value>(0)?,
@@ -1738,17 +1888,36 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
     };
 
     let mut records = Vec::new();
-    for (created_at, app_type, display_model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, total_cost_usd) in row_data {
-        let day = match cc_switch_epoch_day(&created_at) { Some(d) => d, None => continue };
+    for (
+        created_at,
+        app_type,
+        display_model,
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+        cache_creation_tokens,
+        total_cost_usd,
+    ) in row_data
+    {
+        let day = match cc_switch_epoch_day(&created_at) {
+            Some(d) => d,
+            None => continue,
+        };
         let input = sqlite_value_as_f64(&input_tokens) as i64;
         let output = sqlite_value_as_f64(&output_tokens) as i64;
         let cache_read = sqlite_value_as_f64(&cache_read_tokens) as i64;
         let cache_creation = sqlite_value_as_f64(&cache_creation_tokens) as i64;
         let total = input + output + cache_read + cache_creation;
-        if total <= 0 { continue; }
+        if total <= 0 {
+            continue;
+        }
         let cost_usd = {
             let raw = sqlite_value_as_f64(&total_cost_usd);
-            if raw.is_finite() && raw > 0.0 { Some(raw) } else { None }
+            if raw.is_finite() && raw > 0.0 {
+                Some(raw)
+            } else {
+                None
+            }
         };
         records.push(UsageRecord {
             date: day,
@@ -1767,7 +1936,11 @@ fn collect_ccswitch() -> (Vec<UsageRecord>, SourceInfo) {
         });
     }
 
-    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let status = if records.is_empty() {
+        "missing_valid_rows"
+    } else {
+        "ok"
+    };
     let count = records.len();
     (
         records,
@@ -1799,7 +1972,9 @@ fn aggregate(
         let cost = record
             .cost_usd
             .filter(|c| c.is_finite())
-            .unwrap_or_else(|| pricing::estimate_cost(&record.usage, &record.tool, &record.model, pricing_data));
+            .unwrap_or_else(|| {
+                pricing::estimate_cost(&record.usage, &record.tool, &record.model, pricing_data)
+            });
 
         let daily_entry = daily
             .entry(record.date.clone())
@@ -1807,17 +1982,10 @@ fn aggregate(
                 date: record.date.clone(),
                 ..Default::default()
             });
-        *daily_entry
-            .tools
-            .entry(record.tool.clone())
-            .or_insert(0) += record.usage.total_tokens;
-        *daily_entry
-            .models
-            .entry(record.model.clone())
-            .or_insert(0) += record.usage.total_tokens;
+        *daily_entry.tools.entry(record.tool.clone()).or_insert(0) += record.usage.total_tokens;
+        *daily_entry.models.entry(record.model.clone()).or_insert(0) += record.usage.total_tokens;
         daily_entry.total_tokens += record.usage.total_tokens;
         daily_entry.cost += cost;
-
 
         // Rhythm: bucket this record's tokens into its hour-of-day (0-23),
         // but only when we have a sub-day timestamp. Mirrors upstream
@@ -1985,7 +2153,11 @@ impl RhythmAccumulator {
             &self.hourly_tokens,
             &significant,
             total_tokens,
-            if peak_hour >= 0 { Some(peak_hour) } else { None },
+            if peak_hour >= 0 {
+                Some(peak_hour)
+            } else {
+                None
+            },
             peak_tokens,
             active_hours,
             first_active_hour,
@@ -1995,7 +2167,11 @@ impl RhythmAccumulator {
             date: self.date,
             buckets,
             total_tokens,
-            peak_hour: if peak_hour >= 0 { Some(peak_hour) } else { None },
+            peak_hour: if peak_hour >= 0 {
+                Some(peak_hour)
+            } else {
+                None
+            },
             peak_tokens,
             active_hours,
             first_active_hour,
@@ -2035,8 +2211,13 @@ impl RhythmAccumulator {
         if peak_share >= 0.50 {
             return RhythmTag::OneShot;
         }
-        let night_share = share(tokens_in_hours(&[21, 22, 23, 0, 1, 2], significant), total_tokens);
-        if night_share >= 0.35 || (peak_hour.map(|h| h >= 21 || h <= 2).unwrap_or(false) && night_share >= 0.25) {
+        let night_share = share(
+            tokens_in_hours(&[21, 22, 23, 0, 1, 2], significant),
+            total_tokens,
+        );
+        if night_share >= 0.35
+            || (peak_hour.map(|h| h >= 21 || h <= 2).unwrap_or(false) && night_share >= 0.25)
+        {
             return RhythmTag::NightAgent;
         }
         let evening_share = share(tokens_in_hours(&[19, 20], significant), total_tokens);
@@ -2116,7 +2297,9 @@ fn tokens_in_hours(hours: &[i32], significant: &[i64]) -> i64 {
 
 /// Sum tokens across an inclusive range of hours.
 fn tokens_in_hours_range(start: i32, end: i32, significant: &[i64]) -> i64 {
-    (start..=end).filter_map(|h| significant.get(h as usize)).sum()
+    (start..=end)
+        .filter_map(|h| significant.get(h as usize))
+        .sum()
 }
 
 /// Ratio of `part` to `whole`, as an f64 in [0,1]. Guards divide-by-zero.
@@ -2161,7 +2344,11 @@ fn iso_from_epoch(v: &rusqlite::types::Value) -> Option<String> {
         Value::Null => return None,
         Value::Blob(b) => String::from_utf8_lossy(b).parse().ok()?,
     };
-    let secs: i64 = if raw > 1e12 { (raw / 1000.0) as i64 } else { raw as i64 };
+    let secs: i64 = if raw > 1e12 {
+        (raw / 1000.0) as i64
+    } else {
+        raw as i64
+    };
     let tz = local_tz();
     let dt = tz.timestamp_opt(secs, 0).single()?;
     Some(dt.format("%Y-%m-%dT%H:%M:%S%:z").to_string())
@@ -2320,10 +2507,7 @@ fn jsonl_files_under(root: &Path) -> Vec<PathBuf> {
 /// trees hit the newest days first) and stops at `deadline`.
 /// Returns (files, timed_out); `timed_out` means the tree was NOT fully
 /// enumerated and the result must not be treated as exhaustive.
-fn jsonl_files_under_budget(
-    root: &Path,
-    deadline: std::time::Instant,
-) -> (Vec<PathBuf>, bool) {
+fn jsonl_files_under_budget(root: &Path, deadline: std::time::Instant) -> (Vec<PathBuf>, bool) {
     let mut dir_cache = load_codex_dir_cache();
     let mut out: Vec<PathBuf> = Vec::new();
     // Descending sort: pop() takes the "largest" name first → newest first
@@ -2337,9 +2521,11 @@ fn jsonl_files_under_budget(
         }
         let dir_key = dir.to_string_lossy().to_string();
         let dir_mtime = fs::metadata(&dir).ok().and_then(|m| {
-            m.modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs_f64()))
+            m.modified().ok().and_then(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .ok()
+                    .map(|d| d.as_secs_f64())
+            })
         });
         // Short-circuit: directory unchanged since the last walk — reuse its
         // cached direct file list and only descend into its subdirectories
@@ -2380,7 +2566,10 @@ fn jsonl_files_under_budget(
                 CodexDirEntry {
                     mtime,
                     files,
-                    subdirs: dirs.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+                    subdirs: dirs
+                        .iter()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .collect(),
                 },
             );
         }
@@ -2455,11 +2644,23 @@ struct CachedUsageFile {
     /// creation time, and the file's cumulative anchors — used so freshly
     /// scanned fork files can inherit the parent's counter instead of
     /// re-counting the inherited history.
-    #[serde(default, rename = "codex_session", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "codex_session",
+        skip_serializing_if = "Option::is_none"
+    )]
     codex_session: Option<String>,
-    #[serde(default, rename = "codex_parent_session", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "codex_parent_session",
+        skip_serializing_if = "Option::is_none"
+    )]
     codex_parent_session: Option<String>,
-    #[serde(default, rename = "codex_created_at", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "codex_created_at",
+        skip_serializing_if = "Option::is_none"
+    )]
     codex_created_at: Option<f64>,
     /// Incremental append cursor: how many bytes of this file were already
     /// parsed into `records` (v12). Codex rollouts are append-only; a grown
@@ -2562,7 +2763,10 @@ fn load_cache() -> CollectorCache {
     let head = String::from_utf8_lossy(&head[..n]);
     if let Some(pos) = head.find("\"version\"") {
         let rest = head[pos + 9..].trim_start_matches([' ', ':', '\n', '\r', '\t']);
-        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+        let digits: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '-')
+            .collect();
         if let Ok(v) = digits.parse::<i32>() {
             if v != COLLECTOR_CACHE_VERSION {
                 return CollectorCache::default();
@@ -2613,10 +2817,7 @@ fn cached_records(
 ) -> Option<Vec<UsageRecord>> {
     let meta = file_meta(path)?;
     let entry = cache.files.get(key)?;
-    if entry.tool != tool
-        || entry.size != meta.0
-        || (entry.mtime - meta.1).abs() >= 0.001
-    {
+    if entry.tool != tool || entry.size != meta.0 || (entry.mtime - meta.1).abs() >= 0.001 {
         return None;
     }
     Some(
@@ -2665,13 +2866,14 @@ fn update_cache(
 // Experimental agent sources (port of upstream v0.1.44)
 // ---------------------------------------------------------------------------
 
-/// Read ZCode agent usage from `~/.zcode/cli/db/db.sqlite`.
-/// ZCode's `input_tokens` already includes cached tokens.
-///
-/// v0.2.0 (upstream 2826aac): the SQL is now *constructed conditionally* —
-/// `provider_total_tokens` may be absent on older schemas, and the optional
-/// `session` table (when present) is joined to pull `session.directory` as
-/// the project dimension.
+// Read ZCode agent usage from `~/.zcode/cli/db/db.sqlite`.
+// ZCode's `input_tokens` already includes cached tokens.
+//
+// v0.2.0 (upstream 2826aac): the SQL is now *constructed conditionally* —
+// `provider_total_tokens` may be absent on older schemas, and the optional
+// `session` table (when present) is joined to pull `session.directory` as
+// the project dimension.
+
 // ── Cursor transcript estimation (v0.1.12) ────────────────────────────────
 // Cursor's official usage API covers only Cursor-billed (official) models —
 // third-party-model usage emits no events. The agent transcripts under
@@ -2688,6 +2890,8 @@ fn is_cjk_char(c: char) -> bool {
         || (0xFF00..=0xFFEF).contains(&u)
 }
 
+#[allow(dead_code)] // 0.1.12 Cursor estimation helper (kept for the T12
+                    // precision-upgrade path)
 fn estimate_tokens_from_text(text: &str) -> i64 {
     let mut cjk = 0f64;
     let mut other = 0f64;
@@ -2703,7 +2907,9 @@ fn estimate_tokens_from_text(text: &str) -> i64 {
 
 fn parse_cursor_ts(tag: &str) -> Option<i64> {
     // "<timestamp>Thursday, Sep 3, 2026, 11:18 PM (UTC+8)</timestamp>"
-    let inner = tag.strip_prefix("<timestamp>")?.strip_suffix("</timestamp>")?;
+    let inner = tag
+        .strip_prefix("<timestamp>")?
+        .strip_suffix("</timestamp>")?;
     let rest = inner.trim();
     let tz_hours: i32 = rest
         .rfind("(UTC")
@@ -2716,10 +2922,22 @@ fn parse_cursor_ts(tag: &str) -> Option<i64> {
             digits.trim_start_matches('+').parse::<i32>().ok()
         })
         .unwrap_or(8);
-    let cleaned = rest.split(',').skip(1).collect::<Vec<_>>().join(",").trim().to_string();
-    let cleaned = cleaned.split('(').next().unwrap_or(&cleaned).trim().to_string();
+    let cleaned = rest
+        .split(',')
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join(",")
+        .trim()
+        .to_string();
+    let cleaned = cleaned
+        .split('(')
+        .next()
+        .unwrap_or(&cleaned)
+        .trim()
+        .to_string();
     let naive =
-        chrono::NaiveDateTime::parse_from_str(&format!("{cleaned}:00"), "%b %d, %Y, %I:%M:%S %p").ok()?;
+        chrono::NaiveDateTime::parse_from_str(&format!("{cleaned}:00"), "%b %d, %Y, %I:%M:%S %p")
+            .ok()?;
     let offset = chrono::FixedOffset::east_opt(tz_hours * 3600)?;
     Some(offset.from_local_datetime(&naive).single()?.timestamp())
 }
@@ -2739,15 +2957,17 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
         let query_result = conn
             .prepare("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData%'")
             .and_then(|mut st| {
-                st.query_map([], |r| {
-                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-                })
+                st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
                     .map(|rows| rows.collect::<Result<Vec<_>, _>>().unwrap_or_default())
             });
         if let Ok(rows) = query_result {
             for row in rows {
                 if let Ok(j) = serde_json::from_str::<serde_json::Value>(&row.1) {
-                    let id = row.0.strip_prefix("composerData:").unwrap_or("").to_string();
+                    let id = row
+                        .0
+                        .strip_prefix("composerData:")
+                        .unwrap_or("")
+                        .to_string();
                     let model = j
                         .pointer("/modelConfig/modelName")
                         .and_then(|v| v.as_str())
@@ -2806,7 +3026,9 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
                     for item in content {
                         if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
                             if role == "user" {
-                                if let (Some(a), Some(b)) = (t.find("<timestamp>"), t.find("</timestamp>")) {
+                                if let (Some(a), Some(b)) =
+                                    (t.find("<timestamp>"), t.find("</timestamp>"))
+                                {
                                     if let Some(ts) = parse_cursor_ts(&t[a..=b]) {
                                         let d = day_string_from_epoch(ts as f64);
                                         if day_from_line.is_none() {
@@ -2930,6 +3152,7 @@ fn collect_cursor_transcripts(cache: &mut CollectorCache) -> (Vec<UsageRecord>, 
 ///   - `~/.minimax/sqlite.db` table `token_usage` (May–Jul 2026 era)
 ///   - `~/.minimax/v2/sqlite/runtime-state.sqlite` table
 ///     `local_runtime_token_usage` (live store, Jul 2026 → now)
+///
 /// Schema: id / session_id / agent_name / framework_type / turn_id / model
 /// ("minimax/MiniMax-M3", often NULL in the live store) / ts (epoch ms) /
 /// input_tokens / output_tokens / reasoning_tokens / cache_read_tokens /
@@ -2947,7 +3170,10 @@ fn collect_minimax() -> (Vec<UsageRecord>, SourceInfo) {
     let mut dbs_ok = 0usize;
     for (path, table) in [
         (paths::minimax_db_path(), "token_usage"),
-        (paths::minimax_runtime_db_path(), "local_runtime_token_usage"),
+        (
+            paths::minimax_runtime_db_path(),
+            "local_runtime_token_usage",
+        ),
     ] {
         if !path.exists() {
             continue;
@@ -2965,12 +3191,15 @@ fn collect_minimax() -> (Vec<UsageRecord>, SourceInfo) {
         _ => "ok",
     };
     let count = records.len() as i64;
-    (records, SourceInfo {
-        status: Some(status.into()),
-        files: Some(dbs_ok as i64),
-        records: Some(count),
-        ..Default::default()
-    })
+    (
+        records,
+        SourceInfo {
+            status: Some(status.into()),
+            files: Some(dbs_ok as i64),
+            records: Some(count),
+            ..Default::default()
+        },
+    )
 }
 
 /// Read one MiniMax usage SQLite store; returns (records, schema_ok).
@@ -3001,10 +3230,20 @@ fn read_minimax_usage_db(
         })
         .unwrap_or_default();
     let required_cols = [
-        "model", "ts", "turn_id", "input_tokens", "output_tokens", "reasoning_tokens",
-        "cache_read_tokens", "cache_write_tokens", "cost_usd",
+        "model",
+        "ts",
+        "turn_id",
+        "input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "cost_usd",
     ];
-    if required_cols.iter().any(|c| !available_columns.contains(*c)) {
+    if required_cols
+        .iter()
+        .any(|c| !available_columns.contains(*c))
+    {
         return (vec![], false);
     }
     let sql = format!(
@@ -3038,7 +3277,16 @@ order by {table}.ts, {table}.id"#
         let cache_read: i64 = row.get(5)?;
         let cache_write: i64 = row.get(6)?;
         let cost: f64 = row.get(7)?;
-        Ok((model, ts_ms, input, output, reasoning, cache_read, cache_write, cost))
+        Ok((
+            model,
+            ts_ms,
+            input,
+            output,
+            reasoning,
+            cache_read,
+            cache_write,
+            cost,
+        ))
     });
     let mut records = Vec::new();
     if let Ok(iter) = rows {
@@ -3046,7 +3294,8 @@ order by {table}.ts, {table}.id"#
             let (model, ts_ms, input, output, reasoning, cache_read, cache_write, cost) = row;
             // Cross-store dedup: full-row fingerprint (turn_id is NOT unique —
             // one turn fans out to many API-call rows).
-            let fingerprint = format!("{ts_ms}/{input}/{output}/{cache_read}/{cache_write}/{reasoning}");
+            let fingerprint =
+                format!("{ts_ms}/{input}/{output}/{cache_read}/{cache_write}/{reasoning}");
             if !seen_rows.insert(fingerprint) {
                 continue;
             }
@@ -3111,9 +3360,7 @@ fn collect_dsh_tokenlens() -> Option<(Vec<UsageRecord>, SourceInfo)> {
     let path = paths::dsh_tokenlens_cache();
     let text = fs::read_to_string(&path).ok()?;
     let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
-    let Some(files_map) = value.get("files").and_then(|v| v.as_object()) else {
-        return None;
-    };
+    let files_map = value.get("files").and_then(|v| v.as_object())?;
     // Aggregate (day, model) → counts across all session files.
     let mut by_day_model: BTreeMap<(String, String), (i64, i64, i64, i64)> = BTreeMap::new();
     for entry in files_map.values() {
@@ -3133,8 +3380,14 @@ fn collect_dsh_tokenlens() -> Option<(Vec<UsageRecord>, SourceInfo)> {
             for (day, counts) in today {
                 let input = counts.get("input").and_then(|v| v.as_i64()).unwrap_or(0);
                 let output = counts.get("output").and_then(|v| v.as_i64()).unwrap_or(0);
-                let cache_read = counts.get("cacheRead").and_then(|v| v.as_i64()).unwrap_or(0);
-                let cache_write = counts.get("cacheWrite").and_then(|v| v.as_i64()).unwrap_or(0);
+                let cache_read = counts
+                    .get("cacheRead")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let cache_write = counts
+                    .get("cacheWrite")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
                 let sum = input + output + cache_read + cache_write;
                 if sum <= 0 {
                     continue;
@@ -3169,36 +3422,52 @@ fn collect_dsh_tokenlens() -> Option<(Vec<UsageRecord>, SourceInfo)> {
             cost_usd: None,
         });
     }
-    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let status = if records.is_empty() {
+        "missing_valid_rows"
+    } else {
+        "ok"
+    };
     let count = records.len() as i64;
-    Some((records, SourceInfo {
-        status: Some(status.into()),
-        files: Some(files_map.len() as i64),
-        records: Some(count),
-        ..Default::default()
-    }))
+    Some((
+        records,
+        SourceInfo {
+            status: Some(status.into()),
+            files: Some(files_map.len() as i64),
+            records: Some(count),
+            ..Default::default()
+        },
+    ))
 }
 
 /// Billing-journal fallback (rebuilt 2026-11-16; per-call totals only).
 fn collect_dsh_journal() -> (Vec<UsageRecord>, SourceInfo) {
     let path = paths::dsh_usage_json();
     let Ok(text) = fs::read_to_string(&path) else {
-        return (vec![], SourceInfo {
-            status: Some("missing".into()),
-            ..Default::default()
-        });
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("missing".into()),
+                ..Default::default()
+            },
+        );
     };
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return (vec![], SourceInfo {
-            status: Some("unreadable".into()),
-            ..Default::default()
-        });
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("unreadable".into()),
+                ..Default::default()
+            },
+        );
     };
     let Some(events) = value.get("events").and_then(|v| v.as_array()) else {
-        return (vec![], SourceInfo {
-            status: Some("no_events".into()),
-            ..Default::default()
-        });
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("no_events".into()),
+                ..Default::default()
+            },
+        );
     };
     let mut records = Vec::new();
     for ev in events {
@@ -3236,14 +3505,21 @@ fn collect_dsh_journal() -> (Vec<UsageRecord>, SourceInfo) {
             cost_usd: None,
         });
     }
-    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let status = if records.is_empty() {
+        "missing_valid_rows"
+    } else {
+        "ok"
+    };
     let count = records.len() as i64;
-    (records, SourceInfo {
-        status: Some(status.into()),
-        files: Some(1),
-        records: Some(count),
-        ..Default::default()
-    })
+    (
+        records,
+        SourceInfo {
+            status: Some(status.into()),
+            files: Some(1),
+            records: Some(count),
+            ..Default::default()
+        },
+    )
 }
 
 /// Antigravity (Google IDE / agy CLI) per-turn usage from the brain
@@ -3311,7 +3587,9 @@ fn collect_antigravity(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
                     records.extend(cached);
                     continue;
                 }
-                let Ok(text) = fs::read_to_string(&path) else { continue };
+                let Ok(text) = fs::read_to_string(&path) else {
+                    continue;
+                };
                 let meta_day = fs::metadata(&path)
                     .ok()
                     .and_then(|m| m.modified().ok())
@@ -3340,21 +3618,23 @@ fn collect_antigravity(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
                             }
                         }
                     }
-                    let input = obj.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let output = obj.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                    let cache_read =
-                        obj.get("cache_read_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let input = obj
+                        .get("input_tokens")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let output = obj
+                        .get("output_tokens")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
+                    let cache_read = obj
+                        .get("cache_read_tokens")
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0);
                     if input <= 0 && output <= 0 {
                         continue;
                     }
                     let usage = crate::agent_sources::canonical_counts(
-                        input,
-                        output,
-                        cache_read,
-                        0,
-                        0,
-                        false,
-                        None,
+                        input, output, cache_read, 0, 0, false, None,
                     );
                     let stamp = obj
                         .get("created_at")
@@ -3426,32 +3706,45 @@ fn collect_antigravity(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceI
 fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
     let db_path = paths::zcode_db_path();
     if !db_path.exists() {
-        return (vec![], SourceInfo {
-            status: Some("missing_db".into()),
-            ..Default::default()
-        });
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("missing_db".into()),
+                ..Default::default()
+            },
+        );
     }
     let conn = match rusqlite::Connection::open_with_flags(
         &db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     ) {
         Ok(c) => c,
-        Err(_) => return (vec![], SourceInfo {
-            status: Some("unreadable_db".into()),
-            ..Default::default()
-        }),
+        Err(_) => {
+            return (
+                vec![],
+                SourceInfo {
+                    status: Some("unreadable_db".into()),
+                    ..Default::default()
+                },
+            )
+        }
     };
     // Verify schema: table model_usage must exist with key columns.
     let has_table = conn
-        .prepare("SELECT count(*) as n FROM sqlite_master WHERE type='table' AND name='model_usage'")
+        .prepare(
+            "SELECT count(*) as n FROM sqlite_master WHERE type='table' AND name='model_usage'",
+        )
         .and_then(|mut s| s.query_row([], |r| r.get::<_, i64>(0)))
         .map(|n| n > 0)
         .unwrap_or(false);
     if !has_table {
-        return (vec![], SourceInfo {
-            status: Some("missing_table".into()),
-            ..Default::default()
-        });
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("missing_table".into()),
+                ..Default::default()
+            },
+        );
     }
     // Probe required columns via pragma table_info (upstream v0.2.0).
     let available_columns: BTreeSet<String> = conn
@@ -3468,15 +3761,30 @@ fn collect_zcode() -> (Vec<UsageRecord>, SourceInfo) {
         })
         .unwrap_or_default();
     let required_cols = [
-        "id", "session_id", "status", "started_at", "model_id", "input_tokens",
-        "output_tokens", "reasoning_tokens", "cache_creation_input_tokens",
-        "cache_read_input_tokens", "computed_total_tokens", "tool_call_count",
+        "id",
+        "session_id",
+        "status",
+        "started_at",
+        "model_id",
+        "input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "computed_total_tokens",
+        "tool_call_count",
     ];
-    if required_cols.iter().any(|c| !available_columns.contains(*c)) {
-        return (vec![], SourceInfo {
-            status: Some("schema_mismatch".into()),
-            ..Default::default()
-        });
+    if required_cols
+        .iter()
+        .any(|c| !available_columns.contains(*c))
+    {
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("schema_mismatch".into()),
+                ..Default::default()
+            },
+        );
     }
     // Optional pieces, decided BEFORE拼接 (the v0.2.0 fix): provider totals
     // column and the session join for project_directory.
@@ -3529,14 +3837,21 @@ order by model_usage.started_at, model_usage.id"#
     );
     let mut stmt = match conn.prepare(sql.as_str()) {
         Ok(s) => s,
-        Err(_) => return (vec![], SourceInfo {
-            status: Some("schema_mismatch".into()),
-            ..Default::default()
-        }),
+        Err(_) => {
+            return (
+                vec![],
+                SourceInfo {
+                    status: Some("schema_mismatch".into()),
+                    ..Default::default()
+                },
+            )
+        }
     };
     let rows = stmt.query_map([], |row| {
         let started_at: f64 = row.get(0)?;
-        let model: String = row.get::<_, Option<String>>(1)?.unwrap_or_else(|| "unknown".into());
+        let model: String = row
+            .get::<_, Option<String>>(1)?
+            .unwrap_or_else(|| "unknown".into());
         let input: i64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0);
         let output: i64 = row.get::<_, Option<i64>>(3)?.unwrap_or(0);
         let reasoning: i64 = row.get::<_, Option<i64>>(4)?.unwrap_or(0);
@@ -3560,7 +3875,11 @@ order by model_usage.started_at, model_usage.id"#
             cache_create,
             reasoning,
             true,
-            Some(if computed_total > 0 { computed_total } else { provider_total }),
+            Some(if computed_total > 0 {
+                computed_total
+            } else {
+                provider_total
+            }),
         );
         let date = day_string_from_epoch(started_at);
         let ts = iso_string_from_epoch(started_at);
@@ -3579,14 +3898,21 @@ order by model_usage.started_at, model_usage.id"#
             records.push(r);
         }
     }
-    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let status = if records.is_empty() {
+        "missing_valid_rows"
+    } else {
+        "ok"
+    };
     let count = records.len() as i64;
-    (records, SourceInfo {
-        status: Some(status.into()),
-        files: Some(1),
-        records: Some(count),
-        ..Default::default()
-    })
+    (
+        records,
+        SourceInfo {
+            status: Some(status.into()),
+            files: Some(1),
+            records: Some(count),
+            ..Default::default()
+        },
+    )
 }
 
 /// Read Hermes agent usage from `~/.hermes/state.db`.
@@ -3594,30 +3920,41 @@ order by model_usage.started_at, model_usage.id"#
 fn collect_hermes() -> (Vec<UsageRecord>, SourceInfo) {
     let db_path = paths::hermes_db_path();
     if !db_path.exists() {
-        return (vec![], SourceInfo {
-            status: Some("missing_db".into()),
-            ..Default::default()
-        });
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("missing_db".into()),
+                ..Default::default()
+            },
+        );
     }
     let conn = match rusqlite::Connection::open_with_flags(
         &db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     ) {
         Ok(c) => c,
-        Err(_) => return (vec![], SourceInfo {
-            status: Some("unreadable_db".into()),
-            ..Default::default()
-        }),
+        Err(_) => {
+            return (
+                vec![],
+                SourceInfo {
+                    status: Some("unreadable_db".into()),
+                    ..Default::default()
+                },
+            )
+        }
     };
     let has_table = conn
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'")
-        .and_then(|mut s| Ok(s.exists([])?))
+        .and_then(|mut s| s.exists([]))
         .unwrap_or(false);
     if !has_table {
-        return (vec![], SourceInfo {
-            status: Some("missing_table".into()),
-            ..Default::default()
-        });
+        return (
+            vec![],
+            SourceInfo {
+                status: Some("missing_table".into()),
+                ..Default::default()
+            },
+        );
     }
     let sql = r#"SELECT
         id, started_at, model,
@@ -3629,10 +3966,15 @@ fn collect_hermes() -> (Vec<UsageRecord>, SourceInfo) {
         ORDER BY started_at, id"#;
     let mut stmt = match conn.prepare(sql) {
         Ok(s) => s,
-        Err(_) => return (vec![], SourceInfo {
-            status: Some("schema_mismatch".into()),
-            ..Default::default()
-        }),
+        Err(_) => {
+            return (
+                vec![],
+                SourceInfo {
+                    status: Some("schema_mismatch".into()),
+                    ..Default::default()
+                },
+            )
+        }
     };
     let rows = stmt.query_map([], |row| {
         let started_at: f64 = row.get(1)?;
@@ -3670,14 +4012,21 @@ fn collect_hermes() -> (Vec<UsageRecord>, SourceInfo) {
             records.push(r);
         }
     }
-    let status = if records.is_empty() { "missing_valid_rows" } else { "ok" };
+    let status = if records.is_empty() {
+        "missing_valid_rows"
+    } else {
+        "ok"
+    };
     let count = records.len() as i64;
-    (records, SourceInfo {
-        status: Some(status.into()),
-        files: Some(1),
-        records: Some(count),
-        ..Default::default()
-    })
+    (
+        records,
+        SourceInfo {
+            status: Some(status.into()),
+            files: Some(1),
+            records: Some(count),
+            ..Default::default()
+        },
+    )
 }
 
 /// WorkBuddy usage collector (v0.1.12): reads the per-project JSONL event
@@ -3699,20 +4048,42 @@ fn collect_workbuddy(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInf
                 records.extend(cached);
                 continue;
             }
-            let Ok(text) = fs::read_to_string(&path) else { continue };
+            let Ok(text) = fs::read_to_string(&path) else {
+                continue;
+            };
             let mut file_records: Vec<UsageRecord> = Vec::new();
             for line in text.lines() {
                 if line.is_empty() || !line.contains("input_tokens") {
                     continue;
                 }
-                let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) else { continue };
-                let Some(ts_raw) = obj.get("timestamp").and_then(|v| v.as_f64()) else { continue };
-                if ts_raw <= 0.0 { continue; }
-                let Some(usage_val) = obj.pointer("/message/usage").or_else(|| obj.pointer("/providerData/usage")) else { continue };
+                let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) else {
+                    continue;
+                };
+                let Some(ts_raw) = obj.get("timestamp").and_then(|v| v.as_f64()) else {
+                    continue;
+                };
+                if ts_raw <= 0.0 {
+                    continue;
+                }
+                let Some(usage_val) = obj
+                    .pointer("/message/usage")
+                    .or_else(|| obj.pointer("/providerData/usage"))
+                else {
+                    continue;
+                };
                 let usage = usage_val.clone();
-                let input = usage.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                let output = usage.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                let total = usage.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(input + output);
+                let input = usage
+                    .get("input_tokens")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let output = usage
+                    .get("output_tokens")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                let total = usage
+                    .get("total_tokens")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(input + output);
                 if total <= 0 {
                     continue;
                 }
@@ -3786,11 +4157,19 @@ fn collect_workbuddy(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInf
 }
 
 /// Probe for WorkBuddy presence (no usage extracted). Returns source status only.
+#[allow(dead_code)] // upstream-parity probe (used when usage scanning is disabled)
 fn discover_workbuddy() -> SourceInfo {
     let roots = paths::workbuddy_roots();
     let found = roots.iter().filter(|r| r.exists()).count();
     SourceInfo {
-        status: Some(if found > 0 { "discovered_no_usage" } else { "missing" }.into()),
+        status: Some(
+            if found > 0 {
+                "discovered_no_usage"
+            } else {
+                "missing"
+            }
+            .into(),
+        ),
         files: Some(found as i64),
         records: Some(0),
         ..Default::default()
@@ -3800,23 +4179,40 @@ fn discover_workbuddy() -> SourceInfo {
 /// Convert epoch seconds (or milliseconds if > 10^10) to a "YYYY-MM-DD" day
 /// string in Asia/Shanghai.
 pub fn day_string_from_epoch(seconds: f64) -> String {
-    let secs = if seconds > 10_000_000_000.0 { seconds / 1000.0 } else { seconds };
+    let secs = if seconds > 10_000_000_000.0 {
+        seconds / 1000.0
+    } else {
+        seconds
+    };
     let tz = local_tz();
-    let dt = tz.timestamp_opt(secs as i64, 0).single().unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());
+    let dt = tz
+        .timestamp_opt(secs as i64, 0)
+        .single()
+        .unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());
     dt.format("%Y-%m-%d").to_string()
 }
 
 /// Convert epoch seconds (or milliseconds) to an ISO-8601 string in Asia/Shanghai.
 pub fn iso_string_from_epoch(seconds: f64) -> String {
-    let secs = if seconds > 10_000_000_000.0 { seconds / 1000.0 } else { seconds };
+    let secs = if seconds > 10_000_000_000.0 {
+        seconds / 1000.0
+    } else {
+        seconds
+    };
     let tz = local_tz();
-    let dt = tz.timestamp_opt(secs as i64, 0).single().unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());
+    let dt = tz
+        .timestamp_opt(secs as i64, 0)
+        .single()
+        .unwrap_or_else(|| tz.timestamp_opt(0, 0).unwrap());
     dt.format("%Y-%m-%dT%H:%M:%S%:z").to_string()
 }
 
 // ---------------------------------------------------------------------------
 // Agent Work aggregation (port of upstream AgentWorkAccumulator)
 // ---------------------------------------------------------------------------
+
+/// One (source, hour) rollup cell in `AgentWorkAccumulator.hourly`.
+type AgentWorkHourRollup = (i64, i64, i64, i64, bool);
 
 /// Accumulator for agent-work per-date aggregation.
 #[derive(Default)]
@@ -3830,14 +4226,18 @@ struct AgentWorkAccumulator {
     model_request_count: i64,
     tool_call_count: i64,
     /// Per-source, per-hour rollup: (source, hour) → (tokens, input, cached, output, coverage_complete)
-    hourly: BTreeMap<(String, i64), (i64, i64, i64, i64, bool)>,
+    hourly: BTreeMap<(String, i64), AgentWorkHourRollup>,
     unbucketed_tokens: i64,
 }
 
 impl AgentWorkAccumulator {
+    #[allow(dead_code)] // upstream-parity constructor (agent-work tests)
     fn new() -> Self {
         // Start with coverage complete = true; AND across all records.
-        Self { cache_coverage_complete: true, ..Default::default() }
+        Self {
+            cache_coverage_complete: true,
+            ..Default::default()
+        }
     }
 
     fn add(&mut self, rec: &UsageRecord, hour: Option<i64>) {
@@ -3877,7 +4277,11 @@ impl AgentWorkAccumulator {
             for ((src, hr), (tokens, inp, cached, outp, cov)) in &self.hourly {
                 if *hr == h {
                     let e = source_map.entry(src.clone()).or_insert((0, 0, 0, 0, true));
-                    e.0 += tokens; e.1 += inp; e.2 += cached; e.3 += outp; e.4 &= cov;
+                    e.0 += tokens;
+                    e.1 += inp;
+                    e.2 += cached;
+                    e.3 += outp;
+                    e.4 &= cov;
                 }
             }
             for (src, (tokens, inp, cached, outp, cov)) in source_map {
@@ -3891,7 +4295,10 @@ impl AgentWorkAccumulator {
                 });
             }
             if !hour_sources.is_empty() {
-                hourly_buckets.push(AgentWorkHourBucket { hour: h, sources: hour_sources });
+                hourly_buckets.push(AgentWorkHourBucket {
+                    hour: h,
+                    sources: hour_sources,
+                });
             }
         }
         // Pad to 24 buckets if fewer (Mac always normalizes to 24).
@@ -3959,8 +4366,12 @@ fn aggregate_agent_work(records: &[UsageRecord]) -> Vec<DailyAgentWork> {
     let mut accs: BTreeMap<String, AgentWorkAccumulator> = BTreeMap::new();
     for rec in records {
         // Agent work includes all records that have timestamps (sub-day resolution).
-        let hour = rec.timestamp.as_ref().and_then(|ts| hour_from_iso(ts)).map(|h| h as i64);
-        let acc = accs.entry(rec.date.clone()).or_insert_with(AgentWorkAccumulator::new);
+        let hour = rec
+            .timestamp
+            .as_ref()
+            .and_then(|ts| hour_from_iso(ts))
+            .map(|h| h as i64);
+        let acc = accs.entry(rec.date.clone()).or_default();
         acc.add(rec, hour);
     }
     accs.into_iter()
@@ -3968,3 +4379,6 @@ fn aggregate_agent_work(records: &[UsageRecord]) -> Vec<DailyAgentWork> {
         .map(|(date, a)| a.finalize(&date))
         .collect()
 }
+
+#[cfg(test)]
+mod scan_regression_tests;

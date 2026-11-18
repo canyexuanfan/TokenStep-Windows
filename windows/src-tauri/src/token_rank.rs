@@ -108,7 +108,10 @@ fn identity_from_json(doc: &serde_json::Value) -> Option<LocalIdentity> {
             .and_then(|v| v.as_str())
             .unwrap_or("匿名用户")
             .to_string(),
-        avatar_url: user.get("avatar_url").and_then(|v| v.as_str()).map(String::from),
+        avatar_url: user
+            .get("avatar_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     })
 }
 
@@ -193,7 +196,7 @@ pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
         .send()
         .ok()
         .filter(|r| r.status().is_success())
-        .and_then(|mut r| r.json::<serde_json::Value>().ok())
+        .and_then(|r| r.json::<serde_json::Value>().ok())
         .filter(|body| body.get("success").and_then(|v| v.as_bool()) == Some(true));
     let body = match fetched {
         Some(body) => body,
@@ -209,8 +212,14 @@ pub fn read(identity: Option<&LocalIdentity>) -> TokenRankSnapshot {
     let Some(data) = body.get("data") else {
         return err_snapshot("暂时无法读取榜单");
     };
-    let total_tokens = data.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-    let total_ranked = data.get("total_ranked_users").and_then(|v| v.as_i64()).unwrap_or(0);
+    let total_tokens = data
+        .get("total_tokens")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let total_ranked = data
+        .get("total_ranked_users")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
     let mut entries: Vec<TokenRankEntry> = vec![];
     if let Some(rows) = data.get("rows").and_then(|v| v.as_array()) {
         for row in rows {
@@ -255,9 +264,15 @@ fn parse_entry(row: &serde_json::Value) -> Option<TokenRankEntry> {
             .or_else(|| src.get("avatarUrl"))
             .and_then(|v| v.as_str())
             .map(String::from),
-        total_tokens: row.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0),
+        total_tokens: row
+            .get("total_tokens")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
         call_count: row.get("call_count").and_then(|v| v.as_i64()).unwrap_or(0),
-        session_count: row.get("session_count").and_then(|v| v.as_i64()).unwrap_or(0),
+        session_count: row
+            .get("session_count")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0),
         clients: row
             .get("clients")
             .and_then(|v| v.as_object())

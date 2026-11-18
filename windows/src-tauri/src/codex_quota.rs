@@ -5,13 +5,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
 use std::os::windows::process::CommandExt;
+use std::process::{Command, Stdio};
 
 const REQUEST_ID: i64 = 2;
 
 /// Quota snapshot shown in the UI.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CodexQuotaSnapshot {
     pub available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -24,19 +24,6 @@ pub struct CodexQuotaSnapshot {
     pub seven_day_resets_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-}
-
-impl Default for CodexQuotaSnapshot {
-    fn default() -> Self {
-        CodexQuotaSnapshot {
-            available: false,
-            five_hour_used_percent: None,
-            five_hour_resets_at: None,
-            seven_day_used_percent: None,
-            seven_day_resets_at: None,
-            error: None,
-        }
-    }
 }
 
 /// Read the current Codex rate-limit quota by talking to the app-server.
@@ -92,7 +79,10 @@ pub fn read() -> CodexQuotaSnapshot {
 
     // Send initialize + rateLimits/read requests.
     let init_req = r#"{"method":"initialize","id":1,"params":{"clientInfo":{"name":"tokenstep","title":"TokenStep","version":"0.1.0"},"capabilities":null}}"#;
-    let quota_req = format!(r#"{{"method":"account/rateLimits/read","id":{}}}"#, REQUEST_ID);
+    let quota_req = format!(
+        r#"{{"method":"account/rateLimits/read","id":{}}}"#,
+        REQUEST_ID
+    );
 
     // Write the handshake, then KEEP the stdin pipe open (as_mut, not take):
     // dropping it signals EOF and the app-server shuts down before the
@@ -126,7 +116,9 @@ pub fn read() -> CodexQuotaSnapshot {
             }
             let _ = tx.send(found);
         });
-        rx.recv_timeout(std::time::Duration::from_secs(12)).ok().flatten()
+        rx.recv_timeout(std::time::Duration::from_secs(12))
+            .ok()
+            .flatten()
     } else {
         None
     };
@@ -229,12 +221,16 @@ fn parse_response(line: &str) -> Option<CodexQuotaSnapshot> {
 
     Some(CodexQuotaSnapshot {
         available: true,
-        five_hour_used_percent: five.and_then(|w| w.get("usedPercent")).and_then(|v| v.as_f64()),
+        five_hour_used_percent: five
+            .and_then(|w| w.get("usedPercent"))
+            .and_then(|v| v.as_f64()),
         five_hour_resets_at: five
             .and_then(|w| w.get("resetsAt"))
             .and_then(|v| v.as_i64())
             .map(epoch_to_iso),
-        seven_day_used_percent: seven.and_then(|w| w.get("usedPercent")).and_then(|v| v.as_f64()),
+        seven_day_used_percent: seven
+            .and_then(|w| w.get("usedPercent"))
+            .and_then(|v| v.as_f64()),
         seven_day_resets_at: seven
             .and_then(|w| w.get("resetsAt"))
             .and_then(|v| v.as_i64())

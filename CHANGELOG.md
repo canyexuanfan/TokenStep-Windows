@@ -6,6 +6,21 @@
 
 [English](#english) | 中文
 
+## [0.1.13] - 可靠性与门面（T1~T5）
+
+> 本版按 [`docs/优化路线图-2026-11-18.md`](docs/优化路线图-2026-11-18.md) 阶段一执行。
+
+### 新增
+
+- **回归测试安全网（T2）**：为 0.1.12 三个关键修复补齐 `#[test]` 回归——① Codex 扫描超时时 metas 与文件列表索引对齐（启动崩溃 0xc0000409 的根因场景，部分缓存命中 + 部分超时跳过的混合态）② 扫描降级阶梯（memo 回退 → 缓存回退 → degraded 三态状态标记正确）③ 缓存保存点位置（全部采集器之后落盘——晚采集器条目不丢）+ 缓存结构 save→load 往返。测试注入点：`CodexScanScope`（roots / walk deadline / parse deadline 三参数），生产路径零行为变更。
+- **上游同步跟踪表（T4）**：新增 [`docs/upstream-sync.md`](docs/upstream-sync.md)，逐条登记上游 v0.2.24~v0.2.29 全部 25 个提交的处置（已移植 / 无需移植 / 不移植+理由 / 待移植 v0.1.14 Trae 额度四连），附月度例检流程。
+- **README 门面（T1）**：「当前支持」从 3 家改为 16 家真实清单（专属采集 9 个 + 通用采集 7 个，逐家标注数据源与精度口径：精确/估算）；新增 3 张界面截图（`docs/screenshots/`：分享卡/今日概览/节奏卡）；订阅额度卡补齐 8 家清单。
+
+### 变更
+
+- **CI 升级（T3）**：`ci-windows.yml` 在编译之外新增 `cargo test --lib --release`（阻塞性）；`cargo fmt --check` 与 `cargo clippy --all-targets --all-features -- -D warnings` 从 advisory 升级为**强制**（本地已清零全部告警：24 处 clippy 告警逐条修复 + 全仓 rustfmt）。
+- **杂项清账（T5）**：`windows/scripts/badge-check.ps1` 观察窗口延长与轮询条件修正已提交；reporter 私有脚本归位 `reporter/scripts/`（闭源目录，不入库）。
+
 ## [0.1.12] - WorkBuddy 额度卡 + WAL 降级 + ZCode/WorkBuddy 统计恢复
 
 （0.1.12 待发内容。参见 [`docs/皮肤包上游对齐规划.md`](docs/皮肤包上游对齐规划.md)。）
@@ -72,6 +87,21 @@
 
 - **更新检查限速回退**：GitHub Releases API 被限速（403）或不可用时，降级请求公开的 `releases/latest` 重定向页（不消耗 API 配额），从最终 URL 解析最新 tag 并重建标准 NSIS 安装包下载地址；该通道未知文件大小，下载进度改用 Content-Length。
 - **手动检查 10 秒冷却**：设置页「立即检查」改走 `check_for_update_manual`，10 秒内重复点击直接重放上次结果，不再连打 GitHub API（防止烧配额与转圈卡住）；启动自动检查不受影响。含 release tag 解析单元测试。
+
+## [0.1.13] - Reliability & presentation (T1~T5)
+
+> Executed per stage one of [`docs/优化路线图-2026-11-18.md`](docs/优化路线图-2026-11-18.md).
+
+### Added
+
+- **Regression test safety net (T2)**: `#[test]` coverage for the three 0.1.12 critical fixes — (1) Codex metas/file-list alignment on expired deadline (the 0xc0000409 crash shape: partial cache hits + skipped files), (2) the scan degradation ladder (memo → cache → degraded statuses), (3) the cache save point after ALL collectors + a save→load round trip. Seam: `CodexScanScope` (roots / walk deadline / parse deadline) — zero behavior change in production.
+- **Upstream sync table (T4)**: `docs/upstream-sync.md` logs all 25 upstream commits from v0.2.24 to v0.2.29 (ported / not-needed / not-ported with reasons / pending Trae quota quartet for v0.1.14), plus a monthly review process.
+- **README facelift (T1)**: the support list went from 3 clients to the real 16 (9 dedicated collectors + 7 generic ones, each with its data source and precision label); three UI screenshots added under `docs/screenshots/`; the 8-provider quota-card lineup is now documented.
+
+### Changed
+
+- **CI upgrade (T3)**: `ci-windows.yml` adds a blocking `cargo test --lib --release` step; `cargo fmt --check` and `cargo clippy -- -D warnings` promoted from advisory to **enforced** (all 24 pre-existing clippy warnings fixed locally + repo-wide rustfmt).
+- **Housekeeping (T5)**: `windows/scripts/badge-check.ps1` window/poll fixes committed; the reporter-private script moved to `reporter/scripts/` (closed-source dir, not tracked).
 
 ## [0.1.12] - WorkBuddy quota card + SQLite WAL fallback + collector fixes
 

@@ -19,10 +19,18 @@ enum OpenAttempt {
     Immutable,
 }
 
-const ATTEMPTS: [OpenAttempt; 3] = [OpenAttempt::ReadOnly, OpenAttempt::QueryOnly, OpenAttempt::Immutable];
+const ATTEMPTS: [OpenAttempt; 3] = [
+    OpenAttempt::ReadOnly,
+    OpenAttempt::QueryOnly,
+    OpenAttempt::Immutable,
+];
 
 fn uri_for(path: &Path, mode: &str) -> String {
-    format!("file:{}?mode={}", path.display().to_string().replace('\\', "/"), mode)
+    format!(
+        "file:{}?mode={}",
+        path.display().to_string().replace('\\', "/"),
+        mode
+    )
 }
 
 /// Open `path` read-only with the fallback ladder. Ordered by fidelity:
@@ -34,22 +42,22 @@ pub fn open_readonly(path: &Path) -> Option<Connection> {
         let conn = match attempt {
             OpenAttempt::ReadOnly => Connection::open_with_flags(
                 uri_for(path, "ro"),
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .ok(),
             OpenAttempt::QueryOnly => {
                 // A writable handle lets SQLite create the -shm sidecar;
                 // query_only keeps the connection from modifying anything.
-                Connection::open(path)
-                    .ok()
-                    .and_then(|conn| {
-                        conn.pragma_update(None, "query_only", "ON").ok()?;
-                        Some(conn)
-                    })
+                Connection::open(path).ok().and_then(|conn| {
+                    conn.pragma_update(None, "query_only", "ON").ok()?;
+                    Some(conn)
+                })
             }
             OpenAttempt::Immutable => Connection::open_with_flags(
                 uri_for(path, "immutable"),
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
             )
             .ok(),
         };
