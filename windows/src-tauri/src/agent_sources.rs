@@ -810,7 +810,7 @@ fn collect_grok() -> AgentCollectResult {
                     .next_back()
                     .map(|s| s.trim().to_string())
             })
-            .and_then(|n| if n.is_empty() { None } else { Some(n) });
+            .filter(|n| !n.is_empty());
         for_each_jsonl_line(path, |idx, obj| {
             let Some(update) = obj.get("params").and_then(|p| p.get("update")) else {
                 return;

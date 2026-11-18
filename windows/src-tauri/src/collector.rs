@@ -2043,7 +2043,7 @@ fn aggregate(
             percent: Some(percent(acc.usage.total_tokens, total_tokens)),
         })
         .collect();
-    tool_rows.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+    tool_rows.sort_by_key(|r| std::cmp::Reverse(r.tokens));
 
     let mut model_rows: Vec<ModelUsage> = models
         .into_iter()
@@ -2054,7 +2054,7 @@ fn aggregate(
             percent: Some(percent(acc.usage.total_tokens, total_tokens)),
         })
         .collect();
-    model_rows.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+    model_rows.sort_by_key(|r| std::cmp::Reverse(r.tokens));
 
     let active_days = daily_rows.iter().filter(|d| d.total_tokens > 0).count() as i64;
 
@@ -2551,11 +2551,12 @@ fn jsonl_files_under_budget(root: &Path, deadline: std::time::Instant) -> (Vec<P
             let path = entry.path();
             match entry.file_type() {
                 Ok(ft) if ft.is_dir() => dirs.push(path),
-                Ok(ft) if ft.is_file() => {
-                    if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                        out.push(path.clone());
-                        files.push(path.to_string_lossy().to_string());
-                    }
+                Ok(ft)
+                    if ft.is_file()
+                        && path.extension().and_then(|e| e.to_str()) == Some("jsonl") =>
+                {
+                    out.push(path.clone());
+                    files.push(path.to_string_lossy().to_string());
                 }
                 _ => {}
             }

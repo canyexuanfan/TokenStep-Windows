@@ -635,7 +635,7 @@ fn rebuild_rollups(snapshot: &mut UsageSnapshot) {
             percent: None,
         })
         .collect();
-    snapshot.tools.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+    snapshot.tools.sort_by_key(|r| std::cmp::Reverse(r.tokens));
     let t_ref = total.max(1) as f64;
     for t in &mut snapshot.tools {
         t.percent = Some(t.tokens as f64 * 100.0 / t_ref);
@@ -649,7 +649,7 @@ fn rebuild_rollups(snapshot: &mut UsageSnapshot) {
             percent: None,
         })
         .collect();
-    snapshot.models.sort_by(|a, b| b.tokens.cmp(&a.tokens));
+    snapshot.models.sort_by_key(|r| std::cmp::Reverse(r.tokens));
     for m in &mut snapshot.models {
         m.percent = Some(m.tokens as f64 * 100.0 / t_ref);
     }
