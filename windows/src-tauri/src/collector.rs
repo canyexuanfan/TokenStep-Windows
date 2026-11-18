@@ -356,17 +356,39 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
     Some((records, 1))
 }
 
-/// Per-pass scan budget for the Codex JSONL source. The sessions root can be
-/// a junction onto a pathologically slow volume; this bounds walk + reads so
-/// a refresh pass stays predictable. Cached history keeps working when the
-/// budget runs out (marked `*_scan_timeout` in sources).
-const CODEX_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+/// Scan budget for the Codex JSONL source. The sessions root can be a
+/// junction onto a pathologically slow volume (41 GB tree, metadata-only
+/// walks take minutes — and the first full pass streams every rollout). The
+/// scan runs on a DETACHED thread and never blocks the refresh pass (which
+/// waits only `CODEX_SCAN_WAIT` = 20s before serving the memo/cache), so the
+/// budget only needs to bound the background thread, not the UI. 30s here
+/// made the scan abort mid-walk EVERY pass on slow storage (walk alone >
+/// 2 min) and Codex sat in `cached_scan_timeout` forever; 30 min lets it
+/// actually finish, after which the memo carries a complete, untimed-out
+/// result and the source reports plain "ok".
+const CODEX_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_secs(1800);
+
+/// TEMP-DIAG (codex scan): heartbeat + completion diagnostics written to
+/// cache/codex-scan-progress.json so a slow cold scan is observable.
+fn codex_scan_diag_write(payload: serde_json::Value) {
+    let path = paths::collector_cache_json()
+        .parent()
+        .map(|d| d.join("codex-scan-progress.json"));
+    if let Some(path) = path {
+        let _ = fs::write(&path, serde_json::to_string(&payload).unwrap_or_default());
+    }
+}
 
 fn collect_codex_jsonl(
     cache: &mut CollectorCache,
     live_paths: &mut BTreeSet<String>,
 ) -> (Vec<UsageRecord>, i64, bool) {
-    let scan_deadline = std::time::Instant::now() + CODEX_SCAN_BUDGET;
+    let scan_started = std::time::Instant::now();
+    let scan_deadline = scan_started + CODEX_SCAN_BUDGET;
+    codex_scan_diag_write(serde_json::json!({
+        "phase": "walk_start",
+        "elapsed_ms": 0,
+    }));
     let roots = paths::codex_jsonl_roots();
     let mut all_paths = Vec::new();
     let mut scan_timed_out = false;
@@ -446,6 +468,11 @@ fn collect_codex_jsonl(
     }
 
     // ── Phase 2: per-file scan + delta (fork files inherit the parent anchor) ──
+    codex_scan_diag_write(serde_json::json!({
+        "phase": "parse",
+        "files_total": all_paths.len(),
+        "elapsed_ms": scan_started.elapsed().as_millis(),
+    }));
     for (index, path) in all_paths.iter().enumerate() {
         let Some((key, own_session, parent, created_at)) = &metas[index] else {
             continue;
@@ -453,6 +480,17 @@ fn collect_codex_jsonl(
         let key = key.clone();
         let (own_session, parent, created_at) =
             (own_session.clone(), parent.clone(), *created_at);
+        if index % 5 == 0 || index + 1 == all_paths.len() {
+            codex_scan_diag_write(serde_json::json!({
+                "phase": "parse",
+                "files_total": all_paths.len(),
+                "file_index": index,
+                "current": key,
+                "cached": cache.files.get(&key).map(|e| !e.records.is_empty()).unwrap_or(false),
+                "size": file_meta(path).map(|m| m.0).unwrap_or(0),
+                "elapsed_ms": scan_started.elapsed().as_millis(),
+            }));
+        }
 
         if let Some(cached) = cached_records(cache, &key, "Codex", path) {
             records.extend(cached);
@@ -462,6 +500,181 @@ fn collect_codex_jsonl(
                     anchors_by_session.insert(own_session.clone(), entry.codex_anchors.clone());
                 }
             }
+            continue;
+        }
+
+        // ── Incremental tail read (0.1.12) ────────────────────────────────
+        // A file that merely APPENDED since its last parse only needs its
+        // tail: multi-GB active rollouts on slow storage made every full
+        // re-scan take 15+ minutes, keeping Codex in scan-timeout
+        // degradation forever. Continuity: a virtual head event carrying the
+        // cached tail anchor's cumulative makes codex_delta_records resume
+        // deltas exactly after the last parsed event.
+        let mut incremental_done = false;
+        'incremental: {
+            let Some(entry) = cache.files.get(&key).cloned() else {
+                break 'incremental;
+            };
+            if entry.records.is_empty() || entry.scan_offset == 0 {
+                break 'incremental; // never fully parsed — full read below
+            }
+            let Some((new_size, _new_mtime)) = file_meta(path) else {
+                break 'incremental;
+            };
+            if new_size < entry.scan_offset {
+                break 'incremental; // rewritten in place — full read
+            }
+            let session_id_inc = entry
+                .codex_session
+                .clone()
+                .unwrap_or_else(|| fallback_session_from_path(path));
+            let Some(anchor) = entry.codex_anchors.last().cloned().filter(|a| a.total > 0) else {
+                break 'incremental;
+            };
+            if new_size == entry.scan_offset {
+                // Nothing appended; refresh mtime so freshness passes.
+                if let Some(e) = cache.files.get_mut(&key) {
+                    if let Some((_, mtime)) = file_meta(path) {
+                        e.mtime = mtime;
+                    }
+                }
+                incremental_done = true;
+                break 'incremental;
+            }
+            let Ok(mut file) = fs::File::open(path) else {
+                break 'incremental;
+            };
+            use std::io::{Seek, SeekFrom};
+            if file.seek(SeekFrom::Start(entry.scan_offset)).is_err() {
+                break 'incremental;
+            }
+            let reader = std::io::BufReader::new(file);
+            let mut final_model_inc = String::from("unknown");
+            let mut events_inc: Vec<CodexTokenEvent> = Vec::new();
+            use std::io::BufRead;
+            for line in reader.lines().map_while(Result::ok) {
+                if !line.contains("token_count")
+                    && !line.contains("session_meta")
+                    && !line.contains("turn_context")
+                {
+                    continue;
+                }
+                let Ok(obj) = serde_json::from_str::<serde_json::Value>(&line) else {
+                    continue;
+                };
+                let ev_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                let payload = obj.get("payload");
+                if ev_type == "turn_context" {
+                    if let Some(m) = payload.and_then(|p| p.get("model")).and_then(|v| v.as_str()) {
+                        if !m.is_empty() {
+                            final_model_inc = model_key(m);
+                        }
+                    }
+                }
+                if ev_type != "event_msg" {
+                    continue;
+                }
+                let inner_type = payload.and_then(|p| p.get("type")).and_then(|v| v.as_str());
+                if inner_type != Some("token_count") {
+                    continue;
+                }
+                let info = payload.and_then(|p| p.get("info"));
+                let cumulative = info
+                    .and_then(|i| i.get("total_token_usage"))
+                    .map(|v| normalize_usage(Some(v)));
+                let last = info
+                    .and_then(|i| i.get("last_token_usage"))
+                    .map(|v| normalize_usage(Some(v)));
+                let model_context_window = info
+                    .and_then(|i| i.get("model_context_window"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+                events_inc.push(CodexTokenEvent {
+                    timestamp: obj.get("timestamp").and_then(|v| v.as_str()).map(String::from),
+                    model: final_model_inc.clone(),
+                    cumulative,
+                    last,
+                    model_context_window,
+                });
+            }
+            // Virtual head event: cumulative == cached tail anchor → the
+            // delta loop matches it as the resume point (start_index 1).
+            let head = CodexTokenEvent {
+                timestamp: None,
+                model: String::new(),
+                cumulative: Some(anchor.usage()),
+                last: None,
+                model_context_window: 0,
+            };
+            let mut seq = vec![head];
+            seq.extend(events_inc.iter().cloned());
+            let mut seen_inc: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            let new_records = codex_delta_records(
+                &session_id_inc,
+                &seq,
+                Some(&anchor.usage()),
+                None,
+                None,
+                &mut seen_inc,
+            );
+            // Old cache records + new tail records → this pass AND the cache.
+            let mut all_records: Vec<UsageRecord> = entry
+                .records
+                .iter()
+                .map(|c| UsageRecord {
+                    date: c.date.clone(),
+                    timestamp: c.timestamp.clone(),
+                    tool: c.tool.clone(),
+                    model: c.model.clone(),
+                    usage: c.usage.clone(),
+                    cost_usd: c.cost_usd,
+                })
+                .collect();
+            all_records.extend(new_records.iter().cloned());
+            records.extend(all_records.iter().cloned());
+            // Anchors: cached set + thinned new events + the read-tail anchor
+            // (guaranteed last so the next increment resumes exactly here).
+            let tail_anchor = events_inc.iter().rev().find_map(|e| {
+                let u = e.cumulative.as_ref()?;
+                if u.total_tokens <= 0 {
+                    return None;
+                }
+                let ts = e
+                    .timestamp
+                    .as_deref()
+                    .and_then(parse_iso)
+                    .map(|dt| dt.timestamp() as f64)?;
+                Some(CachedAnchor::from_usage(ts, u))
+            });
+            let mut merged_anchors = entry.codex_anchors.clone();
+            merged_anchors.extend(thin_anchors(events_inc.iter().filter_map(|e| {
+                let u = e.cumulative.as_ref()?;
+                if u.total_tokens <= 0 {
+                    return None;
+                }
+                let ts = e
+                    .timestamp
+                    .as_deref()
+                    .and_then(parse_iso)
+                    .map(|dt| dt.timestamp() as f64)?;
+                Some(CachedAnchor::from_usage(ts, u))
+            }).collect()));
+            if let Some(t) = tail_anchor {
+                merged_anchors.push(t);
+            }
+            update_codex_cache(
+                cache,
+                &key,
+                path,
+                &all_records,
+                &session_id_inc,
+                entry.codex_parent_session.clone(),
+                entry.codex_created_at,
+                merged_anchors,
+            );
+            incremental_done = true;
+        }
+        if incremental_done {
             continue;
         }
 
@@ -596,6 +809,24 @@ fn collect_codex_jsonl(
                 Some(CachedAnchor::from_usage(ts, u))
             })
             .collect();
+        // Persist the READ-TAIL anchor as the last entry (after thinning):
+        // the incremental tail-read resumes from exactly this cumulative.
+        let tail_anchor = events.iter().rev().find_map(|e| {
+            let u = e.cumulative.as_ref()?;
+            if u.total_tokens <= 0 {
+                return None;
+            }
+            let ts = e
+                .timestamp
+                .as_deref()
+                .and_then(parse_iso)
+                .map(|dt| dt.timestamp() as f64)?;
+            Some(CachedAnchor::from_usage(ts, u))
+        });
+        let mut persisted_anchors = thin_anchors(anchors.clone());
+        if let Some(t) = tail_anchor {
+            persisted_anchors.push(t);
+        }
         update_codex_cache(
             cache,
             &key,
@@ -604,7 +835,7 @@ fn collect_codex_jsonl(
             &session_id,
             parent,
             created_at,
-            thin_anchors(anchors.clone()),
+            persisted_anchors,
         );
         // Publish anchors for children of this session.
         if parent_ids.contains(&session_id) {
@@ -613,6 +844,13 @@ fn collect_codex_jsonl(
         let _ = inherited_from;
     }
 
+    codex_scan_diag_write(serde_json::json!({
+        "phase": "done",
+        "timed_out": scan_timed_out,
+        "files": all_paths.len(),
+        "records": records.len(),
+        "elapsed_ms": scan_started.elapsed().as_millis(),
+    }));
     (records, all_paths.len() as i64, scan_timed_out)
 }
 
@@ -2086,6 +2324,7 @@ fn jsonl_files_under_budget(
     root: &Path,
     deadline: std::time::Instant,
 ) -> (Vec<PathBuf>, bool) {
+    let mut dir_cache = load_codex_dir_cache();
     let mut out: Vec<PathBuf> = Vec::new();
     // Descending sort: pop() takes the "largest" name first → newest first
     // for year/month/day style layouts.
@@ -2096,27 +2335,97 @@ fn jsonl_files_under_budget(
             timed_out = true;
             break;
         }
+        let dir_key = dir.to_string_lossy().to_string();
+        let dir_mtime = fs::metadata(&dir).ok().and_then(|m| {
+            m.modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs_f64()))
+        });
+        // Short-circuit: directory unchanged since the last walk — reuse its
+        // cached direct file list and only descend into its subdirectories
+        // (their own mtimes are checked at their level, so any new session
+        // file still gets discovered: appending bumps the day dir's mtime).
+        if let (Some(mtime), Some(entry)) = (dir_mtime, dir_cache.dirs.get(&dir_key)) {
+            if entry.mtime == mtime {
+                for f in &entry.files {
+                    out.push(PathBuf::from(f));
+                }
+                for sd in &entry.subdirs {
+                    stack.push(PathBuf::from(sd));
+                }
+                continue;
+            }
+        }
         let Ok(entries) = fs::read_dir(&dir) else {
             continue;
         };
         let mut dirs: Vec<PathBuf> = Vec::new();
+        let mut files: Vec<String> = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
             match entry.file_type() {
                 Ok(ft) if ft.is_dir() => dirs.push(path),
                 Ok(ft) if ft.is_file() => {
                     if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-                        out.push(path);
+                        out.push(path.clone());
+                        files.push(path.to_string_lossy().to_string());
                     }
                 }
                 _ => {}
             }
         }
+        if let Some(mtime) = dir_mtime {
+            dir_cache.dirs.insert(
+                dir_key,
+                CodexDirEntry {
+                    mtime,
+                    files,
+                    subdirs: dirs.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+                },
+            );
+        }
         dirs.sort_unstable();
         dirs.reverse();
         stack.extend(dirs);
     }
+    save_codex_dir_cache(&dir_cache);
     (out, timed_out)
+}
+
+/// Per-directory walk cache for the Codex sessions tree (see
+/// `jsonl_files_under_budget`): own mtime + direct jsonl files + subdir
+/// names. Persisted so steady-state walks skip re-reading unchanged
+/// directories on the slow volume.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct CodexDirCache {
+    version: i32,
+    dirs: BTreeMap<String, CodexDirEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CodexDirEntry {
+    mtime: f64,
+    files: Vec<String>,
+    subdirs: Vec<String>,
+}
+
+fn load_codex_dir_cache() -> CodexDirCache {
+    let path = paths::codex_dir_cache_json();
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<CodexDirCache>(&text).ok())
+        .filter(|c| c.version == 1)
+        .unwrap_or_default()
+}
+
+fn save_codex_dir_cache(cache: &CodexDirCache) {
+    let path = paths::codex_dir_cache_json();
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let mut out = serde_json::to_string(cache).unwrap_or_default();
+    out.push('\n');
+    let _ = fs::write(path, out);
 }
 
 fn percent(value: i64, total: i64) -> f64 {

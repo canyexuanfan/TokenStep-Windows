@@ -22,6 +22,10 @@
 - **Antigravity 订阅额度卡**：复刻 cockpit 插件的官方配额链路——解密 `Roaming/Antigravity` 密钥存储中 cockpit 封存的账号凭据（Electron safeStorage v10，应用密钥在 `Local State`），按需刷新 access token 后调用 `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary`，渲染官方周限额 / 5 小时限额窗口。当前试用池账号无有效 license 时如实显示「当前账号无有效订阅许可」；设置 → 订阅额度提供商新增 Antigravity 开关（默认开）。
 - **Codex 订阅额度开关默认开启**：此前 `show_codex_quota` 默认关闭且藏在设置深处，订阅额度卡从未出现 Codex（同 Cursor 额度默认开启的处理）；未登录 Codex 时卡片如实显示原因而非隐藏。现有用户配置文件不受影响。
 
+### 修复（Codex 扫描永久降级——让它真正跑完）
+
+- **Codex 扫描收敛修复**：30 秒扫描预算在 G 盘 junction 上永远不够（心跳诊断证实卡在目录遍历本身，实测 >10 分钟），扫描线程每轮中途放弃 → Codex 永久停留在降级状态。三处修复：① 扫描预算放宽到 30 分钟（扫描在后台线程、从不阻塞界面，刷新仍 20 秒即出缓存数据）；② **增量尾读**——追加式 rollout 只解析新增字节（虚拟头事件携带缓存尾锚点续接增量，避免多 GB 文件全量重读）；③ **目录 mtime 短路缓存**（`cache/codex-dirs.json`）——未变化的目录直接复用上次遍历结果，稳态遍历从 10-20 分钟降到秒级。验证：首轮冷扫后 Codex 收敛为 `ok`（176 文件 / 98,877 条，增量每轮补新），全来源零失败。
+
 ### 修复（同步徽标误报）
 
 - **「部分来源失败」误报修复**：Codex 的扫描降级状态（`ok_scan_timeout` / `ok_sqlite_scan_timeout` / `cached_scan_timeout`）此前被新鲜度判定归类为"失败"——但这三个状态表示数据已从上次扫描或缓存回退、**可用且完整**（如 G 盘 junction 慢扫期间 Codex 170 亿照常显示），只是新鲜度受限。现归入成功类，徽标恢复「已同步」；仅 `degraded_scan_timeout`（完全无数据，新装机且无缓存）仍算失败。
@@ -86,6 +90,8 @@
 - SQLite read-only three-step fallback (readOnly → query_only → immutable), ported from upstream v0.2.26; Cursor's state.vscdb uses it.
 
 ### Fixed
+
+- **Codex scan convergence fix**: the 30-second scan budget could never cover a G-drive junction walk (heartbeat diagnostics showed the scan stuck in the walk phase itself, >10 min), so the scan aborted mid-walk every pass and Codex sat in degradation forever. Three fixes: budget raised to 30 min (background thread — the UI still serves cached data after 20 s); **incremental tail reads** for append-only rollouts (a virtual head event carrying the cached tail anchor resumes deltas exactly, no multi-GB re-reads); and a **directory-mtime short-circuit cache** (`cache/codex-dirs.json`) dropping steady-state walks to seconds. Verified: after one cold pass Codex converges to `ok` (176 files / 98,877 records, incrementals pick up new turns every pass) — all sources green.
 
 - **「部分来源失败」false alarm fix**: Codex scan-degradation states (`ok_scan_timeout` / `ok_sqlite_scan_timeout` / `cached_scan_timeout`) were classified as failures by the freshness badge even though they carry usable, complete data from the last scan or cache fallback (Codex's 17.0B kept showing during slow G-drive scans). They now classify as success — the badge reads 已同步 again; only `degraded_scan_timeout` (zero data) remains a failure.
 

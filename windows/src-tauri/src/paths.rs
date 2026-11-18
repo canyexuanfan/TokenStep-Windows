@@ -24,6 +24,13 @@ pub fn collector_cache_json() -> PathBuf {
     app_support_root().join("cache").join("collector-cache.json")
 }
 
+/// `cache/codex-dirs.json` — per-directory walk cache for the Codex
+/// sessions tree (own mtime + direct jsonl files + subdir names), letting
+/// steady-state walks skip re-reading unchanged directories on slow volumes.
+pub fn codex_dir_cache_json() -> PathBuf {
+    app_support_root().join("cache").join("codex-dirs.json")
+}
+
 /// `config/settings.json` — daily goal, refresh interval, history days.
 pub fn settings_json() -> PathBuf {
     app_support_root().join("config").join("settings.json")
