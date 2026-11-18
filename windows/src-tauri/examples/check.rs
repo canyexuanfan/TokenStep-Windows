@@ -55,14 +55,14 @@ fn main() {
     if let Some(row) = snapshot.daily.iter().find(|d| d.date == today) {
         println!("TODAY {}: {}", row.date, human_tokens(row.total_tokens));
         let mut tools: Vec<_> = row.tools.iter().collect();
-        tools.sort_by(|a, b| b.1.cmp(a.1));
+        tools.sort_by_key(|t| std::cmp::Reverse(t.1));
         for (t, v) in tools {
             println!("  - {}: {}", t, human_tokens(*v));
         }
     }
     println!("top days:");
     let mut days: Vec<_> = snapshot.daily.iter().collect();
-    days.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    days.sort_by_key(|d| std::cmp::Reverse(d.total_tokens));
     for d in days.iter().rev().take(3) {
         println!("  - {}: {}", d.date, human_tokens(d.total_tokens));
     }

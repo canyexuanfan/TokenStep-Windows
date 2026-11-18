@@ -2026,14 +2026,14 @@ fn aggregate(
             cost: round(d.cost, 4),
         })
         .collect();
-    daily_rows.sort_by(|a, b| a.date.cmp(&b.date));
+    daily_rows.sort_by_key(|r| r.date.clone());
 
     let mut rhythm_rows: Vec<DailyRhythm> = rhythms
         .into_values()
         .map(|r| r.into_daily_rhythm())
         .filter(|r| r.total_tokens > 0)
         .collect();
-    rhythm_rows.sort_by(|a, b| a.date.cmp(&b.date));
+    rhythm_rows.sort_by_key(|r| r.date.clone());
 
     let mut tool_rows: Vec<ToolUsage> = tools
         .into_iter()

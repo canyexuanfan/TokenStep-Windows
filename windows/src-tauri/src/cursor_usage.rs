@@ -274,13 +274,13 @@ pub fn refresh(history_days: i64) -> Result<CursorUsageCache, String> {
             day
         })
         .collect();
-    fresh_days.sort_by(|a, b| a.date.cmp(&b.date));
+    fresh_days.sort_by_key(|r| r.date.clone());
 
     // Window replace: keep cache days outside the refresh window.
     let mut cache = read_cache();
     cache.days.retain(|d| d.date < start_day);
     cache.days.extend(fresh_days);
-    cache.days.sort_by(|a, b| a.date.cmp(&b.date));
+    cache.days.sort_by_key(|r| r.date.clone());
     cache.days.truncate(400); // sanity cap
     write_cache(&cache);
     Ok(cache)
