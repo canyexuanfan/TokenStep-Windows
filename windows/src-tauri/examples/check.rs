@@ -18,7 +18,9 @@ fn human_tokens(tokens: i64) -> String {
 
 fn main() {
     // The collector is currently a private module; expose via a shim function.
+    let t0 = std::time::Instant::now();
     let snapshot = app::collect_for_check();
+    println!("[profile] collect: {} ms", t0.elapsed().as_millis());
 
     println!(
         "generated_at: {}",
