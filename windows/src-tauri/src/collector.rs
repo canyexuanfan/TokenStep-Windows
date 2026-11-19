@@ -53,7 +53,7 @@ pub struct UsageRecord {
 /// the per-source list semantics of `agent_sources::enabled_ids`.
 pub fn collect(
     include_experimental: bool,
-    _experimental_source_ids: Option<&Vec<String>>,
+    experimental_source_ids: Option<&Vec<String>>,
 ) -> UsageSnapshot {
     let pricing_data = pricing::load();
 
@@ -150,6 +150,28 @@ pub fn collect(
     sources.insert("MiniMax".to_string(), minimax_source);
     sources.insert("DSH".to_string(), dsh_source);
     sources.insert("Antigravity".to_string(), antigravity_source);
+
+    // ── T1 secondary sources (0.1.13 D7 fix) ─────────────────────────────
+    // Gemini CLI / Qwen Code / Kimi Code / OpenCode / Amp / Droid / Grok
+    // Build: agent_sources::collect() existed since v0.1.44 but had NO
+    // caller, so these seven never reached any panel. Same gating as the
+    // settings per-source list (master switch + explicit list defaulting to
+    // auto-enroll for detected sources).
+    let agent_enabled: Vec<String> = match experimental_source_ids {
+        Some(list) => list.clone(),
+        None => crate::agent_sources::ALL_SOURCE_IDS
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    };
+    let mut agent_enabled_ref = agent_enabled;
+    if !include_experimental {
+        agent_enabled_ref.clear();
+    }
+    for (name, result) in crate::agent_sources::collect(&agent_enabled_ref) {
+        records.extend(result.records.iter().cloned());
+        sources.insert(name, result.source);
+    }
 
     save_cache(&cache);
     aggregate(records, &pricing_data, sources)
@@ -4384,5 +4406,7 @@ fn aggregate_agent_work(records: &[UsageRecord]) -> Vec<DailyAgentWork> {
         .collect()
 }
 
+#[cfg(test)]
+mod golden_tests;
 #[cfg(test)]
 mod scan_regression_tests;

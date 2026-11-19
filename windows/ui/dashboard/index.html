@@ -626,6 +626,7 @@
           var modelPalette = ['var(--green)', '#e07b39', '#0d9488', '#2563eb', '#9ca3af'];
           return ordered.map(function (row, rowIndex) {
             var label = kind === 'client' ? clientName(row.name) : row.name;
+            if (estBadge) label = label + estBadge;
             var pct = totalValue ? row.value * 100 / totalValue : 0;
             var color = kind === 'client' ? window.TS.tokenToolColor(row.name) : modelPalette[Math.min(rowIndex, modelPalette.length - 1)];
             var mark;
@@ -637,6 +638,11 @@
               var initial = escape(String(label || '?').slice(0, 1).toUpperCase());
               mark = '<span class="today-source-mark" style="--source-color:' + color + '">' + initial + '</span>';
             }
+            // Cursor 估算口径标注（0.1.13 T12）：官方 API 不记录第三方
+            // 模型事件，Cursor 用量为对话文本启发式估算。
+            var estBadge = (kind === 'client' && row.name === 'Cursor')
+              ? '<span class="today-est-badge" title="' + window.TS.t('估算口径：官方 API 不记录第三方模型事件，按对话文本估算') + '">≈</span>'
+              : '';
             return '<div class="today-breakdown-row">' +
               '<div class="today-breakdown-name">' + mark + '<span title="' + escape(label) + '">' + escape(label) + '</span></div>' +
               '<div class="today-breakdown-track"><span style="width:' + Math.max(3, row.value * 100 / max).toFixed(1) + '%;background:' + color + '"></span></div>' +
@@ -1099,6 +1105,12 @@
         html += providerToggle('grok', 'Grok', settings.grok_quota_enabled, window.TS.t('Grok 需要 grok login，普通 xAI key 无效'));
         html += providerToggle('work_buddy', 'WorkBuddy', settings.workbuddy_quota_enabled, window.TS.t('读取本机 WorkBuddy 配额池与积分消耗'));
         html += providerToggle('antigravity', 'Antigravity', settings.antigravity_quota_enabled, window.TS.t('官方周限额 + 5 小时限额（读取本机 IDE 登录凭据，联网查询）'));
+        html += providerToggle('trae_cn', 'Trae CN', settings.trae_cn_quota_enabled, window.TS.t('浏览器登录后显示本周 credits 已用/剩余（绝对值）'));
+        html += providerToggle('trae', 'Trae', settings.trae_quota_enabled, window.TS.t('同 Trae CN，走国际版（SG/US）接口'));
+        html += '<div class="setting-row"><div><div class="setting-label">Trae ' + window.TS.t('登录') + '</div><div class="setting-hint" id="traeLoginState">' + window.TS.t('未登录') + '</div></div>' +
+          '<div style="display:flex;gap:6px">' +
+          '<button class="btn" id="traeSigninCN">' + window.TS.t('登录 Trae CN') + '</button>' +
+          '<button class="btn" id="traeSigninIntl">' + window.TS.t('登录 Trae') + '</button></div></div>';
         html += '<div class="setting-row"><div><div class="setting-label">' + window.TS.t('凭证') + '</div></div></div>';
         ['glm', 'kimi', 'grok'].forEach(function (acct) {
           html += '<div class="setting-row"><div><div class="setting-label" style="text-transform:none">' + acct.toUpperCase() + '</div></div>' +
@@ -1420,6 +1432,31 @@
                 invoke('set_quota_provider_enabled', { provider: id, enabled: cb.checked }).then(function (s) { settings = s; loadQuotaProviders(true); });
               }
             });
+          });
+          var traeBtn = function (id, provider) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('click', function () {
+              el.disabled = true;
+              var old = el.textContent;
+              el.textContent = window.TS.t('等待浏览器回调…（最多 240 秒）');
+              invoke('trae_signin', { provider: provider })
+                .then(function () {
+                  el.textContent = window.TS.t('登录成功');
+                  loadQuotaProviders(true);
+                })
+                .catch(function (e) {
+                  el.textContent = old;
+                  alert(e && e.message ? e.message : e);
+                })
+                .finally(function () { setTimeout(function () { el.textContent = old; el.disabled = false; }, 2000); });
+            });
+          };
+          traeBtn('traeSigninCN', 'trae_cn');
+          traeBtn('traeSigninIntl', 'trae');
+          invoke('trae_login_state', { provider: 'trae_cn' }).then(function (r) {
+            var el = document.getElementById('traeLoginState');
+            if (el && r && r.loggedIn) el.textContent = window.TS.t('已登录（凭据已存本机）');
           });
           document.querySelectorAll('button[data-quotasave]').forEach(function (btn) {
             btn.addEventListener('click', function () {

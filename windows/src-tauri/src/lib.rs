@@ -23,6 +23,7 @@ mod quota;
 mod settings;
 mod sqlite_readonly;
 mod token_rank;
+mod trae;
 mod update;
 
 use models::{TokenStepSettings, UsageSnapshot};
@@ -538,6 +539,8 @@ fn set_quota_provider_enabled(
         "grok" => s.grok_quota_enabled = enabled,
         "work_buddy" => s.workbuddy_quota_enabled = enabled,
         "antigravity" => s.antigravity_quota_enabled = enabled,
+        "trae_cn" => s.trae_cn_quota_enabled = enabled,
+        "trae" => s.trae_quota_enabled = enabled,
         _ => return Err("unknown provider".into()),
     }
     settings::save(&s).map_err(|e| e.to_string())?;
@@ -573,6 +576,12 @@ fn read_quota_providers(force: bool) -> serde_json::Value {
     }
     if s.antigravity_quota_enabled {
         enabled.push(quota::QuotaProvider::Antigravity);
+    }
+    if s.trae_cn_quota_enabled {
+        enabled.push(quota::QuotaProvider::TraeCN);
+    }
+    if s.trae_quota_enabled {
+        enabled.push(quota::QuotaProvider::Trae);
     }
     if s.glm_quota_enabled {
         enabled.push(quota::QuotaProvider::Glm);
@@ -927,7 +936,56 @@ fn run_refresh(app: &tauri::AppHandle) {
         // Re-render the tray icon with today's progress.
         let (tokens, progress) = today_progress(state.inner());
         render_tray_icon(&app, tokens, progress, false);
+        // Low-quota reminder (0.1.13 T9): when an enabled provider's lowest
+        // remaining window drops below 20%, surface it in the tray tooltip —
+        // visible without opening the window, no new dependencies.
+        let low = quota::low_quota_warning();
+        if !low.is_empty() {
+            if let Some(tray) = app.tray_by_id("tokenstep-tray") {
+                let _ = tray.set_tooltip(Some(format!("⚠ {}", low)));
+            }
+        }
     });
+}
+
+/// Trae browser sign-in (0.1.13 T6): opens the authorization page with a
+/// loopback callback listener; blocks up to 240s waiting for the redirect,
+/// then persists the returned JWT pair (DPAPI registry).
+#[tauri::command]
+fn trae_signin(app: tauri::AppHandle, provider: String) -> Result<serde_json::Value, String> {
+    let p = match provider.as_str() {
+        "trae_cn" => trae::TraeProvider::CN,
+        "trae" => trae::TraeProvider::Intl,
+        _ => return Err("unknown provider".into()),
+    };
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| format!("回环端口监听失败：{e}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| format!("回环端口读取失败：{e}"))?
+        .port();
+    let url = trae::authorization_url(p, port);
+    // `open` deprecated in favor of tauri-plugin-opener (same rationale as
+    // the update-check call site); keep shell to avoid a new plugin dep.
+    #[allow(deprecated)]
+    app.shell()
+        .open(url, None)
+        .map_err(|e| format!("无法打开浏览器：{e:?}"))?;
+    let (access, refresh) = trae::wait_loopback_callback(&listener, 240)?;
+    trae::save_credentials_pub(p, &access, &refresh);
+    Ok(serde_json::json!({ "ok": true, "provider": provider }))
+}
+
+/// Trae login state for the settings page.
+#[tauri::command]
+fn trae_login_state(provider: String) -> serde_json::Value {
+    let p = match provider.as_str() {
+        "trae_cn" => trae::TraeProvider::CN,
+        "trae" => trae::TraeProvider::Intl,
+        _ => return serde_json::json!({ "loggedIn": false }),
+    };
+    let (access, refresh) = trae::load_credentials_pub(p);
+    serde_json::json!({ "loggedIn": !access.is_empty() || !refresh.is_empty() })
 }
 
 #[tauri::command]
@@ -1359,6 +1417,8 @@ pub fn run() {
             read_quota_providers,
             read_cursor_code_signal,
             refresh_cursor_usage,
+            trae_signin,
+            trae_login_state,
             github_star_state,
             github_star,
             github_repo_url,

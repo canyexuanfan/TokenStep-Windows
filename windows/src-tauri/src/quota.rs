@@ -20,6 +20,8 @@ pub enum QuotaProvider {
     Grok,
     WorkBuddy,
     Antigravity,
+    TraeCN,
+    Trae,
 }
 
 impl QuotaProvider {
@@ -33,6 +35,8 @@ impl QuotaProvider {
             QuotaProvider::Grok => "grok",
             QuotaProvider::WorkBuddy => "work_buddy",
             QuotaProvider::Antigravity => "antigravity",
+            QuotaProvider::TraeCN => "trae_cn",
+            QuotaProvider::Trae => "trae",
         }
     }
     #[allow(dead_code)] // upstream-parity API (settings + tray surfaces)
@@ -46,6 +50,8 @@ impl QuotaProvider {
             QuotaProvider::Grok => "Grok",
             QuotaProvider::WorkBuddy => "WorkBuddy",
             QuotaProvider::Antigravity => "Antigravity",
+            QuotaProvider::TraeCN => "Trae CN",
+            QuotaProvider::Trae => "Trae",
         }
     }
 }
@@ -1068,7 +1074,60 @@ pub fn fetch_antigravity() -> ProviderQuota {
     }
 }
 
+/// Low-quota reminder text (0.1.13 T9): for every provider that is
+/// Available AND low (any window below 20% remaining), one line
+/// "显示名 · 剩余 N%". Empty string when everything is healthy — the tray
+/// tooltip only changes when attention is needed.
+pub fn low_quota_warning() -> String {
+    let providers = read_quota_providers_cached();
+    let mut lines = Vec::new();
+    for p in providers {
+        let ok = p.get("status").and_then(|v| v.as_str()) == Some("available");
+        if !ok {
+            continue;
+        }
+        let display = p.get("displayName").and_then(|v| v.as_str()).unwrap_or("?");
+        for w in p
+            .get("windows")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&vec![])
+        {
+            let used = w
+                .get("used_percent")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            if used >= 80.0 {
+                let title = w.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                lines.push(format!("{} · {} 已用 {:.0}%", display, title, used));
+            }
+        }
+    }
+    lines.join(" | ")
+}
+
+fn read_quota_providers_cached() -> Vec<serde_json::Value> {
+    let cache_path = crate::paths::app_support_root()
+        .join("cache")
+        .join("quota-cache.json");
+    let Ok(text) = std::fs::read_to_string(&cache_path) else {
+        return vec![];
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|v| v.get("providers").and_then(|v| v.as_array()).cloned())
+        .unwrap_or_default()
+}
+
 // ── coordinator ───────────────────────────────────────────────────────────
+
+/// Public wrapper for sibling modules (trae.rs builds its own statuses).
+pub(crate) fn unavailable_for(
+    provider: QuotaProvider,
+    message: &str,
+    status: QuotaStatus,
+) -> ProviderQuota {
+    unavailable(provider, Some(message), status)
+}
 
 fn unavailable(
     provider: QuotaProvider,
@@ -1106,6 +1165,8 @@ pub fn fetch_providers(providers: &[QuotaProvider]) -> BTreeMap<String, Provider
                 QuotaProvider::Glm => fetch_glm(),
                 QuotaProvider::Kimi => fetch_kimi(),
                 QuotaProvider::Grok => fetch_grok(),
+                QuotaProvider::TraeCN => crate::trae::fetch_trae_cn(),
+                QuotaProvider::Trae => crate::trae::fetch_trae_intl(),
             };
             let _ = tx.send(quota);
         }));

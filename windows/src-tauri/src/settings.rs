@@ -164,5 +164,7 @@ pub fn normalize(s: TokenStepSettings) -> TokenStepSettings {
         grok_quota_enabled: s.grok_quota_enabled,
         workbuddy_quota_enabled: s.workbuddy_quota_enabled,
         antigravity_quota_enabled: s.antigravity_quota_enabled,
+        trae_cn_quota_enabled: s.trae_cn_quota_enabled,
+        trae_quota_enabled: s.trae_quota_enabled,
     }
 }

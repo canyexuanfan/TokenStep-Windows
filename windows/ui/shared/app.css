@@ -4535,3 +4535,16 @@ html[data-skin-pack]:not([data-skin-chapter]) #app .reference-brand-logo {
     padding-right: 0;
   }
 }
+
+/* 0.1.13 T12: Cursor estimation badge on client breakdown rows. */
+.today-est-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 14%, transparent);
+  cursor: help;
+}

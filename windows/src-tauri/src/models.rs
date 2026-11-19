@@ -360,6 +360,12 @@ pub struct TokenStepSettings {
     /// mirrors the cockpit plugin's authorized-quota view; toggleable.
     #[serde(rename = "antigravity_quota_enabled", default = "default_true")]
     pub antigravity_quota_enabled: bool,
+    /// Trae / Trae CN subscription quota cards (0.1.13 T6). Default off —
+    /// they require a browser sign-in before showing anything.
+    #[serde(rename = "trae_cn_quota_enabled", default)]
+    pub trae_cn_quota_enabled: bool,
+    #[serde(rename = "trae_quota_enabled", default)]
+    pub trae_quota_enabled: bool,
     /// Per-source experimental agent toggles (source display names). `None`
     /// = master switch alone (legacy ZCode/Hermes/WorkBuddy semantics, and
     /// auto-enroll detected T1 sources); an explicit list decides which T1
@@ -461,6 +467,8 @@ impl Default for TokenStepSettings {
             skipped_update_version: None,
             show_codex_quota: false,
             antigravity_quota_enabled: true,
+            trae_cn_quota_enabled: false,
+            trae_quota_enabled: false,
             agent_work_rank_visibility: "hidden".to_string(),
             experimental_agent_sources: None,
             device_sync_enabled: false,
