@@ -699,7 +699,16 @@
       }
 
       function distributionInner(title, rows, showTodayBadge) {
-        var body = rows.length ? usageRows(rows, function (r) { return r.tool || r.model; }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
+        var isModelPanel = title === window.TS.t('按模型');
+        var body = rows.length ? usageRows(rows, function (r) {
+          // 按模型面板以模型名为主（tool 仅作同名回退）；模型名与客户端同名时说明客户端未上报模型。
+          if (isModelPanel) {
+            var m = r.model || r.tool || '';
+            if (m && m === r.tool) return window.TS.t('未记录模型');
+            return m;
+          }
+          return r.tool || r.model;
+        }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
         var badge = showTodayBadge ? '<span style="float:right;font-size:11px;font-weight:800;color:var(--green-dark);background:color-mix(in srgb,var(--mint) 35%,transparent);padding:3px 10px;border-radius:999px">' + window.TS.t('今日') + '</span>' : '';
         return '<div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:17px;overflow:hidden">' + badge + title + '</div>' + body;
       }
@@ -940,7 +949,7 @@
       function viewStats() {
         return '<div class="dist-grid">' +
           '<div class="card">' + distributionInner(window.TS.t('按工具'), snapshot.tools) + '</div>' +
-          '<div class="card">' + distributionInner(window.TS.t('按模型'), snapshot.models.slice(0, 12)) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('按模型') + ' ' + window.TS.infoIcon(window.TS.t('部分客户端（如 MiniMax）的记录未携带模型名，聚合显示为「未记录模型」')), snapshot.models.slice(0, 12)) + '</div>' +
         '</div>';
       }
       function viewHistory() {

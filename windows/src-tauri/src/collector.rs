@@ -3301,9 +3301,12 @@ order by {table}.ts, {table}.id"#
                 continue;
             }
             // Strip the provider prefix ("minimax/MiniMax-M3" → "MiniMax-M3");
-            // rows the client left without a model display as "MiniMax".
+            // rows the client left without a model display as 未记录模型 —
+            // the runtime store simply does not record a model for them, and
+            // naming them after the client would masquerade as a real model
+            // in every 按模型 panel (0.1.13 fix for the per-provider look).
             let model = if model.is_empty() {
-                "MiniMax".to_string()
+                "未记录模型".to_string()
             } else {
                 model
                     .split_once('/')
