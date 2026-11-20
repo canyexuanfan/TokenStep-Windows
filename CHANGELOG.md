@@ -22,6 +22,7 @@
 
 ### 修复
 
+- **MiniMax 25.2 亿「未记录模型」全部归属到真实模型（est rev 2）**：用户指出"不可能没有数据"后重新排查——usage 库 12,531 行 model 为 NULL，但每个会话的明细目录（`~/.minimax/v2/sessions/YYYY/MM/DD/<time>-session_<base64>/`）里 `llm-call.json` 记录会话模型、`messages.jsonl` 每条消息自带 model+usage，实测 100% 可归属。采集器现按 session_id 从会话目录回填（llm-call.json 优先 → messages.jsonl 多数模型），归属结果进 collector-cache（会话级缓存，大文件只在变化时重读）。归属后按模型面板：MiniMax-M3 22.05 亿 / M3.1-Flash 4.95 亿 / M2.7 / M3.1-Flash-Preview，「未记录模型」归零。
 - **Cursor 估算重构为计费量级（est rev 3）**：供应商计费按「每次请求重发全部上下文」结算，此前按对话文本一次性估算与官方账单差约 900 倍（真实案例：claude-opus-5-5 官方 54M tokens vs 旧估算 6.1 万）。现从 Cursor 自己写入 composerData 的 `contextTokensUsed`（官方实时上下文记录）× 请求次数（assistant 轮次）估算输入（0.7 = 会话内上下文线性增长中值），输出按 assistant 文本 + tool_use 参数估算；无上下文记录的旧会话退回文本重发下界。模型归属（op-5.5/claude-opus-5-5 等）沿用 composerData modelConfig。历史全部重估（cursor_est_rev 缓存失效标记），全史 252M：grok-4.6 132.1M / op-5.5 18.3M / claude-opus-5-5 14.8M（另两个 claude-opus-5-5 会话的本地明细已被 Cursor 清空为 190 字节存根，其官方用量差值约 39M 本地不可复原）。
 - **Cursor tool_use 参数漏计修复（est rev 2）**：agent 转录的工具调用参数是 JSON 对象（`{"command":...}`），此前只取字符串漏掉全部工具参数（单日最多 6.7K tokens）。
 - **历史/统计页切换崩溃修复**：按模型面板 tooltip 误引用不存在的 `window.TS.infoIcon`（实为页面局部函数），render 抛 TypeError 中断两个页面切换。

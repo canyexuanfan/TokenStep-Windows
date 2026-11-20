@@ -132,7 +132,7 @@ pub fn collect(
         collect_cursor_transcripts(&mut cache);
     records.extend(cursor_transcript_records.iter().cloned());
     records.extend(workbuddy_records.iter().cloned());
-    let (minimax_records, minimax_source) = collect_minimax();
+    let (minimax_records, minimax_source) = collect_minimax(&mut cache);
     records.extend(minimax_records.iter().cloned());
     let (dsh_records, dsh_source) = collect_dsh();
     records.extend(dsh_records.iter().cloned());
@@ -1015,6 +1015,21 @@ impl From<&UsageRecord> for CachedRecord {
 struct CollectorCache {
     version: i32,
     files: BTreeMap<String, CachedUsageFile>,
+    /// MiniMax session model attribution cache (0.1.13): session_id → the
+    /// model resolved from the session detail directory (`llm-call.json` /
+    /// `messages.jsonl` majority) plus the source file mtime it was read at.
+    /// Resolving the big messages.jsonl files costs seconds — cached so the
+    /// per-refresh collect only re-reads when a session grew.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    minimax_session_models: BTreeMap<String, MinimaxSessionModel>,
+}
+
+/// Cached model attribution for one MiniMax session (see
+/// `CollectorCache::minimax_session_models`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct MinimaxSessionModel {
+    model: String,
+    source_mtime: f64,
 }
 
 impl Default for CollectorCache {
@@ -1022,6 +1037,7 @@ impl Default for CollectorCache {
         CollectorCache {
             version: COLLECTOR_CACHE_VERSION,
             files: BTreeMap::new(),
+            minimax_session_models: BTreeMap::new(),
         }
     }
 }

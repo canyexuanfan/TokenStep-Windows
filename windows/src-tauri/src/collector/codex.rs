@@ -23,6 +23,7 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
                 let mut local_cache = CollectorCache {
                     version: COLLECTOR_CACHE_VERSION,
                     files: job_files,
+                    minimax_session_models: BTreeMap::new(),
                 };
                 let mut live_paths = BTreeSet::new();
                 let (records, files, timed_out) =

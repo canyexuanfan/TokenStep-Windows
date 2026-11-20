@@ -190,6 +190,15 @@ pub fn minimax_runtime_db_path() -> PathBuf {
         .join("runtime-state.sqlite")
 }
 
+/// `~/.minimax/v2/sessions` — MiniMax per-session detail directories
+/// (`YYYY/MM/DD/<time>-session_<base64(sessionId)>/`), each carrying
+/// `llm-call.json` (session model config) and `messages.jsonl` (per-message
+/// model + usage). These are the attribution source for token-usage rows the
+/// client left without a model.
+pub fn minimax_sessions_root() -> PathBuf {
+    home_dir().join(".minimax").join("v2").join("sessions")
+}
+
 pub fn workbuddy_project_roots() -> Vec<PathBuf> {
     vec![home_dir().join(".workbuddy").join("projects")]
 }
