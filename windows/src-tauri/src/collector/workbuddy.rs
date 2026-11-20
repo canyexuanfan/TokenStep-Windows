@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// Model-attribution revision: bumped when model attribution changes so
+/// cached entries re-parse (0.1.13 — providerData.model carry-over added).
+const WORKBUDDY_MODEL_REV: i64 = 1;
+
 /// WorkBuddy usage collector (v0.1.12): reads the per-project JSONL event
 /// streams under ~/.workbuddy/projects/ — each function_call line carries
 /// {timestamp, providerData.model, message.usage{input,output,total}}.
@@ -17,15 +21,56 @@ pub(crate) fn collect_workbuddy(cache: &mut CollectorCache) -> (Vec<UsageRecord>
             let key = path.to_string_lossy().to_string();
             live_paths.insert(key.clone());
             files_seen += 1;
-            if let Some(cached) = cached_records(cache, &key, "WorkBuddy", &path) {
-                records.extend(cached);
-                continue;
+            let model_rev_ok = cache
+                .files
+                .get(&key)
+                .map(|e| e.model_rev == Some(WORKBUDDY_MODEL_REV))
+                .unwrap_or(false);
+            if model_rev_ok {
+                if let Some(cached) = cached_records(cache, &key, "WorkBuddy", &path) {
+                    records.extend(cached);
+                    continue;
+                }
             }
             let Ok(text) = fs::read_to_string(&path) else {
                 continue;
             };
+            // Two passes over the (small) file: pass 1 records, for every
+            // line, the most recent providerData.model seen at or before it;
+            // pass 2 builds usage rows, attributing rows whose own model is
+            // missing to the nearest known model (previous first, then the
+            // next one after — a message announcing the model usually
+            // precedes/follows its usage record closely).
+            let mut prev_model: Vec<Option<String>> = Vec::new();
+            let mut line_models: Vec<Option<String>> = Vec::new();
+            {
+                let mut current: Option<String> = None;
+                for line in text.lines() {
+                    if !line.contains("\"model\"") {
+                        prev_model.push(current.clone());
+                        line_models.push(None);
+                        continue;
+                    }
+                    let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) else {
+                        prev_model.push(current.clone());
+                        line_models.push(None);
+                        continue;
+                    };
+                    let m = obj
+                        .pointer("/providerData/model")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| obj.get("model").and_then(|v| v.as_str()))
+                        .filter(|m| !m.is_empty())
+                        .map(String::from);
+                    if m.is_some() {
+                        current = m.clone();
+                    }
+                    prev_model.push(current.clone());
+                    line_models.push(m);
+                }
+            }
             let mut file_records: Vec<UsageRecord> = Vec::new();
-            for line in text.lines() {
+            for (idx, line) in text.lines().enumerate() {
                 if line.is_empty() || !line.contains("input_tokens") {
                     continue;
                 }
@@ -60,12 +105,15 @@ pub(crate) fn collect_workbuddy(cache: &mut CollectorCache) -> (Vec<UsageRecord>
                 if total <= 0 {
                     continue;
                 }
-                let model = obj
-                    .pointer("/providerData/model")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| obj.get("model").and_then(|v| v.as_str()))
-                    .unwrap_or("unknown")
-                    .to_string();
+                // Own model → nearest known model before → nearest after.
+                let model = line_models
+                    .get(idx)
+                    .cloned()
+                    .flatten()
+                    .or_else(|| prev_model.get(idx).cloned().flatten())
+                    .or_else(|| line_models[idx + 1..].iter().find_map(|m| m.clone()))
+                    .or_else(|| obj.get("model").and_then(|v| v.as_str()).map(String::from))
+                    .unwrap_or_else(|| "unknown".to_string());
                 let ts_secs = ts_raw / 1000.0;
                 file_records.push(UsageRecord {
                     date: day_string_from_epoch(ts_secs),
@@ -98,6 +146,7 @@ pub(crate) fn collect_workbuddy(cache: &mut CollectorCache) -> (Vec<UsageRecord>
                     codex_created_at: None,
                     codex_anchors: Vec::new(),
                     cursor_est_rev: None,
+                    model_rev: Some(WORKBUDDY_MODEL_REV),
                 },
             );
         }

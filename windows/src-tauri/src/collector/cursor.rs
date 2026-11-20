@@ -247,8 +247,9 @@ pub(crate) fn collect_cursor_transcripts(
                             Some(serde_json::Value::String(args)) => {
                                 count_str_chars(args, &mut chars_cjk, &mut chars_other);
                             }
-                            Some(v @ (serde_json::Value::Object(_)
-                            | serde_json::Value::Array(_))) => {
+                            Some(
+                                v @ (serde_json::Value::Object(_) | serde_json::Value::Array(_)),
+                            ) => {
                                 count_json_strings(v, &mut chars_cjk, &mut chars_other);
                             }
                             _ => {}
@@ -272,8 +273,7 @@ pub(crate) fn collect_cursor_transcripts(
             }
             let requests: i64 = reqs_by_day.values().sum();
             let asst_est = (asst_other / 3.5).floor() as i64 + (asst_cjk * 0.6).floor() as i64;
-            let user_est =
-                (user_other / 3.5).floor() as i64 + (user_cjk * 0.6).floor() as i64;
+            let user_est = (user_other / 3.5).floor() as i64 + (user_cjk * 0.6).floor() as i64;
             // Mean context per request: the recorded `contextTokensUsed` is
             // the live/final context; earlier requests sent less. A linear
             // growth midpoint lands at ~0.7 of the final context. Without a
@@ -296,8 +296,7 @@ pub(crate) fn collect_cursor_transcripts(
             if requests > 0 {
                 for (day, r) in &reqs_by_day {
                     let share = *r as f64 / requests as f64;
-                    days.entry(day.clone()).or_insert((0, 0)).0 +=
-                        (in_total as f64 * share) as i64;
+                    days.entry(day.clone()).or_insert((0, 0)).0 += (in_total as f64 * share) as i64;
                 }
             } else if in_total > 0 {
                 let day = current_day.clone();
@@ -359,6 +358,7 @@ pub(crate) fn collect_cursor_transcripts(
                     codex_created_at: None,
                     codex_anchors: Vec::new(),
                     cursor_est_rev: Some(CURSOR_EST_REV),
+                    model_rev: None,
                 },
             );
         }

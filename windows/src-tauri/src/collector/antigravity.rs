@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// Model-attribution revision: bumped when model attribution changes so
+/// cached entries re-parse (0.1.13 — stale pre-tracking cache invalidated).
+pub(crate) const ANTIGRAVITY_MODEL_REV: i64 = 1;
+
 /// Antigravity (Google IDE / agy CLI) per-turn usage from the brain
 /// transcript logs under `~/.gemini/antigravity*/brain/<session>/
 /// .system_generated/logs/chunks/transcript/*.jsonl`. MODEL records carry
@@ -63,9 +67,16 @@ pub(crate) fn collect_antigravity(cache: &mut CollectorCache) -> (Vec<UsageRecor
                 let key = path.to_string_lossy().to_string();
                 live_paths.insert(key.clone());
                 files_seen += 1;
-                if let Some(cached) = cached_records(cache, &key, "Antigravity", &path) {
-                    records.extend(cached);
-                    continue;
+                let model_rev_ok = cache
+                    .files
+                    .get(&key)
+                    .map(|e| e.model_rev == Some(ANTIGRAVITY_MODEL_REV))
+                    .unwrap_or(false);
+                if model_rev_ok {
+                    if let Some(cached) = cached_records(cache, &key, "Antigravity", &path) {
+                        records.extend(cached);
+                        continue;
+                    }
                 }
                 let Ok(text) = fs::read_to_string(&path) else {
                     continue;
@@ -151,6 +162,7 @@ pub(crate) fn collect_antigravity(cache: &mut CollectorCache) -> (Vec<UsageRecor
                         codex_created_at: None,
                         codex_anchors: Vec::new(),
                         cursor_est_rev: None,
+                        model_rev: Some(ANTIGRAVITY_MODEL_REV),
                     },
                 );
             }

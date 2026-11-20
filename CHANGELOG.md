@@ -22,6 +22,9 @@
 
 ### 修复
 
+- **Codex 165.8M / Antigravity 42.3M / WorkBuddy 8.0M「未记录模型」回填（model rev 机制）**：三个源各自的模型归属缺陷与修复——① Codex：新格式 `token_usage_record`（新版 CLI 的逐响应用量行）此前被预过滤器整体跳过，现两条解析路径均支持（input 已含 cached，total 以客户端报告值为准）；turn_context 之前记录的用量行按会话开场模型（文件内第一个已知模型）回填。② Antigravity：会话级 Model Selection 状态机本身正确，但旧缓存（该逻辑上线前写入的 unknown 记录）永不失效——新增 `model_rev` 缓存失效标记（通用化自 cursor_est_rev），重解析后归属 "Gemini 4 Hydrogen (High)" 等真实模型。③ WorkBuddy：usage 行缺 model 时按全行 `providerData.model` 就近回填（前向优先、后向兜底）。Codex rev-1 缓存条目系增量路径修复前写入的过渡态毒数据，rev 升 2 强制重解析。
+- **Codex 扫描预算 30 分钟 → 4 小时**：sessions 位于符号链接指向的慢速 G 盘（机械盘），全量重解析 7GB/262 文件需数小时；扫描在 detached 线程执行从不阻塞 UI，长预算只意味着"一次扫完存量"而非每个刷新周期重启剩余文件。
+- **按模型面板多色化**：`tokenModelColor`（模型名哈希 → 12 色稳定调色板）替代石墨灰兜底，统计页按模型面板与按工具面板同为多色显示；同模型颜色跨视图稳定。
 - **MiniMax 25.2 亿「未记录模型」全部归属到真实模型（est rev 2）**：用户指出"不可能没有数据"后重新排查——usage 库 12,531 行 model 为 NULL，但每个会话的明细目录（`~/.minimax/v2/sessions/YYYY/MM/DD/<time>-session_<base64>/`）里 `llm-call.json` 记录会话模型、`messages.jsonl` 每条消息自带 model+usage，实测 100% 可归属。采集器现按 session_id 从会话目录回填（llm-call.json 优先 → messages.jsonl 多数模型），归属结果进 collector-cache（会话级缓存，大文件只在变化时重读）。归属后按模型面板：MiniMax-M3 22.05 亿 / M3.1-Flash 4.95 亿 / M2.7 / M3.1-Flash-Preview，「未记录模型」归零。
 - **Cursor 估算重构为计费量级（est rev 3）**：供应商计费按「每次请求重发全部上下文」结算，此前按对话文本一次性估算与官方账单差约 900 倍（真实案例：claude-opus-5-5 官方 54M tokens vs 旧估算 6.1 万）。现从 Cursor 自己写入 composerData 的 `contextTokensUsed`（官方实时上下文记录）× 请求次数（assistant 轮次）估算输入（0.7 = 会话内上下文线性增长中值），输出按 assistant 文本 + tool_use 参数估算；无上下文记录的旧会话退回文本重发下界。模型归属（op-5.5/claude-opus-5-5 等）沿用 composerData modelConfig。历史全部重估（cursor_est_rev 缓存失效标记），全史 252M：grok-4.6 132.1M / op-5.5 18.3M / claude-opus-5-5 14.8M（另两个 claude-opus-5-5 会话的本地明细已被 Cursor 清空为 190 字节存根，其官方用量差值约 39M 本地不可复原）。
 - **Cursor tool_use 参数漏计修复（est rev 2）**：agent 转录的工具调用参数是 JSON 对象（`{"command":...}`），此前只取字符串漏掉全部工具参数（单日最多 6.7K tokens）。

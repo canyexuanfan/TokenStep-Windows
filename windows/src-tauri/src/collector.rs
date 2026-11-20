@@ -947,6 +947,13 @@ struct CachedUsageFile {
     /// historical estimates pick up the fix instead of staying undercounted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cursor_est_rev: Option<i64>,
+    /// Model-attribution revision (0.1.13): bumped per source when the way
+    /// usage rows are attributed to a model changes (Codex pre-turn_context
+    /// fallback, Antigravity session tracking, WorkBuddy providerData
+    /// carry-over) so cached entries re-parse instead of serving stale
+    /// "unknown" models forever.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_rev: Option<i64>,
 }
 
 /// One cumulative anchor point: (epoch secs, usage snapshot).
@@ -1152,6 +1159,7 @@ fn update_cache(
             codex_anchors: vec![],
             scan_offset: 0,
             cursor_est_rev: None,
+            model_rev: None,
         },
     );
 }

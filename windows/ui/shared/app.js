@@ -2282,6 +2282,29 @@ function tokenToolColor(tool) {
   }
 }
 
+// Color for a MODEL name in 按模型 panels: stable per model (hash → palette),
+// spread across 12 hues so the panel reads as multi-colored like 按工具.
+function tokenModelColor(model) {
+  const palette = [
+    "rgb(51,133,235)", // blue
+    "#2da44e", // green
+    "rgb(245,158,11)", // amber
+    "rgb(239,68,68)", // red
+    "rgb(128,71,235)", // violet
+    "rgb(13,148,136)", // teal
+    "rgb(217,70,239)", // fuchsia
+    "rgb(99,102,241)", // indigo
+    "rgb(214,107,61)", // orange-red
+    "rgb(16,163,127)", // emerald
+    "rgb(37,99,235)", // royal blue
+    "rgb(132,204,22)", // lime
+  ];
+  const name = String(model || "");
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return palette[h % palette.length];
+}
+
 // Preferred display order for tools (port of orderedToolEntries).
 function orderedToolEntries(tools) {
   // tools: { name: tokens } map (or array of DailyUsage-shaped rows for the
@@ -3976,6 +3999,7 @@ window.TS = {
   setSkinMotionMode,
   contributionWallHTML,
   tokenToolColor,
+  tokenModelColor,
   orderedToolEntries,
   stackedActivityBarsHTML,
   tokenToolLegendHTML,

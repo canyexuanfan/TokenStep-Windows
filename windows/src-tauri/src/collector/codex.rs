@@ -2,6 +2,14 @@
 
 use super::*;
 
+/// Model-attribution revision: bumped when model attribution changes so
+/// cached entries re-parse. rev 2 (0.1.13): rev-1 entries were written by
+/// the incremental path BEFORE it learned to skip stale-rev entries — they
+/// kept legacy "unknown" models from the old parse, so they must re-parse
+/// under the fixed rules (file-level opening-model fallback + new-format
+/// token_usage_record support).
+pub(crate) const CODEX_MODEL_REV: i64 = 2;
+
 pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     // Primary: JSONL rollouts (per-turn token counts), matching the Python
     // collector's precedence. SQLite `threads` (per-thread totals) is only a
@@ -228,7 +236,12 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
 /// 2 min) and Codex sat in `cached_scan_timeout` forever; 30 min lets it
 /// actually finish, after which the memo carries a complete, untimed-out
 /// result and the source reports plain "ok".
-const CODEX_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_secs(1800);
+/// Scan budget for the detached codex-scan thread (0.1.13: 30min → 4h —
+/// sessions live on a slow secondary volume where a full re-parse of all
+/// rollouts takes hours; the thread is detached and never blocks the UI,
+/// so a long budget only means "finish the whole backlog in one pass"
+/// instead of restarting the remaining files every refresh).
+const CODEX_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_secs(4 * 3600);
 
 /// TEMP-DIAG (codex scan): heartbeat + completion diagnostics written to
 /// cache/codex-scan-progress.json so a slow cold scan is observable.
@@ -391,15 +404,22 @@ pub(crate) fn collect_codex_jsonl_scoped(
             }));
         }
 
-        if let Some(cached) = cached_records(cache, &key, "Codex", path) {
-            records.extend(cached);
-            // Publish this cached file's anchors for its children.
-            if parent_ids.contains(&own_session) {
-                if let Some(entry) = cache.files.get(&key) {
-                    anchors_by_session.insert(own_session.clone(), entry.codex_anchors.clone());
+        let model_rev_ok = cache
+            .files
+            .get(&key)
+            .map(|e| e.model_rev == Some(CODEX_MODEL_REV))
+            .unwrap_or(false);
+        if model_rev_ok {
+            if let Some(cached) = cached_records(cache, &key, "Codex", path) {
+                records.extend(cached);
+                // Publish this cached file's anchors for its children.
+                if parent_ids.contains(&own_session) {
+                    if let Some(entry) = cache.files.get(&key) {
+                        anchors_by_session.insert(own_session.clone(), entry.codex_anchors.clone());
+                    }
                 }
+                continue;
             }
-            continue;
         }
 
         // ── Incremental tail read (0.1.12) ────────────────────────────────
@@ -416,6 +436,11 @@ pub(crate) fn collect_codex_jsonl_scoped(
             };
             if entry.records.is_empty() || entry.scan_offset == 0 {
                 break 'incremental; // never fully parsed — full read below
+            }
+            // Model-attribution rev mismatch: the cached records predate the
+            // current attribution rules — force a full re-parse below.
+            if entry.model_rev != Some(CODEX_MODEL_REV) {
+                break 'incremental;
             }
             let Some((new_size, _new_mtime)) = file_meta(path) else {
                 break 'incremental;
@@ -450,11 +475,15 @@ pub(crate) fn collect_codex_jsonl_scoped(
             let reader = std::io::BufReader::new(file);
             let mut final_model_inc = String::from("unknown");
             let mut events_inc: Vec<CodexTokenEvent> = Vec::new();
+            let mut new_format_inc: Vec<UsageRecord> = Vec::new();
+            let fallback_day_inc =
+                day_string_from_epoch(file_meta(path).map(|m| m.1).unwrap_or(0.0));
             use std::io::BufRead;
             for line in reader.lines().map_while(Result::ok) {
                 if !line.contains("token_count")
                     && !line.contains("session_meta")
                     && !line.contains("turn_context")
+                    && !line.contains("token_usage_record")
                 {
                     continue;
                 }
@@ -472,6 +501,14 @@ pub(crate) fn collect_codex_jsonl_scoped(
                             final_model_inc = model_key(m);
                         }
                     }
+                }
+                if ev_type == "token_usage_record" {
+                    if let Some(rec) =
+                        codex_new_format_record(&obj, &final_model_inc, &fallback_day_inc)
+                    {
+                        new_format_inc.push(rec);
+                    }
+                    continue;
                 }
                 if ev_type != "event_msg" {
                     continue;
@@ -537,6 +574,25 @@ pub(crate) fn collect_codex_jsonl_scoped(
                 })
                 .collect();
             all_records.extend(new_records.iter().cloned());
+            // New-format tail rows carry no model of their own; rows still
+            // unknown after the tail state machine continue the session's
+            // last known model from the cached records.
+            if new_format_inc.iter().any(|r| r.model == "unknown") {
+                let last_known = entry
+                    .records
+                    .iter()
+                    .rev()
+                    .map(|c| c.model.clone())
+                    .find(|m| !m.is_empty() && m != "unknown");
+                if let Some(lk) = last_known {
+                    for r in new_format_inc.iter_mut() {
+                        if r.model == "unknown" {
+                            r.model = lk.clone();
+                        }
+                    }
+                }
+            }
+            all_records.extend(new_format_inc.iter().cloned());
             records.extend(all_records.iter().cloned());
             // Anchors: cached set + thinned new events + the read-tail anchor
             // (guaranteed last so the next increment resumes exactly here).
@@ -607,6 +663,8 @@ pub(crate) fn collect_codex_jsonl_scoped(
             .unwrap_or_default();
         let mut final_model = String::from("unknown");
         let mut events: Vec<CodexTokenEvent> = Vec::new();
+        let mut new_format_records: Vec<UsageRecord> = Vec::new();
+        let fallback_day = day_string_from_epoch(file_meta(path).map(|m| m.1).unwrap_or(0.0));
 
         // Stream the file line-by-line instead of read_to_string, so a 9.7 GB
         // rollout never sits fully in memory (memory optimization, port of
@@ -621,6 +679,7 @@ pub(crate) fn collect_codex_jsonl_scoped(
             if !line.contains("token_count")
                 && !line.contains("session_meta")
                 && !line.contains("turn_context")
+                && !line.contains("token_usage_record")
             {
                 continue;
             }
@@ -646,6 +705,14 @@ pub(crate) fn collect_codex_jsonl_scoped(
                         final_model = model_key(m);
                     }
                 }
+            }
+            if ev_type == "token_usage_record" {
+                // New-format rollouts: per-response usage, no cumulative —
+                // each line is its own record (model from the state machine).
+                if let Some(rec) = codex_new_format_record(&obj, &final_model, &fallback_day) {
+                    new_format_records.push(rec);
+                }
+                continue;
             }
             if ev_type != "event_msg" {
                 continue;
@@ -677,6 +744,24 @@ pub(crate) fn collect_codex_jsonl_scoped(
             });
         }
 
+        // File-level model fallback: usage events recorded before the first
+        // `turn_context` (session bootstrap) carry the placeholder "unknown"
+        // even though the session's opening model is knowable — the first
+        // known model in the file IS that opening model. Attribute them.
+        if events.iter().any(|e| e.model == "unknown") {
+            let first_known = events
+                .iter()
+                .find(|e| e.model != "unknown")
+                .map(|e| e.model.clone());
+            if let Some(opening) = first_known {
+                for e in events.iter_mut() {
+                    if e.model == "unknown" {
+                        e.model = opening.clone();
+                    }
+                }
+            }
+        }
+
         // Resolve the parent anchor: the parent's cumulative value at (or
         // just before) this file's creation time.
         let parent_anchor: Option<TokenUsageCounts> = parent
@@ -699,7 +784,32 @@ pub(crate) fn collect_codex_jsonl_scoped(
             created_at,
             &mut seen,
         );
-        records.extend(file_records.clone());
+        // New-format records: rows recorded before the first `turn_context`
+        // carry "unknown" — attribute them to the session's opening model
+        // (the first known model anywhere in this file's new-format rows or
+        // legacy events, in that order).
+        if new_format_records.iter().any(|r| r.model == "unknown") {
+            let opening = new_format_records
+                .iter()
+                .find(|r| r.model != "unknown")
+                .map(|r| r.model.clone())
+                .or_else(|| {
+                    events
+                        .iter()
+                        .find(|e| e.model != "unknown")
+                        .map(|e| e.model.clone())
+                });
+            if let Some(opening) = opening {
+                for r in new_format_records.iter_mut() {
+                    if r.model == "unknown" {
+                        r.model = opening.clone();
+                    }
+                }
+            }
+        }
+        let mut all_file_records = file_records;
+        all_file_records.extend(new_format_records.iter().cloned());
+        records.extend(all_file_records.iter().cloned());
 
         // Persist with fork metadata + this file's own anchors so future
         // children (and cache hits) can inherit. Anchors are thinned before
@@ -744,7 +854,7 @@ pub(crate) fn collect_codex_jsonl_scoped(
             cache,
             &key,
             path,
-            &file_records,
+            &all_file_records,
             &session_id,
             parent,
             created_at,
@@ -769,6 +879,68 @@ pub(crate) fn collect_codex_jsonl_scoped(
 
 /// Fallback session key for cache entries saved before `codex_session`
 /// existed: the rollout file stem.
+/// Parse one Codex `token_usage_record` line (new-format rollouts — the
+/// successor of `event_msg/token_count`, carrying a per-response `usage`
+/// object instead of cumulative snapshots). `model` comes from the caller's
+/// turn_context state machine; the timestamp lives on the line itself.
+/// `fallback_day` (file mtime day) covers lines without a parseable stamp.
+fn codex_new_format_record(
+    obj: &serde_json::Value,
+    model: &str,
+    fallback_day: &str,
+) -> Option<UsageRecord> {
+    let u = obj.pointer("/payload/usage")?;
+    let input = u.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+    let cached = u
+        .get("cached_input_tokens")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let cache_w = u
+        .get("cache_write_input_tokens")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let output = u.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+    let reasoning = u
+        .get("reasoning_output_tokens")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let total = u.get("total_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+    if input <= 0 && output <= 0 && total <= 0 {
+        return None;
+    }
+    // input already INCLUDES cached_input_tokens (verified on real data:
+    // total == input + output), so pass input_includes_cached=true and pin
+    // the client-reported total.
+    let usage = crate::agent_sources::canonical_counts(
+        input,
+        output,
+        cached,
+        cache_w,
+        reasoning,
+        true,
+        Some(total.max(input + output)),
+    );
+    let stamp = obj
+        .get("timestamp")
+        .and_then(|v| v.as_str())
+        .and_then(parse_iso);
+    let (date, ts) = match stamp {
+        Some(dt) => (
+            day_string_from_epoch(dt.timestamp() as f64),
+            Some(iso_string_from_epoch(dt.timestamp() as f64)),
+        ),
+        None => (fallback_day.to_string(), None),
+    };
+    Some(UsageRecord {
+        date,
+        timestamp: ts,
+        tool: "Codex".to_string(),
+        model: model.to_string(),
+        usage,
+        cost_usd: None,
+    })
+}
+
 fn fallback_session_from_path(path: &Path) -> String {
     path.file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -1030,6 +1202,7 @@ fn update_codex_cache(
             codex_anchors: anchors,
             scan_offset: size,
             cursor_est_rev: None,
+            model_rev: Some(CODEX_MODEL_REV),
         },
     );
 }

@@ -372,13 +372,14 @@
           return '<div class="bar" style="height:' + h + '%;background:' + contributionColor(d.total_tokens, goal) + '" title="' + d.date + ' ' + formatTokens(d.total_tokens) + '"></div>';
         }).join('') + '</div>';
       }
-      function usageRows(rows, nameFn) {
+      function usageRows(rows, nameFn, colorFn) {
         if (!rows.length) return '<div class="empty">' + window.TS.t('暂无数据') + '</div>';
         var max = Math.max.apply(null, [1].concat(rows.map(function (r) { return r.tokens; })));
+        var color = colorFn || window.TS.tokenToolColor;
         return rows.map(function (r) {
           var width = Math.max(1, (r.tokens / max) * 100);
-          var color = window.TS.tokenToolColor(nameFn(r));
-          return '<div class="usage-row"><div class="usage-name">' + nameFn(r) + '</div><div class="usage-track"><div class="usage-fill" style="width:' + width + '%;background:' + color + '"></div></div><div class="usage-amount">' + tokenHTML(r.tokens) + ' · ' + ((r.percent || 0)).toFixed(1) + '%</div></div>';
+          var c = color(nameFn(r));
+          return '<div class="usage-row"><div class="usage-name">' + nameFn(r) + '</div><div class="usage-track"><div class="usage-fill" style="width:' + width + '%;background:' + c + '"></div></div><div class="usage-amount">' + tokenHTML(r.tokens) + ' · ' + ((r.percent || 0)).toFixed(1) + '%</div></div>';
         }).join('');
       }
 
@@ -717,7 +718,7 @@
             return m;
           }
           return r.tool || r.model;
-        }) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
+        }, isModelPanel ? window.TS.tokenModelColor : null) : '<div style="color:var(--muted);font-weight:600;padding:20px 0">' + window.TS.t('等待下一次同步') + '</div>';
         var badge = showTodayBadge ? '<span style="float:right;font-size:11px;font-weight:800;color:var(--green-dark);background:color-mix(in srgb,var(--mint) 35%,transparent);padding:3px 10px;border-radius:999px">' + window.TS.t('今日') + '</span>' : '';
         return '<div style="font-size:20px;font-weight:800;color:var(--ink);margin-bottom:17px;overflow:hidden">' + badge + title + '</div>' + body;
       }
