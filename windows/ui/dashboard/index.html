@@ -953,9 +953,13 @@
         return String(s || '').replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; });
       }
       function viewStats() {
+        function infoIcon(label) {
+          return '<span class="today-design-info" title="' + (label || '').replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }) + '">i</span>';
+        }
+
         return '<div class="dist-grid">' +
           '<div class="card">' + distributionInner(window.TS.t('按工具'), snapshot.tools) + '</div>' +
-          '<div class="card">' + distributionInner(window.TS.t('按模型') + ' ' + window.TS.infoIcon(window.TS.t('部分客户端（如 MiniMax）的记录未携带模型名，聚合显示为「未记录模型」')), snapshot.models.slice(0, 12)) + '</div>' +
+          '<div class="card">' + distributionInner(window.TS.t('按模型') + ' ' + infoIcon(window.TS.t('部分客户端（如 MiniMax）的记录未携带模型名，聚合显示为「未记录模型」')), snapshot.models.slice(0, 12)) + '</div>' +
         '</div>';
       }
       function viewHistory() {
