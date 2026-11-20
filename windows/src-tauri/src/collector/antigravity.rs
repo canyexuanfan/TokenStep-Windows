@@ -150,6 +150,7 @@ pub(crate) fn collect_antigravity(cache: &mut CollectorCache) -> (Vec<UsageRecor
                         codex_parent_session: None,
                         codex_created_at: None,
                         codex_anchors: Vec::new(),
+                        cursor_est_rev: None,
                     },
                 );
             }

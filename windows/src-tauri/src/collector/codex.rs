@@ -1028,6 +1028,7 @@ fn update_codex_cache(
             codex_created_at: created_at,
             codex_anchors: anchors,
             scan_offset: size,
+            cursor_est_rev: None,
         },
     );
 }

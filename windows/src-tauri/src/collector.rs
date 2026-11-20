@@ -942,6 +942,11 @@ struct CachedUsageFile {
     scan_offset: u64,
     #[serde(default)]
     codex_anchors: Vec<CachedAnchor>,
+    /// Cursor estimation parser revision (0.1.13): bumped when the Cursor
+    /// transcript estimation changes so stale Cursor entries re-parse and
+    /// historical estimates pick up the fix instead of staying undercounted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cursor_est_rev: Option<i64>,
 }
 
 /// One cumulative anchor point: (epoch secs, usage snapshot).
@@ -1130,6 +1135,7 @@ fn update_cache(
             codex_created_at: None,
             codex_anchors: vec![],
             scan_offset: 0,
+            cursor_est_rev: None,
         },
     );
 }

@@ -40,6 +40,7 @@ fn codex_entry(key_size: u64, total: i64) -> CachedUsageFile {
         codex_parent_session: None,
         codex_created_at: None,
         codex_anchors: vec![],
+        cursor_est_rev: None,
     }
 }
 
@@ -237,6 +238,7 @@ fn cache_save_point_sits_after_all_collectors() {
             codex_parent_session: None,
             codex_created_at: None,
             codex_anchors: vec![],
+            cursor_est_rev: None,
         },
     );
     let text = serde_json::to_string(&cache).expect("serialize cache");

@@ -22,6 +22,9 @@
 
 ### 修复
 
+- **Cursor 估算重构为计费量级（est rev 3）**：供应商计费按「每次请求重发全部上下文」结算，此前按对话文本一次性估算与官方账单差约 900 倍（真实案例：claude-opus-5-5 官方 54M tokens vs 旧估算 6.1 万）。现从 Cursor 自己写入 composerData 的 `contextTokensUsed`（官方实时上下文记录）× 请求次数（assistant 轮次）估算输入（0.7 = 会话内上下文线性增长中值），输出按 assistant 文本 + tool_use 参数估算；无上下文记录的旧会话退回文本重发下界。模型归属（op-5.5/claude-opus-5-5 等）沿用 composerData modelConfig。历史全部重估（cursor_est_rev 缓存失效标记），全史 252M：grok-4.6 132.1M / op-5.5 18.3M / claude-opus-5-5 14.8M（另两个 claude-opus-5-5 会话的本地明细已被 Cursor 清空为 190 字节存根，其官方用量差值约 39M 本地不可复原）。
+- **Cursor tool_use 参数漏计修复（est rev 2）**：agent 转录的工具调用参数是 JSON 对象（`{"command":...}`），此前只取字符串漏掉全部工具参数（单日最多 6.7K tokens）。
+- **历史/统计页切换崩溃修复**：按模型面板 tooltip 误引用不存在的 `window.TS.infoIcon`（实为页面局部函数），render 抛 TypeError 中断两个页面切换。
 - **按模型面板显示真实模型名（T11/T12）**：此前以 tool 名遮蔽模型名（WorkBuddy 的 4 个模型全显示为 WorkBuddy）；MiniMax 无模型名的 25 亿行诚实标注「未记录模型」；今日页 Cursor 行加「≈」估算徽标。
 - **「部分来源失败」误报修复**：Codex 扫描降级状态（数据从缓存回退、完整可用）不再被判为失败，徽标恢复「已同步」。
 - **Codex 扫描收敛修复**：扫描预算 30s→30min + 增量尾读 + 目录 mtime 短路缓存，收敛为正常 ok 状态，全来源零失败。
