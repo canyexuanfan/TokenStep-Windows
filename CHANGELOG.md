@@ -12,6 +12,26 @@
 
 ### 新增
 
+- **Trae / Trae CN 订阅额度卡（T6，移植上游 92a6844/82d646e/60677ee/790148f）**：浏览器登录（回环监听 + IDE 同款授权参数）、Cloud-IDE-JWT 鉴权（Bearer 被拒 401/code1001）、ExchangeToken 自动刷新（refresh token 轮换回写）、CN credits 绝对金额 + 国际版 SG/US entitlement；设置页开关（默认关）+ 登录按钮。
+- **二级源接线（T13，D7 修复）**：agent_sources::collect() 此前零调用者——Gemini CLI/Qwen/Kimi/OpenCode/Amp/Droid/Grok Build 七个源从未进入任何面板；现已按设置每源列表接线并入主快照。
+- **LiteLLM 定价数据源（T18）**：tools/gen-pricing.py 构建期拉 LiteLLM 公开数据集精简为 36 模型真实分档定价（运行时零网络，PRIVACY.md 承诺不变）；此前落兜底价 1.0 的模型出现真实定价；致谢 LiteLLM/token-eyes 思路。
+- **低额度提醒（T9）**：可用且任一窗口已用 ≥80% 时写入托盘 tooltip，不开窗即可见。
+- **Release 自动化（T16）**：release.yml——打 v* tag 自动构建并上传 Release 资产（CI 产出不自签，本机签名链路保留）。
+- **英文 README（T17）**：README.en.md + 发布说明模板 docs/release-notes-template.md。
+- **README 门面（T1）**
+
+### 修复
+
+- **按模型面板显示真实模型名（T11/T12）**：此前以 tool 名遮蔽模型名（WorkBuddy 的 4 个模型全显示为 WorkBuddy）；MiniMax 无模型名的 25 亿行诚实标注「未记录模型」；今日页 Cursor 行加「≈」估算徽标。
+- **「部分来源失败」误报修复**：Codex 扫描降级状态（数据从缓存回退、完整可用）不再被判为失败，徽标恢复「已同步」。
+- **Codex 扫描收敛修复**：扫描预算 30s→30min + 增量尾读 + 目录 mtime 短路缓存，收敛为正常 ok 状态，全来源零失败。
+- **分享卡四处显示修复**：圈内大数字自适应字号、总完成度显示真实值（1889%）、来源/模型分解全量展示、新客户端品牌色。
+- **今日页底部行自适应布局**：Agent 消耗榜隐藏时消除右侧 ~530px 空列，费用估算卡加宽使「本周预估」金额完整显示。
+- **修复启动后崩溃（0xc0000409）**：Codex 扫描超时列表越界——降级处理、绝不崩溃。
+- **安装包补回静默覆盖补丁**：覆盖安装不再弹卸载确认页。
+
+### 新增（前批）
+
 - **回归测试安全网（T2）**：为 0.1.12 三个关键修复补齐 `#[test]` 回归——① Codex 扫描超时时 metas 与文件列表索引对齐（启动崩溃 0xc0000409 的根因场景，部分缓存命中 + 部分超时跳过的混合态）② 扫描降级阶梯（memo 回退 → 缓存回退 → degraded 三态状态标记正确）③ 缓存保存点位置（全部采集器之后落盘——晚采集器条目不丢）+ 缓存结构 save→load 往返。测试注入点：`CodexScanScope`（roots / walk deadline / parse deadline 三参数），生产路径零行为变更。
 - **上游同步跟踪表（T4）**：新增 [`docs/upstream-sync.md`](docs/upstream-sync.md)，逐条登记上游 v0.2.24~v0.2.29 全部 25 个提交的处置（已移植 / 无需移植 / 不移植+理由 / 待移植 v0.1.14 Trae 额度四连），附月度例检流程。
 - **README 门面（T1）**：「当前支持」从 3 家改为 16 家真实清单（专属采集 9 个 + 通用采集 7 个，逐家标注数据源与精度口径：精确/估算）；新增 3 张界面截图（`docs/screenshots/`：分享卡/今日概览/节奏卡）；订阅额度卡补齐 8 家清单。

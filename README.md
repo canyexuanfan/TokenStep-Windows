@@ -1,5 +1,7 @@
 # TokenStep for Windows
 
+[English](README.en.md) | 中文
+
 **像记录步数一样，记录你每天的 AI Token 消耗。**
 
 AI 时代，每个人都在和 Agent 一起工作。

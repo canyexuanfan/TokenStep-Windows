@@ -1,0 +1,76 @@
+name: Release (Windows)
+
+# 0.1.13 T16：打 tag（v*）自动构建并上传 Release 资产。
+# 自签名证书在本机保留——CI 产出的 exe 不签名（release notes 模板已说明
+# SmartScreen 提示）。本机构建链（_sign_notimestamp.bat）仍是签名发布源。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build & upload (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry & git
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('windows/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache build target
+        uses: actions/cache@v4
+        with:
+          path: windows/src-tauri/target
+          key: ${{ runner.os }}-cargo-target-release-${{ hashFiles('windows/src-tauri/Cargo.lock') }}
+
+      - name: Install Tauri CLI
+        working-directory: windows/src-tauri
+        run: cargo install tauri-cli --version "^2.0" --locked
+
+      - name: Tests (lib)
+        working-directory: windows/src-tauri
+        run: cargo test --lib --release
+
+      - name: Build bundles
+        working-directory: windows/src-tauri
+        run: cargo tauri build
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Copy-Item windows/src-tauri/target/release/tokenstep.exe dist/TokenStep_${{ github.ref_name }}.exe
+          Copy-Item windows/src-tauri/target/release/bundle/nsis/TokenStep_*_x64-setup.exe dist/
+          Get-ChildItem dist
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
