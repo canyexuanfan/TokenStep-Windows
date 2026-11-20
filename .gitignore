@@ -54,3 +54,4 @@ reporter_*/
 questions/
 .tmp/
 nul
+.tmp*.log
