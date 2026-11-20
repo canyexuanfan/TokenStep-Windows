@@ -625,7 +625,8 @@
           // Design-sheet categorical palette for model rows (by rank order).
           var modelPalette = ['var(--green)', '#e07b39', '#0d9488', '#2563eb', '#9ca3af'];
           return ordered.map(function (row, rowIndex) {
-            var label = kind === 'client' ? clientName(row.name) : row.name;
+            // 模型行为空名或 'unknown' 时统一显示「未记录模型」（与统计页口径一致）。
+            var label = kind === 'client' ? clientName(row.name) : ((!row.name || row.name === 'unknown') ? window.TS.t('未记录模型') : row.name);
             if (estBadge) label = label + estBadge;
             var pct = totalValue ? row.value * 100 / totalValue : 0;
             var color = kind === 'client' ? window.TS.tokenToolColor(row.name) : modelPalette[Math.min(rowIndex, modelPalette.length - 1)];
@@ -705,12 +706,14 @@
       }
 
       function distributionInner(title, rows, showTodayBadge) {
-        var isModelPanel = title === window.TS.t('按模型');
+        // 统计页传入的按模型标题带 infoIcon 后缀，不能用严格相等判断；
+        // 今日页标题是「今日模型」，同样走模型名优先分支。
+        var isModelPanel = title.indexOf(window.TS.t('按模型')) !== -1 || title === window.TS.t('今日模型');
         var body = rows.length ? usageRows(rows, function (r) {
           // 按模型面板以模型名为主（tool 仅作同名回退）；模型名与客户端同名时说明客户端未上报模型。
           if (isModelPanel) {
             var m = r.model || r.tool || '';
-            if (m && m === r.tool) return window.TS.t('未记录模型');
+            if (!m || m === r.tool || m === 'unknown') return window.TS.t('未记录模型');
             return m;
           }
           return r.tool || r.model;
