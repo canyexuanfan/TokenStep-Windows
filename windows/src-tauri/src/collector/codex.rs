@@ -10,48 +10,81 @@ use super::*;
 /// token_usage_record support).
 pub(crate) const CODEX_MODEL_REV: i64 = 2;
 
-/// Parse TODAY'S rollouts on the calling thread, before the background scan
-/// spawns. Today's stats must not wait for (or depend on) the hours-long
-/// backlog re-parse on the slow sessions volume. Only new-format
-/// `token_usage_record` lines are handled here (today's CLI writes these);
-/// anything else falls through to the background scan. Writes cache entries
-/// ONLY — the normal flow serves the records back from the cache, so there
-/// is exactly one attribution point per file and no double counting.
+/// Parse the recently-ACTIVE rollout files on the calling thread, before the
+/// background scan spawns. Long-running sessions keep appending rows to
+/// files created days earlier — scanning only today's directory misses them
+/// entirely, and the full backlog re-parse on the slow sessions volume lags
+/// hours behind, so recent-day stats would stay wrong for a long time.
+/// Candidate files come from the cached index (plus today's directory),
+/// ranked by current mtime, newest first, capped. Usage rows are bucketed by
+/// their own line timestamp (the true activity day), not the file's
+/// directory date. Only new-format `token_usage_record` rows are handled
+/// (today's CLI writes these); anything else falls through to the
+/// background scan. Writes cache entries ONLY — the normal flow serves the
+/// records back from the cache, so there is exactly one attribution point
+/// per file and no double counting.
 #[cfg_attr(test, allow(dead_code))]
-fn codex_quick_today(cache: &mut CollectorCache) {
+fn codex_quick_recent(cache: &mut CollectorCache, max_files: usize, max_total_bytes: u64) {
+    const RECENT_WINDOW_SECS: f64 = 48.0 * 3600.0;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    let mut candidates: Vec<String> = cache
+        .files
+        .iter()
+        .filter(|(_, e)| e.tool == "Codex")
+        .map(|(k, _)| k.clone())
+        .collect();
     let local_day = chrono::Utc::now()
         .with_timezone(&local_tz())
         .format("%Y-%m-%d")
         .to_string();
     let seg: Vec<&str> = local_day.split('-').collect();
-    if seg.len() != 3 {
-        return;
-    }
-    let mut root = match paths::codex_jsonl_roots().into_iter().next() {
-        Some(r) => r,
-        None => return,
-    };
-    for p in &seg {
-        root.push(p);
-    }
-    let entries = match fs::read_dir(&root) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-            continue;
+    if seg.len() == 3 {
+        let mut root = match paths::codex_jsonl_roots().into_iter().next() {
+            Some(r) => r,
+            None => return,
+        };
+        for p in &seg {
+            root.push(p);
         }
-        let key = path.to_string_lossy().to_string();
+        if let Ok(entries) = fs::read_dir(&root) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
+                    let key = path.to_string_lossy().to_string();
+                    if !candidates.contains(&key) {
+                        candidates.push(key);
+                    }
+                }
+            }
+        }
+    }
+    let mut active: Vec<(f64, u64, PathBuf)> = Vec::new();
+    for key in &candidates {
+        let path = PathBuf::from(key);
         let Some((size, mtime)) = file_meta(&path) else {
             continue;
         };
-        // Already attributed under the current rules and unchanged — skip.
+        if now - mtime > RECENT_WINDOW_SECS {
+            continue;
+        }
+        active.push((mtime, size, path));
+    }
+    active.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut budget = max_total_bytes;
+    for (mtime, size, path) in active.into_iter().take(max_files) {
+        if size > budget {
+            continue;
+        }
+        budget -= size;
+        let key = path.to_string_lossy().to_string();
         if let Some(e) = cache.files.get(&key) {
             if e.model_rev == Some(CODEX_MODEL_REV)
                 && e.size == size
                 && (e.mtime - mtime).abs() < 0.001
+                && e.scan_offset == size
                 && !e.records.is_empty()
             {
                 continue;
@@ -60,8 +93,8 @@ fn codex_quick_today(cache: &mut CollectorCache) {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        let fallback_session = fallback_session_from_path(&path);
-        let mut session_id = fallback_session.clone();
+        let fallback_day = day_string_from_epoch(mtime);
+        let mut session_id = fallback_session_from_path(&path);
         let mut final_model = String::from("unknown");
         let mut records: Vec<UsageRecord> = Vec::new();
         for line in text.lines() {
@@ -91,18 +124,13 @@ fn codex_quick_today(cache: &mut CollectorCache) {
                     }
                 }
                 "token_usage_record" => {
-                    if let Some(rec) = codex_new_format_record(&obj, &final_model, &local_day) {
+                    if let Some(rec) = codex_new_format_record(&obj, &final_model, &fallback_day) {
                         records.push(rec);
                     }
                 }
                 _ => {}
             }
         }
-        if records.is_empty() {
-            continue; // legacy-format or usage-less file → background scan
-        }
-        // Opening-model fallback within the file (rows before the first
-        // turn_context).
         if records.iter().any(|r| r.model == "unknown") {
             if let Some(opening) = records
                 .iter()
@@ -135,78 +163,6 @@ fn codex_quick_today(cache: &mut CollectorCache) {
     }
 }
 
-/// Fill stats gaps from `state_5.sqlite.threads` — Codex's own per-session
-/// ledger (`tokens_used` = session total; verified byte-equal to the sum of
-/// that session's rollout rows on live data). The rollout scan can lag days
-/// behind on the slow sessions volume, so sessions it has not parsed yet
-/// would be missing from the stats entirely; every thread NOT covered by a
-/// parsed rollout entry contributes one session-total record on its
-/// creation day instead. Stateless by design (never persisted): the moment
-/// the rollout scan covers a session it is excluded here and the detailed
-/// rollout records take over — no double counting, no stale copies.
-#[cfg_attr(test, allow(dead_code))]
-fn codex_threads_completion(covered: &BTreeSet<String>) -> Vec<UsageRecord> {
-    let mut out = Vec::new();
-    let db = paths::codex_state_db_path();
-    if !db.is_file() {
-        return out;
-    }
-    let uri = format!("file:{}?mode=ro", db.display().to_string().replace('\\', "/"));
-    let Ok(conn) = rusqlite::Connection::open_with_flags(
-        &uri,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    ) else {
-        return out;
-    };
-    let Ok(mut stmt) = conn.prepare(
-        "SELECT created_at, id, model, tokens_used
-         FROM threads
-         WHERE tokens_used > 0
-           AND created_at IS NOT NULL",
-    ) else {
-        return out;
-    };
-    let mut seen = covered.clone();
-    let Ok(rows) = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, Option<String>>(2)?,
-            row.get::<_, Option<i64>>(3)?,
-        ))
-    }) else {
-        return out;
-    };
-    for row in rows.flatten() {
-        let (created_at, id, model, tokens) = row;
-        let tokens = tokens.unwrap_or(0);
-        if tokens <= 0 || seen.contains(&id) {
-            continue;
-        }
-        seen.insert(id);
-        let model = model
-            .filter(|m| !m.is_empty())
-            .map(|m| model_key(&m))
-            .unwrap_or_else(|| "codex".to_string());
-        out.push(UsageRecord {
-            date: day_string_from_epoch(created_at as f64),
-            timestamp: Some(iso_string_from_epoch(created_at as f64)),
-            tool: "Codex".to_string(),
-            model,
-            usage: TokenUsageCounts {
-                input_tokens: tokens,
-                output_tokens: 0,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
-                reasoning_output_tokens: 0,
-                total_tokens: tokens,
-            },
-            cost_usd: None,
-        });
-    }
-    out
-}
-
 pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     // Primary: JSONL rollouts (per-turn token counts), matching the Python
     // collector's precedence. SQLite `threads` (per-thread totals) is only a
@@ -214,12 +170,12 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
     // collectors (single load/save per pass — fixing the historic clobber
     // where each collector's save wiped the others' entries).
     //
-    // Today's rollouts first (fast, calling thread) so today's stats never
-    // depend on the slow backlog scan; the spawned thread then skips them
-    // via the rev gate. Skipped in test builds — it reads the real sessions
-    // volume for the real current day and would pollute fixture caches.
+    // Recently-active rollouts first (fast, calling thread) so recent-day
+    // stats never depend on the slow backlog scan; the spawned thread then
+    // skips those files via the rev gate. Skipped in test builds — it reads
+    // the real sessions volume and would pollute fixture caches.
     #[cfg(not(test))]
-    codex_quick_today(cache);
+    codex_quick_recent(cache, 24, 256 * 1024 * 1024);
     // The scan itself runs on a detached thread with a private cache clone:
     // every cached_records() freshness check stats files on the (possibly
     // glacial) sessions volume, which must never block the refresh pass.
@@ -295,23 +251,6 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
                 });
             }
         }
-        // Sessions the rollout scan has not parsed yet are filled from the
-        // threads ledger (excluded once their rollout is parsed). Skipped in
-        // test builds — reads the real ledger and would pollute fixtures.
-        // Only rev-2 entries count as covered: older entries predate the
-        // current attribution rules and their numbers are not trustworthy.
-        #[cfg(not(test))]
-        {
-            let covered: BTreeSet<String> = cache
-                .files
-                .values()
-                .filter(|e| {
-                    e.tool == "Codex" && e.model_rev == Some(CODEX_MODEL_REV)
-                })
-                .filter_map(|e| e.codex_session.clone())
-                .collect();
-            records.extend(codex_threads_completion(&covered));
-        }
         let status = if records.is_empty() {
             "degraded_scan_timeout"
         } else {
@@ -343,32 +282,6 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
             cache.files.remove(&k);
         }
     }
-    // Sessions covered by parsed rollouts (cache + this pass) are excluded
-    // from the threads-ledger completion — no double counting; the rollout
-    // scan's detailed records take precedence once available. Only rev-2
-    // entries count as covered: older entries predate the current
-    // attribution rules (legacy-format over-counting mixed with unparsed
-    // new-format rows) and are served to the stats. Skipped in test builds
-    // (real-ledger reads would pollute fixtures).
-    #[cfg(not(test))]
-    let mut covered: BTreeSet<String> = cache
-        .files
-        .values()
-        .filter(|e| e.tool == "Codex" && e.model_rev == Some(CODEX_MODEL_REV))
-        .filter_map(|e| e.codex_session.clone())
-        .collect();
-    #[cfg(not(test))]
-    for entry in outcome.codex_entries.values() {
-        if entry.model_rev == Some(CODEX_MODEL_REV) {
-            if let Some(s) = &entry.codex_session {
-                covered.insert(s.clone());
-            }
-        }
-    }
-    #[cfg(not(test))]
-    let threads_completion = codex_threads_completion(&covered);
-    #[cfg(test)]
-    let threads_completion = Vec::new();
     for (k, entry) in outcome.codex_entries {
         cache.files.insert(k, entry);
     }
@@ -376,8 +289,7 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
     let scan_timed_out = outcome.timed_out;
     let files = outcome.files;
     if !outcome.records.is_empty() {
-        let mut records = outcome.records;
-        records.extend(threads_completion);
+        let records = outcome.records;
         return (
             records,
             SourceInfo {

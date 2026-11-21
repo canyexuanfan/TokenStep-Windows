@@ -66,14 +66,6 @@ pub fn codex_jsonl_roots() -> Vec<PathBuf> {
     vec![home.join(".codex").join("sessions")]
 }
 
-/// `~/.codex/state_5.sqlite` — Codex's own per-session ledger (`threads`
-/// table: `tokens_used` per session, updated live by the client). The
-/// authoritative totals source, used to fill stats gaps while the rollout
-/// JSONL scan is still catching up on slow volumes.
-pub fn codex_state_db_path() -> PathBuf {
-    home_dir().join(".codex").join("state_5.sqlite")
-}
-
 /// Root to scan for Claude Code project JSONL files.
 pub fn claude_projects_root() -> PathBuf {
     home_dir().join(".claude").join("projects")
