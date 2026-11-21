@@ -22,6 +22,7 @@
 
 ### 修复
 
+- **今日 Codex 统计缺失修复**：解析顺序按路径字母序把当日 rollout 排在 7GB 重解析队列最末，且扫描预算结束才落盘、预算成果随进程重启丢失——三重叠加导致当日用量长时间缺席。修复：新增 `codex_quick_today` 今日快速路径（主线程在后台扫描 spawn 前直接解析今日目录，仅写缓存零双计，后台经 rev 门控自动跳过）；解析顺序改为会话创建时间降序（新会话最先解析）；预算维持 30 分钟渐进落盘。今日数据即时入统计（实测 Codex 0.84M / Cursor 260.5M / Claude Code 72.1M 当日全部出现）。
 - **Codex 165.8M / Antigravity 42.3M / WorkBuddy 8.0M「未记录模型」回填（model rev 机制）**：三个源各自的模型归属缺陷与修复——① Codex：新格式 `token_usage_record`（新版 CLI 的逐响应用量行）此前被预过滤器整体跳过，现两条解析路径均支持（input 已含 cached，total 以客户端报告值为准）；turn_context 之前记录的用量行按会话开场模型（文件内第一个已知模型）回填。② Antigravity：会话级 Model Selection 状态机本身正确，但旧缓存（该逻辑上线前写入的 unknown 记录）永不失效——新增 `model_rev` 缓存失效标记（通用化自 cursor_est_rev），重解析后归属 "Gemini 4 Hydrogen (High)" 等真实模型。③ WorkBuddy：usage 行缺 model 时按全行 `providerData.model` 就近回填（前向优先、后向兜底）。Codex rev-1 缓存条目系增量路径修复前写入的过渡态毒数据，rev 升 2 强制重解析。
 - **Codex 扫描预算 30 分钟 → 4 小时**：sessions 位于符号链接指向的慢速 G 盘（机械盘），全量重解析 7GB/262 文件需数小时；扫描在 detached 线程执行从不阻塞 UI，长预算只意味着"一次扫完存量"而非每个刷新周期重启剩余文件。
 - **按模型面板多色化**：`tokenModelColor`（模型名哈希 → 12 色稳定调色板）替代石墨灰兜底，统计页按模型面板与按工具面板同为多色显示；同模型颜色跨视图稳定。
