@@ -10,6 +10,131 @@ use super::*;
 /// token_usage_record support).
 pub(crate) const CODEX_MODEL_REV: i64 = 2;
 
+/// Parse TODAY'S rollouts on the calling thread, before the background scan
+/// spawns. Today's stats must not wait for (or depend on) the hours-long
+/// backlog re-parse on the slow sessions volume. Only new-format
+/// `token_usage_record` lines are handled here (today's CLI writes these);
+/// anything else falls through to the background scan. Writes cache entries
+/// ONLY — the normal flow serves the records back from the cache, so there
+/// is exactly one attribution point per file and no double counting.
+#[cfg_attr(test, allow(dead_code))]
+fn codex_quick_today(cache: &mut CollectorCache) {
+    let local_day = chrono::Utc::now()
+        .with_timezone(&local_tz())
+        .format("%Y-%m-%d")
+        .to_string();
+    let seg: Vec<&str> = local_day.split('-').collect();
+    if seg.len() != 3 {
+        return;
+    }
+    let mut root = match paths::codex_jsonl_roots().into_iter().next() {
+        Some(r) => r,
+        None => return,
+    };
+    for p in &seg {
+        root.push(p);
+    }
+    let entries = match fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let key = path.to_string_lossy().to_string();
+        let Some((size, mtime)) = file_meta(&path) else {
+            continue;
+        };
+        // Already attributed under the current rules and unchanged — skip.
+        if let Some(e) = cache.files.get(&key) {
+            if e.model_rev == Some(CODEX_MODEL_REV)
+                && e.size == size
+                && (e.mtime - mtime).abs() < 0.001
+                && !e.records.is_empty()
+            {
+                continue;
+            }
+        }
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let fallback_session = fallback_session_from_path(&path);
+        let mut session_id = fallback_session.clone();
+        let mut final_model = String::from("unknown");
+        let mut records: Vec<UsageRecord> = Vec::new();
+        for line in text.lines() {
+            if !line.contains("token_usage_record")
+                && !line.contains("turn_context")
+                && !line.contains("session_meta")
+            {
+                continue;
+            }
+            let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let ev_type = obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            match ev_type {
+                "session_meta" => {
+                    if let Some(id) = obj.pointer("/payload/id").and_then(|v| v.as_str()) {
+                        if !id.is_empty() {
+                            session_id = id.to_string();
+                        }
+                    }
+                }
+                "turn_context" => {
+                    if let Some(m) = obj.pointer("/payload/model").and_then(|v| v.as_str()) {
+                        if !m.is_empty() {
+                            final_model = model_key(m);
+                        }
+                    }
+                }
+                "token_usage_record" => {
+                    if let Some(rec) = codex_new_format_record(&obj, &final_model, &local_day) {
+                        records.push(rec);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if records.is_empty() {
+            continue; // legacy-format or usage-less file → background scan
+        }
+        // Opening-model fallback within the file (rows before the first
+        // turn_context).
+        if records.iter().any(|r| r.model == "unknown") {
+            if let Some(opening) = records
+                .iter()
+                .find(|r| r.model != "unknown")
+                .map(|r| r.model.clone())
+            {
+                for r in records.iter_mut() {
+                    if r.model == "unknown" {
+                        r.model = opening.clone();
+                    }
+                }
+            }
+        }
+        cache.files.insert(
+            key,
+            CachedUsageFile {
+                tool: "Codex".into(),
+                size,
+                mtime,
+                records: records.iter().map(CachedRecord::from).collect(),
+                scan_offset: size,
+                codex_session: Some(session_id),
+                codex_parent_session: None,
+                codex_created_at: None,
+                codex_anchors: Vec::new(),
+                cursor_est_rev: None,
+                model_rev: Some(CODEX_MODEL_REV),
+            },
+        );
+    }
+}
+
 pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     // Primary: JSONL rollouts (per-turn token counts), matching the Python
     // collector's precedence. SQLite `threads` (per-thread totals) is only a
@@ -17,6 +142,12 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
     // collectors (single load/save per pass — fixing the historic clobber
     // where each collector's save wiped the others' entries).
     //
+    // Today's rollouts first (fast, calling thread) so today's stats never
+    // depend on the slow backlog scan; the spawned thread then skips them
+    // via the rev gate. Skipped in test builds — it reads the real sessions
+    // volume for the real current day and would pollute fixture caches.
+    #[cfg(not(test))]
+    codex_quick_today(cache);
     // The scan itself runs on a detached thread with a private cache clone:
     // every cached_records() freshness check stats files on the (possibly
     // glacial) sessions volume, which must never block the refresh pass.
@@ -236,12 +367,13 @@ fn collect_codex_sqlite() -> Option<(Vec<UsageRecord>, usize)> {
 /// 2 min) and Codex sat in `cached_scan_timeout` forever; 30 min lets it
 /// actually finish, after which the memo carries a complete, untimed-out
 /// result and the source reports plain "ok".
-/// Scan budget for the detached codex-scan thread (0.1.13: 30min → 4h —
-/// sessions live on a slow secondary volume where a full re-parse of all
-/// rollouts takes hours; the thread is detached and never blocks the UI,
-/// so a long budget only means "finish the whole backlog in one pass"
-/// instead of restarting the remaining files every refresh).
-const CODEX_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_secs(4 * 3600);
+/// Scan budget for the detached codex-scan thread (0.1.13: kept at 30min —
+/// on a slow volume the budget bounds each pass, and results merge into the
+/// cache when the pass ends, so a shorter budget means today's files (parsed
+/// first under newest-first ordering) reach the stats sooner; already-parsed
+/// files skip via the model_rev gate + incremental fast path on later
+/// passes, so the backlog converges over consecutive passes).
+const CODEX_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_secs(1800);
 
 /// TEMP-DIAG (codex scan): heartbeat + completion diagnostics written to
 /// cache/codex-scan-progress.json so a slow cold scan is observable.
@@ -378,6 +510,29 @@ pub(crate) fn collect_codex_jsonl_scoped(
         }
         let anchors = codex_scan_anchors(path);
         anchors_by_session.insert(own_session.clone(), anchors);
+    }
+
+    // ── Phase 2 ordering: newest sessions first ──────────────────────────
+    // Lexicographic order puts today's rollouts at the tail of a multi-hour
+    // re-parse queue (slow volume + budget-bounded passes), so today's usage
+    // would stay missing from the stats for hours. Order by the session
+    // created_at already extracted in Phase 0 — zero extra I/O; sessions
+    // without a stamp sort last.
+    {
+        let mut order: Vec<usize> = (0..all_paths.len()).collect();
+        order.sort_by(|&a, &b| {
+            let ta = metas[a]
+                .as_ref()
+                .and_then(|m| m.3)
+                .unwrap_or(f64::NEG_INFINITY);
+            let tb = metas[b]
+                .as_ref()
+                .and_then(|m| m.3)
+                .unwrap_or(f64::NEG_INFINITY);
+            tb.partial_cmp(&ta).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        all_paths = order.iter().map(|&i| all_paths[i].clone()).collect();
+        metas = order.iter().map(|&i| metas[i].clone()).collect();
     }
 
     // ── Phase 2: per-file scan + delta (fork files inherit the parent anchor) ──
