@@ -135,6 +135,78 @@ fn codex_quick_today(cache: &mut CollectorCache) {
     }
 }
 
+/// Fill stats gaps from `state_5.sqlite.threads` — Codex's own per-session
+/// ledger (`tokens_used` = session total; verified byte-equal to the sum of
+/// that session's rollout rows on live data). The rollout scan can lag days
+/// behind on the slow sessions volume, so sessions it has not parsed yet
+/// would be missing from the stats entirely; every thread NOT covered by a
+/// parsed rollout entry contributes one session-total record on its
+/// creation day instead. Stateless by design (never persisted): the moment
+/// the rollout scan covers a session it is excluded here and the detailed
+/// rollout records take over — no double counting, no stale copies.
+#[cfg_attr(test, allow(dead_code))]
+fn codex_threads_completion(covered: &BTreeSet<String>) -> Vec<UsageRecord> {
+    let mut out = Vec::new();
+    let db = paths::codex_state_db_path();
+    if !db.is_file() {
+        return out;
+    }
+    let uri = format!("file:{}?mode=ro", db.display().to_string().replace('\\', "/"));
+    let Ok(conn) = rusqlite::Connection::open_with_flags(
+        &uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) else {
+        return out;
+    };
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT created_at, id, model, tokens_used
+         FROM threads
+         WHERE tokens_used > 0
+           AND created_at IS NOT NULL",
+    ) else {
+        return out;
+    };
+    let mut seen = covered.clone();
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<i64>>(3)?,
+        ))
+    }) else {
+        return out;
+    };
+    for row in rows.flatten() {
+        let (created_at, id, model, tokens) = row;
+        let tokens = tokens.unwrap_or(0);
+        if tokens <= 0 || seen.contains(&id) {
+            continue;
+        }
+        seen.insert(id);
+        let model = model
+            .filter(|m| !m.is_empty())
+            .map(|m| model_key(&m))
+            .unwrap_or_else(|| "codex".to_string());
+        out.push(UsageRecord {
+            date: day_string_from_epoch(created_at as f64),
+            timestamp: Some(iso_string_from_epoch(created_at as f64)),
+            tool: "Codex".to_string(),
+            model,
+            usage: TokenUsageCounts {
+                input_tokens: tokens,
+                output_tokens: 0,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+                reasoning_output_tokens: 0,
+                total_tokens: tokens,
+            },
+            cost_usd: None,
+        });
+    }
+    out
+}
+
 pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, SourceInfo) {
     // Primary: JSONL rollouts (per-turn token counts), matching the Python
     // collector's precedence. SQLite `threads` (per-thread totals) is only a
@@ -200,10 +272,17 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
     let Some(outcome) = outcome else {
         // Scan unavailable (first pass still stuck on slow storage): serve
         // the records already parsed into the shared cache so Codex doesn't
-        // vanish from the stats while the scan thread keeps working.
+        // vanish from the stats while the scan thread keeps working. Only
+        // rev-2 entries are served — older entries predate the current
+        // attribution rules (mixed legacy over-counting / unparsed rows);
+        // their sessions are filled from the threads ledger instead.
         let mut records = Vec::new();
         let mut files = 0i64;
-        for entry in cache.files.values().filter(|e| e.tool == "Codex") {
+        for entry in cache
+            .files
+            .values()
+            .filter(|e| e.tool == "Codex" && e.model_rev == Some(CODEX_MODEL_REV))
+        {
             files += 1;
             for c in &entry.records {
                 records.push(UsageRecord {
@@ -215,6 +294,23 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
                     cost_usd: c.cost_usd,
                 });
             }
+        }
+        // Sessions the rollout scan has not parsed yet are filled from the
+        // threads ledger (excluded once their rollout is parsed). Skipped in
+        // test builds — reads the real ledger and would pollute fixtures.
+        // Only rev-2 entries count as covered: older entries predate the
+        // current attribution rules and their numbers are not trustworthy.
+        #[cfg(not(test))]
+        {
+            let covered: BTreeSet<String> = cache
+                .files
+                .values()
+                .filter(|e| {
+                    e.tool == "Codex" && e.model_rev == Some(CODEX_MODEL_REV)
+                })
+                .filter_map(|e| e.codex_session.clone())
+                .collect();
+            records.extend(codex_threads_completion(&covered));
         }
         let status = if records.is_empty() {
             "degraded_scan_timeout"
@@ -247,6 +343,32 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
             cache.files.remove(&k);
         }
     }
+    // Sessions covered by parsed rollouts (cache + this pass) are excluded
+    // from the threads-ledger completion — no double counting; the rollout
+    // scan's detailed records take precedence once available. Only rev-2
+    // entries count as covered: older entries predate the current
+    // attribution rules (legacy-format over-counting mixed with unparsed
+    // new-format rows) and are served to the stats. Skipped in test builds
+    // (real-ledger reads would pollute fixtures).
+    #[cfg(not(test))]
+    let mut covered: BTreeSet<String> = cache
+        .files
+        .values()
+        .filter(|e| e.tool == "Codex" && e.model_rev == Some(CODEX_MODEL_REV))
+        .filter_map(|e| e.codex_session.clone())
+        .collect();
+    #[cfg(not(test))]
+    for entry in outcome.codex_entries.values() {
+        if entry.model_rev == Some(CODEX_MODEL_REV) {
+            if let Some(s) = &entry.codex_session {
+                covered.insert(s.clone());
+            }
+        }
+    }
+    #[cfg(not(test))]
+    let threads_completion = codex_threads_completion(&covered);
+    #[cfg(test)]
+    let threads_completion = Vec::new();
     for (k, entry) in outcome.codex_entries {
         cache.files.insert(k, entry);
     }
@@ -254,8 +376,10 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
     let scan_timed_out = outcome.timed_out;
     let files = outcome.files;
     if !outcome.records.is_empty() {
+        let mut records = outcome.records;
+        records.extend(threads_completion);
         return (
-            outcome.records,
+            records,
             SourceInfo {
                 status: Some(if scan_timed_out {
                     "ok_scan_timeout".to_string()
