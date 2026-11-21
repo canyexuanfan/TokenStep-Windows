@@ -228,17 +228,13 @@ pub(crate) fn collect_codex(cache: &mut CollectorCache) -> (Vec<UsageRecord>, So
     let Some(outcome) = outcome else {
         // Scan unavailable (first pass still stuck on slow storage): serve
         // the records already parsed into the shared cache so Codex doesn't
-        // vanish from the stats while the scan thread keeps working. Only
-        // rev-2 entries are served — older entries predate the current
-        // attribution rules (mixed legacy over-counting / unparsed rows);
-        // their sessions are filled from the threads ledger instead.
+        // vanish from the stats while the scan thread keeps working. ALL
+        // entries are served: the legacy-rule entries carry the
+        // cumulative-delta numbers that track the official dashboard within
+        // ~18%, which beats a blank day while the backlog re-parse runs.
         let mut records = Vec::new();
         let mut files = 0i64;
-        for entry in cache
-            .files
-            .values()
-            .filter(|e| e.tool == "Codex" && e.model_rev == Some(CODEX_MODEL_REV))
-        {
+        for entry in cache.files.values().filter(|e| e.tool == "Codex") {
             files += 1;
             for c in &entry.records {
                 records.push(UsageRecord {
